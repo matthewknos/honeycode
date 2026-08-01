@@ -1,0 +1,7 @@
+# Build output. Rebuilt by ./build.sh, and a signed .app is not source.
+build/
+
+# Scratch reports from agent build loops, not part of the app.
+.buildloop/
+
+.DS_Store

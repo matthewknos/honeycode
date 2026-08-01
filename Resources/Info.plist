@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key>
+    <string>Honeycode</string>
+    <key>CFBundleDisplayName</key>
+    <string>Honeycode</string>
+    <key>CFBundleExecutable</key>
+    <string>Honeycode</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.matthewquigley.honeycode</string>
+    <key>CFBundleIconFile</key>
+    <string>Honeycode</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>0.1</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>26.0</string>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <key>NSSupportsAutomaticTermination</key>
+    <true/>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Honeycode uses the microphone to dictate messages into the composer.</string>
+    <key>NSSpeechRecognitionUsageDescription</key>
+    <string>Honeycode transcribes your dictation on-device so you can talk instead of type.</string>
+</dict>
+</plist>

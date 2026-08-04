@@ -541,6 +541,25 @@ struct RateLimit: Equatable, Codable {
 
 /// The roster entry for one session. The conversation itself lives beside it
 /// in a `SessionSnapshot`, keyed by `id`.
+/// Who started a conversation.
+///
+/// The sidebar's two halves are this field, and nothing else: the Code list is
+/// `.user`, the Agents list is `.agent`. Everything below — the transcript, the
+/// changes sheet, the browser panel, the palette — is deliberately blind to it,
+/// which is the whole reason an agent run costs so little to add.
+enum SessionOrigin: Codable, Equatable, Hashable, Sendable {
+    case user
+    /// One run of an agent, scheduled or fired by hand.
+    case agent(UUID)
+    /// The interview that produces an agent. Always ephemeral.
+    case setup
+
+    var agentID: UUID? {
+        if case .agent(let id) = self { return id }
+        return nil
+    }
+}
+
 struct SessionDescriptor: Codable {
     /// Stable across launches — this is what ties a roster row to its
     /// transcript on disk. Optional so a roster written before snapshots
@@ -558,6 +577,13 @@ struct SessionDescriptor: Codable {
     /// as nil and means off — the safe reading, since a session that was never
     /// isolated shouldn't become so on an upgrade.
     var isolated: Bool?
+    /// Absent on a roster written before agents existed, which decodes as nil
+    /// and means `.user` — every session that predates this feature is one you
+    /// started yourself.
+    var origin: SessionOrigin?
+    /// When an agent run began. Nil for ordinary sessions, which have no single
+    /// moment worth recording — they start when you first type in them.
+    var startedAt: Date?
 }
 
 /// A conversation pinned to a working directory and an account.
@@ -565,6 +591,22 @@ final class Session: ObservableObject, Identifiable {
     let id: UUID
     let account: Account
     let directory: URL
+    /// Whether you started this or something else did. Fixed at creation —
+    /// there's no path where a run becomes a session you opened, or the other
+    /// way round.
+    let origin: SessionOrigin
+    /// When an agent run began, for the row that lists it.
+    let startedAt: Date?
+
+    var isRun: Bool { origin.agentID != nil }
+
+    /// Extra instruction sent with the *first* message and never shown.
+    ///
+    /// The same trick `documentNote` uses — the transcript keeps what you
+    /// typed, the agent gets what you typed plus what the app needs it to know.
+    /// Used by the agent interview, which has to explain the format it wants
+    /// back without that explanation being the first thing you read.
+    var briefing: String?
 
     /// The agent's own id for this conversation. Handing it back is what makes
     /// a relaunch rejoin rather than start over.
@@ -755,8 +797,11 @@ final class Session: ObservableObject, Identifiable {
 
     init(id: UUID = UUID(), account: Account, directory: URL, name: String? = nil,
          modelID: String? = nil, effort: EffortChoice = .high,
-         isolated: Bool = false) {
+         isolated: Bool = false, origin: SessionOrigin = .user,
+         startedAt: Date? = nil) {
         self.id = id
+        self.origin = origin
+        self.startedAt = startedAt
         // Assigned before anything can observe it. Going through the property's
         // own `didSet` here would post a notice about a change nobody made and
         // restart an adapter that hasn't been built.
@@ -830,7 +875,8 @@ final class Session: ObservableObject, Identifiable {
 
     var descriptor: SessionDescriptor {
         SessionDescriptor(id: id, account: account, path: directory.path, name: name,
-                          modelID: model.id, effort: effort, isolated: isolated)
+                          modelID: model.id, effort: effort, isolated: isolated,
+                          origin: origin, startedAt: startedAt)
     }
 
     /// Write the conversation out. Called at the end of each turn and when a
@@ -1028,9 +1074,17 @@ final class Session: ObservableObject, Identifiable {
     /// your behalf isn't something you said, and showing it as though it were
     /// would make your own messages unreadable.
     private func dispatchable(_ text: String) -> String {
+        var out = text
+        // Consumed rather than re-sent. It's an opening instruction, and
+        // repeating it on every turn would both waste the tokens and let it
+        // drift into being the loudest thing in a long conversation.
+        if let briefing {
+            out = briefing + "\n\n" + out
+            self.briefing = nil
+        }
         guard browserVisible, let file = browserFile,
-              let note = Self.documentNote(file) else { return text }
-        return text + "\n\n" + note
+              let note = Self.documentNote(file) else { return out }
+        return out + "\n\n" + note
     }
 
     /// The note is a *host* instruction, and the path in it comes from disk.
@@ -1638,7 +1692,9 @@ final class Workspace: ObservableObject {
                     name: $0.name,
                     modelID: $0.modelID,
                     effort: $0.effort ?? .high,
-                    isolated: $0.isolated ?? false)
+                    isolated: $0.isolated ?? false,
+                    origin: $0.origin ?? .user,
+                    startedAt: $0.startedAt)
         }
         sessions.forEach(adopt)
 
@@ -1755,8 +1811,35 @@ final class Workspace: ObservableObject {
         }
     }
 
+    /// The conversations *you* started, in an account.
+    ///
+    /// Agent runs are deliberately excluded. They live in the same roster and
+    /// on the same disk — that's what gives them a transcript for free — but
+    /// they are not sessions you opened, and a sidebar that filled up with
+    /// forty-eight of them a day would be useless within a week. Everything
+    /// keyed off this filter comes along for free: ⌘1–4, ⌘⌥↑/↓, the section
+    /// counts.
     func sessions(in account: Account) -> [Session] {
-        sessions.filter { $0.account == account }
+        sessions.filter { $0.account == account && $0.origin == .user }
+    }
+
+    /// Every run of one agent, newest first.
+    func runs(of agent: UUID) -> [Session] {
+        sessions.filter { $0.origin == .agent(agent) }
+            .sorted { ($0.startedAt ?? .distantPast) > ($1.startedAt ?? .distantPast) }
+    }
+
+    /// Put an agent's run in the roster.
+    ///
+    /// Through the same `adopt` every session goes through, so a run persists,
+    /// notifies on completion and is searchable — the point of making a run a
+    /// `Session` rather than a new kind of thing. It is *not* selected and does
+    /// not take a column: a run starting on a timer must not move the window
+    /// you're working in.
+    func add(run: Session) {
+        adopt(run)
+        sessions.append(run)
+        save()
     }
 
     var selected: Session? { sessions.first { $0.id == selection } }

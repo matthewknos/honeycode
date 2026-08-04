@@ -15,8 +15,21 @@ import AppKit
 struct RootView: View {
     @ObservedObject var workspace: Workspace
     @ObservedObject var background: BackgroundStore
+    @ObservedObject var agents: AgentStore
     @Binding var showPalette: Bool
     @Binding var paletteOpensBeside: Bool
+
+    /// Which half of the app the sidebar is showing.
+    ///
+    /// The pill switches the *sidebar*, not the app: the window, the pane and
+    /// the chrome are one thing throughout, and Code keeps its column
+    /// arrangement while you're off looking at an agent. Persisted, because
+    /// which half you were last in is the same kind of fact as which session.
+    enum SidebarMode: String {
+        case code, agents
+    }
+
+    @AppStorage("sidebar.mode") private var mode = SidebarMode.code
 
     /// The appearance the window is actually in, so the flux override below has
     /// something to hand back when it isn't overriding.
@@ -61,8 +74,13 @@ struct RootView: View {
                         .transition(.opacity)
                 }
 
-                SessionColumns(workspace: workspace)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                Group {
+                    switch mode {
+                    case .code:   SessionColumns(workspace: workspace)
+                    case .agents: AgentsPane(store: agents, workspace: workspace)
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
                     // The one place the app overrides appearance for a region
                     // rather than for the window — see `forcesLightContent`.
                     //
@@ -145,7 +163,16 @@ struct RootView: View {
         ZStack(alignment: .topLeading) {
             VStack(spacing: 0) {
                 header
-                SidebarList(workspace: workspace)
+                pill
+                // Switched, not animated between. A crossfade here would run a
+                // `List` rebuild against the sidebar's own width animation, and
+                // the whole reason both layouts sit at fixed widths (see above)
+                // is that AppKit-backed views redo their layout rather than
+                // interpolate it.
+                switch mode {
+                case .code:   SidebarList(workspace: workspace)
+                case .agents: AgentList(store: agents)
+                }
                 footer
             }
             .padding(.top, Chrome.trafficLightClearance)
@@ -234,32 +261,55 @@ struct RootView: View {
             .onHover { if $0 { railTarget = nil } }
             .help("Expand sidebar")
 
-            Image(systemName: "plus")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(.secondary)
-                .frame(width: 28, height: 24)
-                .contentShape(Rectangle())
-                .onHover { if $0 { railTarget = .newSession } }
-                .onTapGesture { railTarget = .newSession }
-                .help("New session")
-                .popover(isPresented: railBinding(.newSession), arrowEdge: .trailing) {
-                    railMenuChrome(
-                        VStack(alignment: .leading, spacing: 0) {
-                            railHeader("New session")
-                            ForEach(Account.allCases) { account in
-                                PopoverRow(title: account.title,
-                                           blurb: account.agentName) {
-                                    railTarget = nil
-                                    add(to: account)
+            // The pill, as two icons. Both always drawn, the inactive one
+            // dimmed — a single glyph that changed its own meaning would be a
+            // control you have to press to find out what it does.
+            railMode(.code, "chevron.left.forwardslash.chevron.right")
+            railMode(.agents, "sparkles")
+
+            if mode == .agents {
+                Image(systemName: "plus")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 28, height: 24)
+                    .contentShape(Rectangle())
+                    .onHover { if $0 { railTarget = nil } }
+                    .onTapGesture {
+                        agents.beginSetup(account: currentAccount, near: workspace)
+                    }
+                    .help("New agent")
+
+                ForEach(agents.agents) { agent in
+                    railAgentDot(agent)
+                }
+            } else {
+                Image(systemName: "plus")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 28, height: 24)
+                    .contentShape(Rectangle())
+                    .onHover { if $0 { railTarget = .newSession } }
+                    .onTapGesture { railTarget = .newSession }
+                    .help("New session")
+                    .popover(isPresented: railBinding(.newSession), arrowEdge: .trailing) {
+                        railMenuChrome(
+                            VStack(alignment: .leading, spacing: 0) {
+                                railHeader("New session")
+                                ForEach(Account.allCases) { account in
+                                    PopoverRow(title: account.title,
+                                               blurb: account.agentName) {
+                                        railTarget = nil
+                                        add(to: account)
+                                    }
                                 }
                             }
-                        }
-                    )
-                    .frame(width: 240)
-                }
+                        )
+                        .frame(width: 240)
+                    }
 
-            ForEach(Account.allCases) { account in
-                railDot(account)
+                ForEach(Account.allCases) { account in
+                    railDot(account)
+                }
             }
         }
         .padding(.vertical, Theme.s4)
@@ -268,6 +318,38 @@ struct RootView: View {
             railHovering = inside
             if !inside { closeRailMenuIfAway() }
         }
+    }
+
+    private func railMode(_ value: SidebarMode, _ symbol: String) -> some View {
+        let on = mode == value
+        return Image(systemName: symbol)
+            .font(.system(size: 11.5, weight: .medium))
+            .foregroundStyle(on ? AnyShapeStyle(.primary) : AnyShapeStyle(.tertiary))
+            .frame(width: 28, height: 22)
+            .background(on ? Theme.well : .clear, in: RoundedRectangle(cornerRadius: 6))
+            .contentShape(Rectangle())
+            .onHover { if $0 { railTarget = nil } }
+            .onTapGesture { withAnimation(Motion.hover) { mode = value } }
+            .help(value == .code ? "Sessions" : "Agents")
+    }
+
+    /// One agent, filled while a run is in flight — so the rail reports that
+    /// something is happening without having to be expanded.
+    private func railAgentDot(_ agent: AgentDefinition) -> some View {
+        let running = agents.running[agent.id] != nil
+        return Circle()
+            .fill(agent.account.accent)
+            .frame(width: running ? 8 : 7, height: running ? 8 : 7)
+            .opacity(agent.isEnabled ? (running ? 1 : 0.55) : 0.25)
+            .frame(width: 28, height: 22)
+            .contentShape(Rectangle())
+            .onHover { if $0 { railTarget = nil } }
+            .onTapGesture {
+                agents.selection = agent.id
+                agents.openRun = nil
+            }
+            .help("\(agent.name)\n\(agent.schedule.title)")
+            .animation(Motion.reveal, value: running)
     }
 
     /// One account. Opens the moment the pointer arrives.
@@ -397,7 +479,7 @@ struct RootView: View {
 
                 Spacer(minLength: 0)
 
-                newSessionMenu
+                newButton
             } else {
                 Button { withAnimation(Motion.panel) { expanded = true } } label: {
                     Image(systemName: "sidebar.leading")
@@ -413,6 +495,69 @@ struct RootView: View {
         .padding(.horizontal, expanded ? Theme.s5 : Theme.s5 - Theme.s2)
         .padding(.bottom, Theme.s3)
     }
+
+    /// Code / Agents.
+    ///
+    /// A segmented control rather than two tabs or a popup: there are exactly
+    /// two halves, both worth naming, and the one you aren't in should stay
+    /// visible — a control that hides the alternative is how a second mode goes
+    /// undiscovered.
+    private var pill: some View {
+        HStack(spacing: 2) {
+            segment(.code, "Code", "chevron.left.forwardslash.chevron.right")
+            segment(.agents, "Agents", "sparkles")
+        }
+        .padding(2)
+        .background(Theme.well, in: RoundedRectangle(cornerRadius: 8))
+        .padding(.horizontal, Theme.s5)
+        .padding(.bottom, Theme.s5)
+    }
+
+    private func segment(_ value: SidebarMode, _ title: String,
+                         _ symbol: String) -> some View {
+        let on = mode == value
+        return Button { withAnimation(Motion.hover) { mode = value } } label: {
+            HStack(spacing: Theme.s2) {
+                Image(systemName: symbol)
+                    .font(.system(size: 10, weight: .medium))
+                Text(title)
+                    .font(.system(size: 11.5, weight: .medium))
+            }
+            .foregroundStyle(on ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
+            .frame(maxWidth: .infinity)
+            .frame(height: 22)
+            .background(on ? Theme.surface : .clear, in: RoundedRectangle(cornerRadius: 6))
+            .shadow(color: .black.opacity(on ? 0.12 : 0), radius: 1, y: 0.5)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(value == .code ? "Conversations you started"
+                             : "Agents that run on their own")
+    }
+
+    /// The `+` means different things on the two sides, so it does.
+    @ViewBuilder
+    private var newButton: some View {
+        switch mode {
+        case .code:
+            newSessionMenu
+        case .agents:
+            Button { agents.beginSetup(account: currentAccount, near: workspace) } label: {
+                Image(systemName: "plus")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 24, height: 24)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("New agent — describe it in a sentence")
+        }
+    }
+
+    /// Which account an interview runs under. Not the agent's own — changing
+    /// your mind about who should run the finished agent shouldn't restart the
+    /// conversation you're having about it.
+    private var currentAccount: Account { workspace.selected?.account ?? .personal }
 
     private var newSessionMenu: some View {
         PopoverMenu(header: "New session",

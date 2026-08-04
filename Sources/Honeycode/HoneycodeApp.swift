@@ -7,6 +7,10 @@ struct HoneycodeApp: App {
     /// `.commands` sits outside the view hierarchy and can't reach view state.
     @StateObject private var workspace = Workspace()
     @StateObject private var background = BackgroundStore()
+    /// Built empty and handed the roster in `onAppear`. It can't take one at
+    /// init: `@StateObject` initialisers are stored properties, so they run
+    /// before this type's own `init` body and before `workspace` exists.
+    @StateObject private var agents = AgentStore()
     @State private var showPalette = false
     @State private var paletteOpensBeside = false
 
@@ -54,7 +58,7 @@ struct HoneycodeApp: App {
 
     var body: some Scene {
         Window("Honeycode", id: "main") {
-            RootView(workspace: workspace, background: background,
+            RootView(workspace: workspace, background: background, agents: agents,
                      showPalette: $showPalette, paletteOpensBeside: $paletteOpensBeside)
                 .preferredColorScheme(appearance.scheme)
                 .environmentObject(background)
@@ -62,6 +66,10 @@ struct HoneycodeApp: App {
                 .onAppear {
                     Notifier.configure()
                     NSApp.appearance = appearance.appKit
+                    // Starts the clock. Also the catch-up pass — an interval
+                    // agent that missed fourteen fires while the app was quit
+                    // runs once, not fourteen times.
+                    agents.attach(to: workspace)
                 }
                 .onChange(of: appearance) { _, choice in
                     NSApp.appearance = choice.appKit

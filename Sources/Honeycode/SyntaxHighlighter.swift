@@ -1,5 +1,4 @@
 import AppKit
-import SwiftUI
 
 /// Syntax highlighting for code blocks, over the vendored Highlightr.
 ///

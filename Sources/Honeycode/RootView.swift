@@ -915,8 +915,6 @@ struct SessionView: View {
     /// Whether it's sharing the pane. Drives the things that only earn their
     /// place when there's something to tell this column apart *from*.
     var columned = false
-    @EnvironmentObject private var background: BackgroundStore
-    @ObservedObject private var usage = UsageStore.shared
     @State private var draft = ""
     @AppStorage("transcript.mode") private var mode = TranscriptMode.normal
     @AppStorage("transcript.textScale") private var textScale: Double = 1
@@ -1078,7 +1076,7 @@ struct SessionView: View {
                 GeometryReader { geometry in
                     VStack(spacing: 0) {
                         Spacer().frame(height: max(0, geometry.size.height * 0.26))
-                        StartOfSession(session: session)
+                        StartOfSession()
                         composer(prominent: true)
                         Spacer(minLength: 0)
                     }
@@ -1101,7 +1099,7 @@ struct SessionView: View {
                                        session.attachments.append(file)
                                    }
                                },
-                               workspace: workspace, mode: mode,
+                               mode: mode,
                                scale: CGFloat(textScale), width: CGFloat(readingWidth))
                     .environment(\.openArtifact) { artifact in
                         withAnimation(Motion.panel) {
@@ -1493,8 +1491,6 @@ struct StatusRail: View {
 
 /// The head of an empty session.
 private struct StartOfSession: View {
-    @ObservedObject var session: Session
-
     var body: some View {
         Text(Self.greeting)
             .font(Theme.display(28))

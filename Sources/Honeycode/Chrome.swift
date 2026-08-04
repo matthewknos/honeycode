@@ -111,33 +111,6 @@ extension EnvironmentValues {
     }
 }
 
-/// The reading column's own surface.
-///
-/// With a background photo the transcript used to sit *directly on the image* —
-/// legible against a calm one, and a coin flip against anything busy. Body text
-/// on a photograph isn't a style choice, it's an accessibility problem waiting
-/// for the wrong wallpaper.
-///
-/// So the photo becomes a frame rather than a substrate: one glass panel holds
-/// the column, and everything inside it inherits that ground. Without an image
-/// there's nothing to protect against and the canvas shows through unchanged.
-struct ReadingSurface: ViewModifier {
-    let glass: Bool
-
-    @ViewBuilder
-    func body(content: Content) -> some View {
-        if glass {
-            content
-                .padding(.horizontal, Theme.s6)
-                .padding(.vertical, Theme.s7)
-                .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 18))
-                .environment(\.onGlass, true)
-        } else {
-            content
-        }
-    }
-}
-
 /// The reading panel, as a fixed backdrop rather than a wrapper.
 ///
 /// It used to hug the transcript — glass applied to the scrolling stack itself,

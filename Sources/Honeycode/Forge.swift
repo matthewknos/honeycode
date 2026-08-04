@@ -81,32 +81,6 @@ enum Forge: Equatable, Sendable {
         }
     }
 
-    /// The page a person means when they say "the repo".
-    ///
-    /// Built from the parsed parts rather than by rewriting the remote URL,
-    /// because an `ssh://` remote isn't a web address and a remote carrying a
-    /// token in it must never be handed to a browser.
-    var webURL: URL? {
-        switch self {
-        case .gitHub(let host, let slug):
-            return URL(string: "https://\(host)/\(slug)")
-        case .azureDevOps(let organisation, let project, let repo):
-            // Decoded before it's encoded. Azure DevOps project names contain
-            // spaces routinely, and the two remote grammars disagree about
-            // them: an https remote carries `WD%20CoE` and an ssh one carries
-            // the space itself. Encoding blindly turns the first into
-            // `WD%2520CoE`, which is a link to a project nobody has.
-            let encode = { (part: String) in
-                (part.removingPercentEncoding ?? part)
-                    .addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? part
-            }
-            return URL(string: "https://dev.azure.com/\(encode(organisation))"
-                       + "/\(encode(project))/_git/\(encode(repo))")
-        case .other:
-            return nil
-        }
-    }
-
     var service: PullRequestService? {
         switch self {
         case .gitHub:                  return GitHubPullRequests()

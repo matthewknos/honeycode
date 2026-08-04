@@ -194,30 +194,3 @@ final class Dictation: ObservableObject {
     }
 }
 
-/// Live level meter shown in place of the mic glyph while recording.
-struct Waveform: View {
-
-    var level: Double
-    var tint: Color
-
-    private let bars = 5
-
-    var body: some View {
-        HStack(spacing: 2) {
-            ForEach(0..<bars, id: \.self) { index in
-                Capsule()
-                    .fill(tint)
-                    .frame(width: 2.5, height: height(for: index))
-            }
-        }
-        .frame(width: 22, height: 18)
-        .animation(Motion.hover, value: level)
-    }
-
-    private func height(for index: Int) -> CGFloat {
-        // Centre bars react hardest, giving the classic symmetric bounce.
-        let distance = abs(Double(index) - Double(bars - 1) / 2)
-        let falloff = 1 - (distance / Double(bars))
-        return 4 + CGFloat(level * falloff * 26)
-    }
-}

@@ -64,7 +64,7 @@ struct MiniChat: View {
             header
             if !collapsed {
                 Divider().overlay(Theme.rule)
-                TranscriptView(session: session, workspace: workspace,
+                TranscriptView(session: session,
                                mode: .summary, width: cardWidth - Theme.s7,
                                panelled: false, plain: true)
                 ComposerView(draft: $draft, session: session,

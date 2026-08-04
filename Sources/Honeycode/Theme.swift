@@ -25,7 +25,6 @@ enum Theme {
     /// Body prose. 13.5 sits between `.body` and `.callout` — slightly more
     /// generous without tipping into large-text territory.
     static let body = Font.system(size: 13.5)
-    static let bodyEmphasis = Font.system(size: 13.5, weight: .medium)
     static let mono = Font.system(size: 12, design: .monospaced)
     static let monoSmall = Font.system(size: 11, design: .monospaced)
     static let label = Font.system(size: 11, weight: .medium)
@@ -94,7 +93,6 @@ enum Theme {
 
     /// Recessed well — hover fills, chips, expanded detail.
     static var well: Color { Color(nsColor: .quaternarySystemFill) }
-    static var wellRaised: Color { Color(nsColor: .tertiarySystemFill) }
     /// Hairline rules. Quieter than a `.separator` border.
     static var rule: Color { Color(nsColor: .separatorColor) }
 

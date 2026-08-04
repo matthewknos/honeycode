@@ -14,9 +14,6 @@ struct TranscriptView: View {
     @ObservedObject var session: Session
     /// Set when a message is put back for editing, so the composer picks it up.
     var onEdit: (String) -> Void = { _ in }
-    /// Needed only to hand a block to another session; the transcript itself
-    /// doesn't otherwise care about the roster.
-    @ObservedObject var workspace: Workspace
     var mode: TranscriptMode = .normal
     var scale: CGFloat = 1
     var width: CGFloat = Theme.readingWidth
@@ -161,7 +158,7 @@ struct TranscriptView: View {
                             .id(item.id)
                     }
                     // Anchor so the last line clears the composer.
-                    Color.clear.frame(height: 1).id(Self.bottom)
+                    Color.clear.frame(height: 1)
                 }
                 .environment(\.proseScale, scale)
                 .environment(\.plainProse, plain)
@@ -411,8 +408,6 @@ struct TranscriptView: View {
         }
         return signature
     }
-
-    private static let bottom = "bottom-anchor"
 
     /// Machine chatter — tool calls, thinking, notices. Consecutive runs of
     /// these belong together as one visual cluster.

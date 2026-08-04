@@ -1,5 +1,4 @@
 import SwiftUI
-import AppKit
 
 /// Where a `@` mention starts, if the caret is inside one.
 ///
@@ -188,8 +187,6 @@ struct MentionList: View {
     let matches: [String]
     let highlighted: Int
     let onSelect: (String) -> Void
-
-    @EnvironmentObject private var background: BackgroundStore
 
     var body: some View {
         CompletionPanel {

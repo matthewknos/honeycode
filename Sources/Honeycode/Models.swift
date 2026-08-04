@@ -1779,24 +1779,6 @@ final class Workspace: ObservableObject {
         save()
     }
 
-    /// A scratch session for a one-off — a handoff, a second opinion.
-    @discardableResult
-    func addEphemeral(account: Account, directory: URL, name: String,
-                      modelID: String?, effort: EffortChoice) -> Session {
-        let taken = sessions(in: account).map(\.name)
-        var unique = name
-        var n = 2
-        while taken.contains(unique) { unique = "\(name) \(n)"; n += 1 }
-
-        let session = Session(account: account, directory: directory, name: unique,
-                              modelID: modelID, effort: effort)
-        session.isEphemeral = true
-        adopt(session)
-        sessions.append(session)
-        selection = session.id
-        return session
-    }
-
     func remove(_ session: Session) {
         // `retire`, not `shutdown` — the line below drops the roster's
         // reference, which on a session nothing else is holding is the last
@@ -1817,10 +1799,6 @@ final class Workspace: ObservableObject {
         guard !trimmed.isEmpty else { return }
         session.name = trimmed
         save()
-    }
-
-    func toggle(_ account: Account) {
-        setCollapsed(account, !collapsed.contains(account))
     }
 
     func setCollapsed(_ account: Account, _ isCollapsed: Bool) {

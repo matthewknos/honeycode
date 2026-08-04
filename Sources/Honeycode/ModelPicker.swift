@@ -348,55 +348,6 @@ struct PopoverRow: View {
     }
 }
 
-/// How much of the transcript to show.
-///
-/// Deliberately the same popover as the model picker rather than a system
-/// menu: they sit feet apart doing the same kind of job, and each mode needs a
-/// line of explanation that a menu row can't carry.
-struct TranscriptModePicker: View {
-    @Binding var mode: TranscriptMode
-    @State private var showing = false
-
-    var body: some View {
-        Button { showing.toggle() } label: {
-            HStack(spacing: Theme.s2 - 1) {
-                Text(mode.title)
-                    .font(.system(size: 11.5, weight: .medium))
-                    .foregroundStyle(.secondary)
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 8, weight: .semibold))
-                    .foregroundStyle(.tertiary)
-            }
-            .padding(.horizontal, Theme.s4)
-            .padding(.vertical, Theme.s2)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(HoverCapsule())
-        .help("Transcript detail")
-        .popover(isPresented: $showing, arrowEdge: .bottom) {
-            VStack(alignment: .leading, spacing: 0) {
-                Text("Detail")
-                    .font(Theme.label)
-                    .foregroundStyle(.tertiary)
-                    .padding(.horizontal, Theme.s5)
-                    .padding(.top, Theme.s3)
-                    .padding(.bottom, Theme.s3)
-
-                ForEach(TranscriptMode.allCases) { option in
-                    PopoverRow(title: option.title,
-                               blurb: option.blurb,
-                               selected: mode == option) {
-                        mode = option
-                        showing = false
-                    }
-                }
-            }
-            .padding(.vertical, Theme.s3)
-            .frame(width: 248)
-        }
-    }
-}
-
 /// Row highlight on hover — the thing a system menu gives you for free and a
 /// custom popover doesn't.
 struct HoverRow: ButtonStyle {

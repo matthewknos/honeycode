@@ -172,13 +172,16 @@ const intensities = [
 let time = 0;
 let lastT = performance.now();
 
+let rafID = null;
+
 function frame(now) {
+  rafID = null;
   const dt = Math.min(60, now - lastT);
   lastT = now;
-  if (!paused) time += dt * intensities[intensityLevel].speed;
+  time += dt * intensities[intensityLevel].speed;
 
   if (!imgReady || !srcData) {
-    requestAnimationFrame(frame);
+    schedule();
     return;
   }
 
@@ -227,10 +230,29 @@ function frame(now) {
     );
   }
 
-  requestAnimationFrame(frame);
+  schedule();
 }
 
-requestAnimationFrame(frame);
+// Paused means *no frames*, not a frozen clock.
+//
+// `paused` used to gate only the time variable, so the loop went on clearing
+// the canvas and redrawing all ~250 strips sixty times a second to produce a
+// pixel-identical image. The host pauses this whenever the window is occluded
+// or the app isn't frontmost, which is exactly when that work is least worth
+// doing — so the rAF is dropped entirely and re-armed on the way back.
+function schedule() {
+  if (paused || rafID !== null) return;
+  rafID = requestAnimationFrame(frame);
+}
+
+function resume() {
+  // Re-baselined, or the first frame back advances the field by however long
+  // the window sat behind another one.
+  lastT = performance.now();
+  schedule();
+}
+
+schedule();
 
 
 
@@ -239,11 +261,32 @@ window.setFluxTheme = function(theme) {
 };
 window.setFluxPaused = function(shouldPause) {
   paused = shouldPause;
+  if (!paused) resume();
+};
+
+// The veil, applied by the compositor rather than by the host.
+//
+// Honeycode used to put a SwiftUI `.blur(radius:)` over this web view, which
+// forces the whole live surface through an offscreen render pass on every
+// frame it draws. A CSS filter is the same effect on the layer the canvas is
+// already in. The scale pushes the filter's soft edges off screen — a blurred
+// element samples transparency past its own bounds, which shows up as a pale
+// halo around the pane.
+window.setFluxBlur = function(px) {
+  const c = document.getElementById('c');
+  if (px > 0.5) {
+    c.style.filter = 'blur(' + px + 'px)';
+    c.style.transform = 'scale(' + (1 + px / 160) + ')';
+  } else {
+    c.style.filter = '';
+    c.style.transform = '';
+  }
 };
 
 document.getElementById('pause').addEventListener('click', (e) => {
   paused = !paused;
   e.target.textContent = paused ? 'play' : 'pause';
+  if (!paused) resume();
 });
 document.getElementById('intensity').addEventListener('click', () => {
   intensityLevel = (intensityLevel + 1) % intensities.length;

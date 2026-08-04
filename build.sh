@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds Bench.app. Command Line Tools are enough; full Xcode is not required.
+# Builds Honeycode.app. Command Line Tools are enough; full Xcode is not required.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -9,7 +9,11 @@ TARGET="arm64-apple-macos26.0"
 CONFIGURATION="${1:-release}"
 case "$CONFIGURATION" in
   debug)   SWIFT_FLAGS=(-Onone -g) ;;
-  release) SWIFT_FLAGS=(-O) ;;
+  # Whole-module optimisation, not just -O. Every source file is handed to one
+  # swiftc invocation already, so this costs nothing but lets the optimiser
+  # inline and specialise across files — which for an app whose hot paths span
+  # Models, the adapters and the views is most of them.
+  release) SWIFT_FLAGS=(-O -wmo) ;;
   *) echo "usage: $0 [debug|release] [--run]" >&2; exit 2 ;;
 esac
 
@@ -41,6 +45,7 @@ xcrun --sdk macosx swiftc \
   "${SWIFT_FLAGS[@]}" \
   -framework AppKit -framework SwiftUI \
   -framework Speech -framework AVFoundation \
+  -framework Quartz \
   -o "$APP/Contents/MacOS/Honeycode" \
   $(find "$ROOT/Sources" -name '*.swift' | sort)
 
@@ -70,7 +75,7 @@ fi
 codesign --force --sign "$SIGN" \
   --identifier com.matthewquigley.honeycode \
   --options runtime \
-  --entitlements "$ROOT/Resources/Bench.entitlements" \
+  --entitlements "$ROOT/Resources/Honeycode.entitlements" \
   "$APP"
 
 echo "==> Built $APP"

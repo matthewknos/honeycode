@@ -119,15 +119,7 @@ struct ModelPicker: View {
         .background {
             PopoutSide(needed: Self.effortWidth + Theme.s7) { side = $0 }
         }
-        // One timer for the whole list rather than one per row. `task(id:)`
-        // cancels the previous run whenever the pointer moves, so sweeping down
-        // five models schedules five opens and performs one — the four you
-        // passed over are cancelled before their delay is up.
-        .task(id: hover) {
-            try? await Task.sleep(for: hover.delay)
-            guard !Task.isCancelled else { return }
-            effortFor = hover.settled(from: effortFor)
-        }
+        .popoutSettles(hover, into: $effortFor)
     }
 
     private func modelRow(_ choice: AgentModel) -> some View {
@@ -141,39 +133,10 @@ struct ModelPicker: View {
             session.model = choice
             showing = false
         }
-        .onHover { inside in
-            guard showsEffort else { return }
-            if inside {
-                hover.row = choice
-            } else if hover.row == choice {
-                // Only clear if we're still the row it thinks it's on. Leaving
-                // one row and entering the next arrive in an order nobody
-                // guarantees, and the exit must not undo the entry that
-                // overtook it.
-                hover.row = nil
-            }
-        }
-        .popover(isPresented: effortBinding(for: choice),
-                 attachmentAnchor: .rect(.bounds),
-                 arrowEdge: side == .trailing ? .trailing : .leading) {
+        .popout(choice, hover: $hover, open: $effortFor, side: side,
+                enabled: showsEffort) {
             effortList(for: choice)
-                .onHover { hover.inPanel = $0 }
         }
-    }
-
-    /// One row's popout, open or shut.
-    ///
-    /// Derived from `effortFor` rather than held per row, because only one may
-    /// be open at a time — two effort panels hanging off two different models
-    /// would be two answers to a question with one.
-    ///
-    /// The setter only ever *closes*. Opening is the hover policy's job, and a
-    /// popover that dismissed itself would otherwise fight it: SwiftUI writes
-    /// `false` here whenever the panel is dismissed for its own reasons, and a
-    /// symmetric setter would let that race the pointer.
-    private func effortBinding(for model: AgentModel) -> Binding<Bool> {
-        Binding(get: { effortFor == model },
-                set: { open in if !open, effortFor == model { effortFor = nil } })
     }
 
     /// Nothing is committed until an effort is picked.
@@ -282,6 +245,82 @@ struct HoverPolicy<Row: Equatable>: Equatable {
         // No row. Either the pointer made it to the panel — in which case the
         // panel stays — or it left altogether.
         return inPanel ? current : nil
+    }
+}
+
+/// The wiring `HoverPolicy` needs to actually drive a submenu.
+///
+/// The policy is the hard part and was already shared; these are the four
+/// pieces of plumbing around it, which weren't. The model picker and the
+/// handoff menu had them copied out verbatim modulo the row type — and the
+/// bugs this plumbing exists to prevent are all invisible ones you find by
+/// waving a mouse, so two hand-maintained copies is two places to regress
+/// silently and no way to notice.
+extension View {
+
+    /// The settle timer, applied to the panel that holds the rows.
+    ///
+    /// One timer for the whole list rather than one per row. `task(id:)`
+    /// cancels the previous run whenever the pointer moves, so sweeping down
+    /// five rows schedules five opens and performs one — the four you passed
+    /// over are cancelled before their delay is up.
+    func popoutSettles<Row: Equatable>(_ hover: HoverPolicy<Row>,
+                                       into open: Binding<Row?>) -> some View {
+        task(id: hover) {
+            try? await Task.sleep(for: hover.delay)
+            guard !Task.isCancelled else { return }
+            open.wrappedValue = hover.settled(from: open.wrappedValue)
+        }
+    }
+
+    /// One row of such a list: reports its own hover, and carries the panel it
+    /// opens.
+    ///
+    /// - Parameters:
+    ///   - value: what this row stands for, and what `open` holds when this
+    ///     row's panel is the one showing.
+    ///   - enabled: false for a list whose rows have nothing behind them, which
+    ///     is the model picker on an account with no effort levels.
+    func popout<Row: Equatable, Panel: View>(
+        _ value: Row,
+        hover: Binding<HoverPolicy<Row>>,
+        open: Binding<Row?>,
+        side: HorizontalEdge,
+        enabled: Bool = true,
+        @ViewBuilder panel: @escaping () -> Panel
+    ) -> some View {
+        onHover { inside in
+            guard enabled else { return }
+            if inside {
+                hover.wrappedValue.row = value
+            } else if hover.wrappedValue.row == value {
+                // Only clear if we're still the row it thinks it's on. Leaving
+                // one row and entering the next arrive in an order nobody
+                // guarantees, and the exit must not undo the entry that
+                // overtook it.
+                hover.wrappedValue.row = nil
+            }
+        }
+        // Derived rather than held per row, because only one panel may be open
+        // at a time — two hanging off two different rows would be two answers
+        // to a question with one.
+        //
+        // The setter only ever *closes*. Opening is the hover policy's job, and
+        // a popover that dismissed itself would otherwise fight it: SwiftUI
+        // writes `false` here whenever the panel goes away for its own reasons,
+        // and a symmetric setter would let that race the pointer.
+        .popover(isPresented: Binding(get: { open.wrappedValue == value },
+                                      set: { shown in
+                                          if !shown, open.wrappedValue == value {
+                                              open.wrappedValue = nil
+                                          }
+                                      }),
+                 attachmentAnchor: .rect(.bounds),
+                 arrowEdge: side == .trailing ? .trailing : .leading) {
+            panel()
+                // The panel counts as somewhere to be — see `HoverPolicy`.
+                .onHover { hover.wrappedValue.inPanel = $0 }
+        }
     }
 }
 

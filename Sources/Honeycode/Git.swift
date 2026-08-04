@@ -77,6 +77,50 @@ enum Shell {
          "/bin", "/usr/sbin", "/sbin"].joined(separator: ":")
     }
 
+    /// A `.command` file that runs one interactive tool, for the caller to
+    /// hand to `NSWorkspace.open`.
+    ///
+    /// A file to open rather than an Apple Event to Terminal. The sign-in flows
+    /// this exists for — `gh auth login`, `az login` — are interactive prompts
+    /// with a menu, a browser hand-off and a device code to paste, so they need
+    /// a terminal a person can type into; and driving one by AppleScript under
+    /// the hardened runtime costs an `automation.apple-events` entitlement and
+    /// a permission dialog to accomplish what double-clicking a `.command` does
+    /// for nothing. It also gets the right app for free: whatever you open
+    /// `.command` files with is, by definition, your terminal.
+    ///
+    /// The second banner line is fixed rather than passed in. Both callers said
+    /// the same sentence because it's the same fact about this app, and a third
+    /// one would want it too.
+    ///
+    /// - Parameters:
+    ///   - name: the temporary file's stem, which is what the terminal's title
+    ///     bar ends up showing.
+    ///   - announcing: the first line printed, before the tool takes over.
+    ///   - preamble: shell run before the tool — environment the tool needs and
+    ///     won't set for itself.
+    static func terminalScript(named name: String, announcing: String,
+                               preamble: String = "",
+                               run binary: String, _ arguments: [String] = []) -> URL? {
+        let file = FileManager.default.temporaryDirectory
+            .appendingPathComponent("\(name).command")
+        // Quoted, both of them: a path can carry a space, and this is a shell.
+        let command = (["\"\(binary)\""] + arguments.map { "\"\($0)\"" })
+            .joined(separator: " ")
+        let script = """
+        #!/bin/sh
+        \(preamble)echo "\(announcing)"
+        echo "When it's done, reopen Honeycode's View menu to switch to it."
+        echo
+        exec \(command)
+        """
+        guard (try? script.write(to: file, atomically: true, encoding: .utf8)) != nil,
+              (try? FileManager.default.setAttributes([.posixPermissions: 0o755],
+                                                      ofItemAtPath: file.path)) != nil
+        else { return nil }
+        return file
+    }
+
     /// A buffer two threads can touch.
     ///
     /// stdout and stderr have to be drained *concurrently*: a pipe holds 64KB

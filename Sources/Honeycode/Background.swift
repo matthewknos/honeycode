@@ -310,15 +310,7 @@ final class BackgroundStore: ObservableObject {
                     return Self.fluxThumbnail()
                 }
                 guard let source else { return nil }
-                guard let src = CGImageSourceCreateWithURL(source as CFURL, nil) else { return nil }
-                let options: [CFString: Any] = [
-                    kCGImageSourceCreateThumbnailFromImageAlways: true,
-                    kCGImageSourceCreateThumbnailWithTransform: true,
-                    kCGImageSourceThumbnailMaxPixelSize: 480,
-                ]
-                guard let cg = CGImageSourceCreateThumbnailAtIndex(
-                    src, 0, options as CFDictionary) else { return nil }
-                return NSImage(cgImage: cg, size: .zero)
+                return imageThumbnail(at: source, fitting: 480)
             }.value
             if let thumb { thumbnails[item.file] = thumb }
         }

@@ -37,6 +37,27 @@ enum Attached {
     }
 }
 
+/// One image file, decoded straight to the size it will be drawn at.
+///
+/// ImageIO rather than `NSImage(contentsOf:)` because this is the only way to
+/// avoid paying for the full-resolution decode first: `CGImageSourceCreate\
+/// ThumbnailAtIndex` reads the file at the size asked for, so a 6000px
+/// screenshot never becomes 140MB of backing store on its way to a 160pt row.
+///
+/// `WithTransform` is the one that's easy to leave out and obvious when you
+/// do — without it a photo carrying an EXIF orientation comes back on its side.
+func imageThumbnail(at url: URL, fitting maxPixel: Int) -> NSImage? {
+    guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+    let options: [CFString: Any] = [
+        kCGImageSourceCreateThumbnailFromImageAlways: true,
+        kCGImageSourceCreateThumbnailWithTransform: true,
+        kCGImageSourceThumbnailMaxPixelSize: maxPixel,
+    ]
+    guard let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
+    else { return nil }
+    return NSImage(cgImage: cg, size: .zero)
+}
+
 /// Decoded once per path, at display size.
 ///
 /// A pasted screenshot is often several thousand pixels wide; holding that as an
@@ -85,15 +106,7 @@ final class Thumbnails: ObservableObject {
         if url.pathExtension.lowercased() == "svg" {
             return NSImage(contentsOf: url)
         }
-        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
-        let options: [CFString: Any] = [
-            kCGImageSourceCreateThumbnailFromImageAlways: true,
-            kCGImageSourceCreateThumbnailWithTransform: true,
-            kCGImageSourceThumbnailMaxPixelSize: 900,
-        ]
-        guard let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
-        else { return nil }
-        return NSImage(cgImage: cg, size: .zero)
+        return imageThumbnail(at: url, fitting: 900)
     }
 }
 

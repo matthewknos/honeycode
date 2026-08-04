@@ -110,34 +110,25 @@ enum AzureAuth {
 
     /// A script that runs `az login` in the user's terminal.
     ///
-    /// Same shape as `GitHubAuth.loginScript` and for the same reasons — see
-    /// there. `az login` adds an identity to the profile rather than replacing
-    /// the one already in it, so this is how the second tenant arrives.
+    /// See `Shell.terminalScript` for the shape. `az login` adds an identity to
+    /// the profile rather than replacing the one already in it, so this is how
+    /// the second tenant arrives.
+    ///
+    /// The preamble is the Python twin of the `NODE_EXTRA_CA_CERTS` problem in
+    /// `ACPAgent`: `az` verifies against `certifi`'s bundle and ignores the
+    /// keychain, so behind a TLS-inspecting proxy every call it makes fails
+    /// with "unable to get local issuer certificate" — including the login
+    /// itself. Set only when you haven't set it yourself, and pointed at roots
+    /// the system already trusts.
     nonisolated static func loginScript() -> URL? {
         guard let binary else { return nil }
-        let file = FileManager.default.temporaryDirectory
-            .appendingPathComponent("honeycode-az-login.command")
-        // The Python twin of the `NODE_EXTRA_CA_CERTS` problem in `ACPAgent`:
-        // `az` verifies against `certifi`'s bundle and ignores the keychain, so
-        // behind a TLS-inspecting proxy every call it makes fails with "unable
-        // to get local issuer certificate" — including the login itself. Set
-        // only when you haven't set it yourself, and pointed at roots the
-        // system already trusts.
         let trust = ProcessInfo.processInfo.environment["REQUESTS_CA_BUNDLE"] == nil
             ? SystemTrust.caBundle().map { "export REQUESTS_CA_BUNDLE=\"\($0.path)\"\n" } ?? ""
             : ""
-        let script = """
-        #!/bin/sh
-        \(trust)echo "Signing in to Azure."
-        echo "When it's done, reopen Honeycode's View menu to switch to it."
-        echo
-        exec "\(binary)" login
-        """
-        guard (try? script.write(to: file, atomically: true, encoding: .utf8)) != nil,
-              (try? FileManager.default.setAttributes([.posixPermissions: 0o755],
-                                                      ofItemAtPath: file.path)) != nil
-        else { return nil }
-        return file
+        return Shell.terminalScript(named: "honeycode-az-login",
+                                    announcing: "Signing in to Azure.",
+                                    preamble: trust,
+                                    run: binary, ["login"])
     }
 
     // MARK: Where the list comes from

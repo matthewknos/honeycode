@@ -71,34 +71,14 @@ enum GitHubAuth {
     /// A script that runs `gh auth login` in whatever terminal this Mac opens
     /// `.command` files with, or nil if there's no `gh` to run.
     ///
-    /// A file to open rather than an Apple Event to Terminal. `gh auth login`
-    /// is an interactive prompt — a menu, a browser hand-off and a device code
-    /// to paste — so it needs a terminal a person can type into; and driving
-    /// one by AppleScript under the hardened runtime costs an
-    /// `automation.apple-events` entitlement and a permission dialog to
-    /// accomplish what double-clicking a `.command` does for nothing. It also
-    /// gets the right app for free: whatever you open `.command` files with is,
-    /// by definition, your terminal.
-    ///
-    /// `gh auth login` *adds* an account rather than replacing the signed-in
-    /// one, which is the whole reason this row exists.
+    /// See `Shell.terminalScript` for why it's a file rather than an Apple
+    /// Event. `gh auth login` *adds* an account rather than replacing the
+    /// signed-in one, which is the whole reason this row exists.
     nonisolated static func loginScript() -> URL? {
         guard let binary else { return nil }
-        let file = FileManager.default.temporaryDirectory
-            .appendingPathComponent("honeycode-gh-login.command")
-        // Quoted: the path can carry a space, and this is a shell.
-        let script = """
-        #!/bin/sh
-        echo "Adding a GitHub account to gh."
-        echo "When it's done, reopen Honeycode's View menu to switch to it."
-        echo
-        exec "\(binary)" auth login
-        """
-        guard (try? script.write(to: file, atomically: true, encoding: .utf8)) != nil,
-              (try? FileManager.default.setAttributes([.posixPermissions: 0o755],
-                                                      ofItemAtPath: file.path)) != nil
-        else { return nil }
-        return file
+        return Shell.terminalScript(named: "honeycode-gh-login",
+                                    announcing: "Adding a GitHub account to gh.",
+                                    run: binary, ["auth", "login"])
     }
 
     // MARK: The output format

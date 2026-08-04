@@ -243,13 +243,7 @@ private struct HandoffForm: View {
         .background {
             PopoutSide(needed: Self.panelWidth + Theme.s7) { side = $0 }
         }
-        // One timer for the list, cancelled and restarted as the pointer moves,
-        // so sweeping past three accounts opens only the one you stop on.
-        .task(id: hover) {
-            try? await Task.sleep(for: hover.delay)
-            guard !Task.isCancelled else { return }
-            modelsFor = hover.settled(from: modelsFor)
-        }
+        .popoutSettles(hover, into: $modelsFor)
     }
 
     private func accountRow(_ option: Account) -> some View {
@@ -262,28 +256,9 @@ private struct HandoffForm: View {
             // specific model is what the panel is for.
             choose(option, model: ModelCatalog.models(for: option).first)
         }
-        .onHover { inside in
-            if inside {
-                hover.row = option
-            } else if hover.row == option {
-                // Only clear if we're still the row it thinks it's on: leaving
-                // one row and entering the next arrive in no guaranteed order.
-                hover.row = nil
-            }
-        }
-        .popover(isPresented: panelBinding(for: option),
-                 attachmentAnchor: .rect(.bounds),
-                 arrowEdge: side == .trailing ? .trailing : .leading) {
+        .popout(option, hover: $hover, open: $modelsFor, side: side) {
             panel(for: option)
-                .onHover { hover.inPanel = $0 }
         }
-    }
-
-    /// One account's panel, open or shut. The setter only ever closes — opening
-    /// is the hover policy's job.
-    private func panelBinding(for option: Account) -> Binding<Bool> {
-        Binding(get: { modelsFor == option },
-                set: { open in if !open, modelsFor == option { modelsFor = nil } })
     }
 
     /// That account's models, and its effort levels where it has any.

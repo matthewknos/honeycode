@@ -27,6 +27,10 @@ final class Crew {
     /// collapses duplicates precisely so this can be true.
     private var running: Set<Account> = []
     private var replies: [Account: String] = [:]
+    /// One per delegate in flight. See `dispatch` — a turn that never lands is
+    /// the difference between a slow run and one that never gives you a prompt
+    /// back.
+    private var expiry: [Account: DispatchWorkItem] = [:]
     private var order: [Account] = []
     private var lead: Account?
     private var startedAt: Date?
@@ -72,6 +76,8 @@ final class Crew {
         streamer?.finish()
         streamer = nil
         running.removeAll()
+        expiry.values.forEach { $0.cancel() }
+        expiry.removeAll()
         Console.breakLine()
         Console.status("stopped")
         onIdle?()
@@ -168,15 +174,55 @@ final class Crew {
             Console.line(Console.dim("  " + assignment.task.prefix(160)))
 
             let session = session(for: account)
-            session.onTurnComplete = { [weak self] finished in
+
+            // `endTurn` is the only thing that calls `onTurnComplete`, and a CLI
+            // that dies mid-turn never reaches it — the same contract `quietly`
+            // documents. Without this, one dead delegate means `running` never
+            // empties, assembly never fires, and the prompt never comes back.
+            // The Zscaler failure mode lands exactly here: a Node CLI whose TLS
+            // fails is silent rather than loud.
+            let timeout = DispatchWorkItem { [weak self] in
+                guard let self, self.running.contains(account) else { return }
+                Console.speaker(account, note: "gave up")
+                Console.failure("no reply in \(Int(Self.patience / 60)) minutes — carrying on without it")
+                session.interrupt()
+                self.finished(account, reply: nil, leader: leader)
+            }
+            expiry[account] = timeout
+            DispatchQueue.main.asyncAfter(deadline: .now() + Self.patience, execute: timeout)
+
+            session.onTurnComplete = { [weak self] done in
                 guard let self else { return }
-                self.replies[account] = Self.lastTurn(of: finished)
-                self.running.remove(account)
                 Console.speaker(account, note: "done")
-                Console.line(self.replies[account] ?? "")
-                if self.running.isEmpty { self.assemble(for: leader) }
+                let reply = Self.lastTurn(of: done)
+                Console.line(reply)
+                self.finished(account, reply: reply, leader: leader)
             }
             session.send(Self.instruction(assignment.task, from: leader))
+        }
+    }
+
+    /// How long a delegate gets. Generous: the pieces of a real job run for
+    /// minutes, and killing live work is worse than waiting for dead work.
+    private static let patience: TimeInterval = 900
+
+    /// Exactly once per delegate, from whichever of the two paths gets there
+    /// first.
+    private func finished(_ account: Account, reply: String?, leader: Account) {
+        guard running.remove(account) != nil else { return }
+        expiry[account]?.cancel()
+        expiry[account] = nil
+        if let reply, !reply.isEmpty { replies[account] = reply }
+        guard running.isEmpty else { return }
+
+        // Nothing came back at all — assembling would ask the lead to combine
+        // an empty set, which reads as a confident summary of work that was
+        // never done.
+        if replies.isEmpty {
+            Console.failure("no delegate reported back — nothing to assemble")
+            settle()
+        } else {
+            assemble(for: leader)
         }
     }
 

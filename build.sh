@@ -58,7 +58,7 @@ xcrun --sdk macosx swiftc \
   -framework Speech -framework AVFoundation \
   -framework Quartz \
   -o "$APP/Contents/MacOS/Honeycode" \
-  $(find "$ROOT/Sources" -name '*.swift' | sort)
+  $(find "$ROOT/Sources/AgentKit" "$ROOT/Sources/Honeycode" -name '*.swift' | sort)
 
 # Signed with a stable local identity when there is one, ad-hoc otherwise.
 #

@@ -162,7 +162,7 @@ struct TranscriptView: View {
                 }
                 .environment(\.proseScale, scale)
                 .environment(\.plainProse, plain)
-                .padding(.horizontal, Theme.s6)
+                .padding(.horizontal, rowInset)
                 // Clears the View menu floating in the corner. It used to
                 // overlap the first line of the transcript, which only showed
                 // up once the browser panel made the column narrow enough for
@@ -178,8 +178,8 @@ struct TranscriptView: View {
                 // scroller is gone.
                 .frame(maxWidth: width, alignment: .leading)
                 .frame(maxWidth: .infinity)
-                .padding(.horizontal, Theme.pane)
-                .padding(.vertical, Theme.pane + 4)
+                .padding(.horizontal, paneInset)
+                .padding(.vertical, panelled ? Theme.pane + 4 : Theme.s4)
             }
             // The panel sits behind the scroll view, not around its content —
             // see `ReadingPanel` for why that matters.
@@ -441,6 +441,14 @@ struct TranscriptView: View {
     /// the prose — on a one-line reply the button covered the last three words.
     private static let gutter: CGFloat = 26
 
+    /// Margins either side of the reading column.
+    ///
+    /// A pane 700pt wide can spend 40pt a side on air and read better for it.
+    /// A floating card is 400 wide, and the same margins take a fifth of the
+    /// measure — which is what turned a paragraph into four words a line.
+    private var paneInset: CGFloat { panelled ? Theme.pane : Theme.s4 }
+    private var rowInset: CGFloat { panelled ? Theme.s6 : Theme.s3 }
+
     /// Every diff except the newest one for its file.
     ///
     /// Continuous editing of one document — which is now the normal way to work
@@ -548,7 +556,15 @@ extension TranscriptView {
                 // column read as shoved left inside its own glass. Costing the
                 // measure twice and keeping it centred is the better trade;
                 // the width slider is there if you want it back.
-                Color.clear.frame(width: TranscriptView.gutter, height: 0)
+                //
+                // Both go together in plain mode, where there's no handoff
+                // button to reserve for — mirroring a gutter that isn't drawn
+                // put the text 26pt from the card's leading edge and flush
+                // against its trailing one, which is the same fault the other
+                // way round.
+                if !plain {
+                    Color.clear.frame(width: TranscriptView.gutter, height: 0)
+                }
                 content
                     .frame(maxWidth: .infinity, alignment: .leading)
                 if !plain {
@@ -598,8 +614,11 @@ extension TranscriptView {
                                    question: precedingPrompt(before: id),
                                    from: session)
                 } payload: {
-                    .success(Relay.Payload(label: "Reply from \(session.account.shortTitle)",
-                                           text: text))
+                    // Not built here. A reply that *is* an HTML page travels as
+                    // a file rather than as four hundred fenced lines in
+                    // somebody's composer, and that decision belongs in one
+                    // place — `/send` reaches the same reply by another route.
+                    .success(Relay.payload(reply: text, from: session))
                 }
                 .transition(.opacity)
             case .diff(_, _, let file, let rows, _) where hovered || asking:
@@ -737,6 +756,23 @@ private struct ToolRow: View {
     /// scroll frame.
     @State private var file: URL?
     @State private var previewing = false
+    /// Whether this row is drawing all of its output rather than the head.
+    @State private var wholeBody = false
+
+    /// How much of a tool's output a row draws before it stops.
+    ///
+    /// Verbose opens every row, which means every file the agent read and every
+    /// command it ran is laid out in full, eagerly, in one stack. A `Text` is
+    /// one view but not one unit of work — SwiftUI measures all of it — so a
+    /// `Read` of a three-thousand-line file costs three thousand lines of text
+    /// layout to show a paragraph's worth of them, and a session does that
+    /// dozens of times. That's why Verbose is the worst of the four modes and
+    /// Summary, which draws no tool rows at all, is the only smooth one.
+    ///
+    /// Two thousand characters is a screenful, which is as far as anyone reads a
+    /// tool row before deciding whether they care. The rest is a click away, and
+    /// only the row you clicked pays for it.
+    private static let detailCap = 2_000
 
     /// What went wrong, if anything — shown in the disclosure ahead of the
     /// tool's own input, because when a command fails the error is the thing
@@ -813,7 +849,7 @@ private struct ToolRow: View {
                             .foregroundStyle(Color.diffDelText)
                     }
                 }
-                .foregroundStyle(state.isRefused ? AnyShapeStyle(.tertiary)
+                .foregroundStyle(state.isDeclined ? AnyShapeStyle(.tertiary)
                                                  : AnyShapeStyle(.secondary))
                 .contentShape(Rectangle())
             }
@@ -845,14 +881,35 @@ private struct ToolRow: View {
             }
 
             if (expanded || startExpanded) && !body_.isEmpty {
-                Text(body_)
-                    .font(Theme.mono)
-                    .lineSpacing(2)
-                    .textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(10)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .modifier(InsetSurface(radius: 7))
+                let detail = body_
+                // `utf8.count` rather than `count`: a native string stores its
+                // byte count, where counting characters walks the whole thing —
+                // and this test runs for every open row on every redraw. It
+                // measures the truncation in bytes and takes it in characters,
+                // which can only ever cut *less* than the cap.
+                let hidden = wholeBody ? 0 : detail.utf8.count - Self.detailCap
+                VStack(alignment: .leading, spacing: 7) {
+                    Text(hidden > 0 ? String(detail.prefix(Self.detailCap)) : detail)
+                        .font(Theme.mono)
+                        .lineSpacing(2)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    if hidden > 0 {
+                        Button {
+                            wholeBody = true
+                        } label: {
+                            Text("Show the rest — \(hidden / 1024 + 1)KB")
+                                .font(.system(size: 10.5, weight: .medium))
+                                .foregroundStyle(.tertiary)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .modifier(InsetSurface(radius: 7))
             }
         }
     }

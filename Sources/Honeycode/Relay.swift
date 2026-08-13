@@ -107,8 +107,7 @@ enum Relay {
             for item in source.items.reversed() {
                 if case .assistant(_, let text) = item,
                    !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    return Payload(label: "Reply from \(source.account.shortTitle)",
-                                   text: text)
+                    return payload(reply: text, from: source)
                 }
             }
             throw Refusal.empty
@@ -131,6 +130,89 @@ enum Relay {
         return Payload(label: "\(files.count) files",
                        text: parts.joined(separator: "\n\n"),
                        filename: "relayed-\(files.count)-files.\(suffix)")
+    }
+
+    /// Something the agent said, as a payload — a document when it *is* one.
+    ///
+    /// A reply whose substance is an HTML artifact used to travel the way every
+    /// other reply does: fenced, inline, straight into the destination's
+    /// composer. Four hundred lines of markup pasted into a text field is not a
+    /// document — you can't skim it, the field grows until it owns the pane, and
+    /// the receiving agent has to pick the page back out of a quote before it
+    /// can do anything with it. That's the same complaint `filename` already
+    /// answers for files, and an artifact is a file nobody has written down yet:
+    /// written out here, it arrives as a chip with a path behind it.
+    ///
+    /// The prose around the markup is dropped rather than carried beside it.
+    /// Everything that travels goes through the transform and then the check,
+    /// and both of those work on `text` alone — a second field riding alongside
+    /// would be material crossing the account boundary unredacted, which is the
+    /// one thing this whole mechanism exists to prevent.
+    static func payload(reply text: String, from source: Session) -> Payload {
+        let plain = Payload(label: "Reply from \(source.account.shortTitle)", text: text)
+        guard let markup = artifact(in: text) else { return plain }
+        let title = documentTitle(in: markup)
+        return Payload(label: title.map { "“\($0)” — HTML artifact" }
+                             ?? "HTML artifact from \(source.account.shortTitle)",
+                       text: markup,
+                       filename: (title.flatMap(slug) ?? "artifact") + ".html")
+    }
+
+    /// The one renderable block in a reply that is mostly that block.
+    ///
+    /// Both halves of that matter. A reply carrying *two* artifacts stays inline
+    /// — sending one file would silently drop the other, and a relay that loses
+    /// half of what it was handed is worse than one that's merely unwieldy. And
+    /// a page quoted in passing to make a point is not the point: the markup has
+    /// to be the bulk of what was said before this treats the reply as a
+    /// document rather than as an answer that happens to contain some HTML.
+    ///
+    /// SVG isn't here on purpose. `MarkdownText` rewrites an `svg` fence into an
+    /// image before it ever reaches a code block, so a vector never arrives in
+    /// this shape — and it already travels as a file by that route.
+    private static func artifact(in reply: String) -> String? {
+        var found: String?
+        for block in MarkdownText.blocks(reply) {
+            guard case .code(let source, let language) = block,
+                  CodeBlock.isRenderable(language) else { continue }
+            if found != nil { return nil }
+            found = source
+        }
+        // Long enough to be a page rather than a snippet, and most of the reply.
+        guard let found, found.count >= 400, found.count * 2 >= reply.count
+        else { return nil }
+        return found
+    }
+
+    /// The page's own `<title>`, for naming the chip.
+    ///
+    /// A filename of `artifact.html` says nothing, and the destination sees the
+    /// chip before it sees anything else. The page usually knows what it is.
+    private static func documentTitle(in markup: String) -> String? {
+        guard let open = markup.range(of: "<title", options: .caseInsensitive),
+              let start = markup.range(of: ">", range: open.upperBound..<markup.endIndex),
+              let end = markup.range(of: "</title>", options: .caseInsensitive,
+                                     range: start.upperBound..<markup.endIndex)
+        else { return nil }
+        let title = markup[start.upperBound..<end.lowerBound]
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return title.isEmpty || title.count > 60 ? nil : title
+    }
+
+    /// A title as a filename, and nothing else.
+    ///
+    /// Agent-written markup names the file that lands on your disk, so this is
+    /// an allow-list rather than a substitution: letters, digits and hyphens
+    /// survive, everything else — `/`, `..`, a NUL, a right-to-left override —
+    /// becomes a hyphen. Nil when nothing usable is left, so the fallback name
+    /// is used rather than a file called `---`.
+    private static func slug(_ title: String) -> String? {
+        let cleaned = title.lowercased().map { character -> Character in
+            character.isLetter || character.isNumber ? character : "-"
+        }
+        let trimmed = String(cleaned).split(separator: "-", omittingEmptySubsequences: true)
+            .joined(separator: "-")
+        return trimmed.isEmpty ? nil : String(trimmed.prefix(48))
     }
 
     /// Whatever you last copied.
@@ -756,7 +838,7 @@ struct RelayForm: View {
             case .failure(let error):
                 refusal(error)
             case .success(let ready):
-                header("Send")
+                PopoverHeader("Send", top: 0)
                 summary(ready)
                 Divider().overlay(Theme.rule).padding(.vertical, Theme.s2)
                 list
@@ -871,11 +953,4 @@ struct RelayForm: View {
         .padding(.vertical, Theme.s4)
     }
 
-    private func header(_ text: String) -> some View {
-        Text(text)
-            .font(Theme.label)
-            .foregroundStyle(.tertiary)
-            .padding(.horizontal, Theme.s5)
-            .padding(.bottom, Theme.s3)
-    }
 }

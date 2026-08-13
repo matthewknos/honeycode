@@ -163,9 +163,8 @@ struct ComposerView: View {
         // see `Relay`. Consumed on arrival so switching away and back doesn't
         // paste it a second time.
         .onChange(of: session.relayIncoming) { _, arrived in
-            guard let arrived else { return }
-            draft = draft.isEmpty ? arrived : draft + "\n\n" + arrived
-            session.relayIncoming = nil
+            guard arrived != nil else { return }
+            consumeRelay()
             focused = true
         }
         .onAppear {
@@ -173,10 +172,7 @@ struct ComposerView: View {
             // A relay that landed while this composer didn't exist — the
             // destination wasn't on screen when it arrived, which is the
             // ordinary case rather than the odd one.
-            if let waiting = session.relayIncoming {
-                draft = draft.isEmpty ? waiting : draft + "\n\n" + waiting
-                session.relayIncoming = nil
-            }
+            consumeRelay()
             // Every revision replaces the dictated span — not the field — so
             // speaking and typing in the same message don't fight each other.
             dictation.onTranscript = { text in
@@ -471,7 +467,7 @@ struct ComposerView: View {
             }
 
             if let limit = session.rateLimit, limit.isConstrained {
-                readout(limit.resetsAt.map { "resets \(Self.clock.string(from: $0))" }
+                readout(limit.resetsAt.map { "resets \(RateLimit.clock.string(from: $0))" }
                         ?? limit.windowName,
                         alarming: limit.status == "rejected",
                         help: limit.summary)
@@ -545,11 +541,13 @@ struct ComposerView: View {
         }
     }
 
-    private static let clock: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm"
-        return formatter
-    }()
+    /// Append relayed material to the draft and clear it, so switching away
+    /// and back doesn't paste it a second time.
+    private func consumeRelay() {
+        guard let arrived = session.relayIncoming else { return }
+        draft = draft.isEmpty ? arrived : draft + "\n\n" + arrived
+        session.relayIncoming = nil
+    }
 
     private var micButton: some View {
         Button { dictation.toggle(continuing: draft) } label: {

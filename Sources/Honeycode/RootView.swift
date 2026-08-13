@@ -45,14 +45,6 @@ struct RootView: View {
 
     private var sidebarWidth: CGFloat { expanded ? Theme.sidebarWidth : Theme.railWidth }
 
-    /// Collapsed, there is no panel — just the floating pill.
-    ///
-    /// Hovering anywhere in the 52pt column used to light the whole strip up,
-    /// which is a lot of movement for passing the pointer over it on the way
-    /// somewhere else. The pill is its own affordance and doesn't need the
-    /// column behind it to announce anything.
-    private var sidebarIsPanel: Bool { expanded }
-
     var body: some View {
         ZStack {
             // The backdrop spans the whole window rather than just the pane.
@@ -67,9 +59,8 @@ struct RootView: View {
                     // animated the *transcript* as well, so collapsing the
                     // sidebar made the whole reply slide about.
                     .animation(Motion.panel, value: expanded)
-                    .animation(Motion.reveal, value: sidebarIsPanel)
 
-                if sidebarIsPanel {
+                if expanded {
                     Divider().overlay(Theme.rule)
                         .transition(.opacity)
                 }
@@ -92,7 +83,7 @@ struct RootView: View {
                                  background.forcesLightContent ? .light : systemScheme)
             }
         }
-        .animation(Motion.reveal, value: sidebarIsPanel)
+        .animation(Motion.reveal, value: expanded)
         .ignoresSafeArea(.container, edges: .top)
         .frame(minWidth: 900, minHeight: 580)
         .background(WindowChrome())
@@ -101,6 +92,13 @@ struct RootView: View {
                 CommandPalette(workspace: workspace, isPresented: $showPalette,
                                beside: paletteOpensBeside)
             }
+        }
+        // The floating window is reconciled from `poppedOut` rather than opened
+        // and closed at the call sites, so every route in — the row menu, the
+        // menu bar, a restored arrangement at launch — goes through one path.
+        .onAppear { PopOut.shared.sync(workspace: workspace, background: background) }
+        .onChange(of: workspace.poppedOut) { _, _ in
+            PopOut.shared.sync(workspace: workspace, background: background)
         }
         .onChange(of: workspace.pendingDeletion?.id) { _, id in
             if let session = workspace.pendingDeletion, id != nil { deletionName = session.name }
@@ -138,7 +136,8 @@ struct RootView: View {
     ///   should be when there's nothing competing with it.
     @ViewBuilder
     private var sidebarBackground: some View {
-        if !sidebarIsPanel {
+        // Collapsed, there is no panel — just the floating pill.
+        if !expanded {
             Color.clear
         } else if background.isGlassy {
             Theme.canvas
@@ -294,7 +293,7 @@ struct RootView: View {
                     .popover(isPresented: railBinding(.newSession), arrowEdge: .trailing) {
                         railMenuChrome(
                             VStack(alignment: .leading, spacing: 0) {
-                                railHeader("New session")
+                                PopoverHeader("New session")
                                 ForEach(Account.allCases) { account in
                                     PopoverRow(title: account.title,
                                                blurb: account.agentName) {
@@ -370,7 +369,7 @@ struct RootView: View {
             .popover(isPresented: railBinding(.account(account)), arrowEdge: .trailing) {
                 railMenuChrome(
                     VStack(alignment: .leading, spacing: 0) {
-                    railHeader(account.title)
+                    PopoverHeader(account.title)
 
                     if sessions.isEmpty {
                         Text("No sessions")
@@ -399,15 +398,6 @@ struct RootView: View {
                 )
                 .frame(width: 250)
             }
-    }
-
-    private func railHeader(_ text: String) -> some View {
-        Text(text)
-            .font(Theme.label)
-            .foregroundStyle(.tertiary)
-            .padding(.horizontal, Theme.s5)
-            .padding(.top, Theme.s2)
-            .padding(.bottom, Theme.s3)
     }
 
     private var railSettings: some View {
@@ -662,9 +652,19 @@ private struct SessionColumns: View {
         }
     }
 
+    @ViewBuilder
     private func column(_ session: Session, focused: Bool) -> some View {
-        SessionView(session: session, workspace: workspace,
-                    isFocused: focused, columned: workspace.columns.count > 1)
+        Group {
+            // Out in the floating window. The slot is kept and a placeholder
+            // drawn in it, so popping out doesn't reshuffle the arrangement and
+            // popping back in doesn't reshuffle it again.
+            if workspace.poppedOut == session.id {
+                PoppedOutColumn(session: session, workspace: workspace)
+            } else {
+                SessionView(session: session, workspace: workspace,
+                            isFocused: focused, columned: workspace.columns.count > 1)
+            }
+        }
             // Rebuild on identity change, or the transcript's scroll position
             // and the composer's draft leak across sessions.
             .id(session.id)
@@ -990,6 +990,10 @@ private struct SessionRow: View {
         Button("Open Beside") { workspace.openBeside(session.id) }
             .disabled(workspace.columns.count >= Workspace.maxColumns
                       || workspace.isOnScreen(session.id))
+        // One window, so popping out a second conversation moves it rather than
+        // opening another — which the label has to say, or the item reads as
+        // doing nothing to the one already out there.
+        Button(popOutTitle) { popOut() }
         Divider()
         Button("Rename") { beginRename() }
         // Phrased as what it does to the agent, not as a setting name. "Isolate
@@ -1006,6 +1010,7 @@ private struct SessionRow: View {
     private var moreButton: some View {
         PopoverMenu(width: 210, choices: [
             PopoverChoice(title: "Open Beside") { workspace.openBeside(session.id) },
+            PopoverChoice(title: popOutTitle) { popOut() },
             PopoverChoice(title: "Rename") { beginRename() },
             PopoverChoice(title: session.isolated
                           ? "Stop Isolating" : "Isolate to This Folder") {
@@ -1025,6 +1030,18 @@ private struct SessionRow: View {
                 .contentShape(Rectangle())
         }
         .help("Session options")
+    }
+
+    private var popOutTitle: String {
+        workspace.poppedOut == session.id ? "Bring Back from Pop-Out" : "Pop Out"
+    }
+
+    private func popOut() {
+        if workspace.poppedOut == session.id {
+            workspace.popIn()
+        } else {
+            workspace.popOut(session.id)
+        }
     }
 
     private func beginRename() {
@@ -1287,6 +1304,9 @@ struct StatusRail: View {
     var compact = false
 
     @EnvironmentObject private var background: BackgroundStore
+    /// Only for the pop-out row below, which is a question about where this
+    /// conversation lives rather than about the session itself.
+    @EnvironmentObject private var workspace: Workspace
     @AppStorage("transcript.mode") private var mode = TranscriptMode.normal
     @State private var showingChanges = false
     @State private var showingViewMenu = false
@@ -1391,7 +1411,7 @@ struct StatusRail: View {
             // Summarised once, when the menu opens.
             let changes = currentChanges()
             VStack(alignment: .leading, spacing: 0) {
-                sectionHeader("Panels")
+                PopoverHeader("Panels")
                 PopoverRow(title: "Browser",
                            blurb: session.devServer.map { server in
                                "Dev server on " + (server.host ?? "")
@@ -1421,8 +1441,22 @@ struct StatusRail: View {
                 .disabled(changes.isEmpty)
                 .opacity(changes.isEmpty ? 0.5 : 1)
 
+                // The discoverable way in. The row menus carry it too, but a
+                // context menu is not an affordance — and this corner is
+                // already where you go to decide what you're looking at.
+                PopoverRow(title: "Pop Out",
+                           blurb: "A small window that stays above other apps",
+                           selected: workspace.poppedOut == session.id) {
+                    showingViewMenu = false
+                    if workspace.poppedOut == session.id {
+                        workspace.popIn()
+                    } else {
+                        workspace.popOut(session.id)
+                    }
+                }
+
                 Divider().overlay(Theme.rule).padding(.vertical, Theme.s2)
-                sectionHeader("Transcript detail")
+                PopoverHeader("Transcript detail")
                 ForEach(TranscriptMode.allCases) { option in
                     PopoverRow(title: option.title, blurb: option.blurb,
                                selected: mode == option) {
@@ -1432,11 +1466,11 @@ struct StatusRail: View {
                 }
 
                 Divider().overlay(Theme.rule).padding(.vertical, Theme.s2)
-                sectionHeader("GitHub account")
+                PopoverHeader("GitHub account")
                 gitHubAccountRows
 
                 Divider().overlay(Theme.rule).padding(.vertical, Theme.s2)
-                sectionHeader("Azure account")
+                PopoverHeader("Azure account")
                 azureAccountRows
             }
             .padding(.vertical, Theme.s3)
@@ -1569,17 +1603,26 @@ struct StatusRail: View {
     }
 
     private func select(_ account: AzureAccount) async {
-        azureFailure = nil
+        await switchAccount(perform: { try AzureAuth.select(account) },
+                            reload: loadAzureAccounts) { azureFailure = $0 }
+    }
+
+    /// Switch, then re-read rather than assume.
+    ///
+    /// The CLI is the record here, not this list — reading it back is what
+    /// keeps the tick honest if the switch half-worked.
+    private func switchAccount(perform: @escaping @Sendable () throws -> Void,
+                               reload: () async -> Void,
+                               failure: (String?) -> Void) async {
+        failure(nil)
         do {
-            try await Task.detached(priority: .userInitiated) {
-                try AzureAuth.select(account)
-            }.value
-            await loadAzureAccounts()
+            try await Task.detached(priority: .userInitiated) { try perform() }.value
+            await reload()
             showingViewMenu = false
         } catch {
-            azureFailure = (error as? CommandFailure)?.detail
-                ?? error.localizedDescription
-            await loadAzureAccounts()
+            failure((error as? CommandFailure)?.detail
+                ?? error.localizedDescription)
+            await reload()
         }
     }
 
@@ -1591,23 +1634,9 @@ struct StatusRail: View {
         gitHubLoaded = true
     }
 
-    /// Switch, then re-read rather than assume.
-    ///
-    /// `gh` is the record here, not this list — reading it back is what keeps
-    /// the tick honest if the switch half-worked.
     private func select(_ account: GitHubAccount) async {
-        gitHubFailure = nil
-        do {
-            try await Task.detached(priority: .userInitiated) {
-                try GitHubAuth.select(account)
-            }.value
-            await loadGitHubAccounts()
-            showingViewMenu = false
-        } catch {
-            gitHubFailure = (error as? CommandFailure)?.detail
-                ?? error.localizedDescription
-            await loadGitHubAccounts()
-        }
+        await switchAccount(perform: { try GitHubAuth.select(account) },
+                            reload: loadGitHubAccounts) { gitHubFailure = $0 }
     }
 
     /// The mode, and who you're signed in as once that's known — which is only
@@ -1621,15 +1650,6 @@ struct StatusRail: View {
             lines.append("Azure: \(azure)")
         }
         return lines.joined(separator: "\n")
-    }
-
-    private func sectionHeader(_ text: String) -> some View {
-        Text(text)
-            .font(Theme.label)
-            .foregroundStyle(.tertiary)
-            .padding(.horizontal, Theme.s5)
-            .padding(.top, Theme.s2)
-            .padding(.bottom, Theme.s3)
     }
 }
 

@@ -422,9 +422,7 @@ final class AgentStore: ObservableObject {
     }
 
     private static func stamp(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm"
-        return formatter.string(from: date)
+        RateLimit.clock.string(from: date)
     }
 
     /// The line at the top of a run, saying who started it and under what.

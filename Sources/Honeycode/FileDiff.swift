@@ -167,7 +167,6 @@ struct FileDiffView: View {
 
     @Environment(\.proseScale) private var scale
     @Environment(\.colorScheme) private var scheme
-    @State private var hovering = false
     @State private var highlighted: [AttributedString]?
     /// Nil until the first layout decides. A plain `false` default would show
     /// the diff for one frame before flipping to the preview, which reads as a
@@ -176,6 +175,8 @@ struct FileDiffView: View {
     @State private var measured: CGFloat?
     /// Whether a superseded card has been opened again.
     @State private var unfolded = false
+    /// Whether this card is drawing every row it has, rather than the head.
+    @State private var wholeDiff = false
 
     private func previewing(_ markup: String?) -> Bool {
         opensRendered(markup) && !(showingSource ?? false)
@@ -220,7 +221,7 @@ struct FileDiffView: View {
                     // says so without hiding what was going to happen. A *failed*
                     // edit is left at full strength — the agent tried, so what it
                     // tried is worth reading.
-                    .opacity(state.isRefused ? 0.45 : 1)
+                    .opacity(state.isDeclined ? 0.45 : 1)
             }
             }
         }
@@ -307,7 +308,7 @@ struct FileDiffView: View {
                 .lineLimit(1)
                 .truncationMode(.head)
                 .foregroundStyle(.secondary)
-                .strikethrough(state.isRefused, color: .secondary)
+                .strikethrough(state.isDeclined, color: .secondary)
 
             Spacer(minLength: 8)
 
@@ -340,10 +341,14 @@ struct FileDiffView: View {
             // Showing a change to a file and offering no way to look at the
             // file left you copying the path out to a terminal — the exact
             // errand this app exists to remove.
-            if hovering {
-                FileActionButtons(url: FileActions.resolve(file))
-                    .transition(.opacity)
-            }
+            //
+            // Shown always, not on hover. These sit in a row that already has
+            // two permanent buttons next to them, so revealing them on hover
+            // didn't hide anything — it shifted the ones already there
+            // sideways every time the pointer crossed the card, and made a
+            // control you can't see until you go looking for it out of a
+            // control that was already paid for in space.
+            FileActionButtons(url: FileActions.resolve(file), style: .bare)
 
             if state.isDeclined || state.isFailed {
                 Text(state.isDeclined ? "Declined" : "Failed")
@@ -370,41 +375,85 @@ struct FileDiffView: View {
         .contentShape(Rectangle())
         .onTapGesture { if superseded { unfolded.toggle() } }
         .help(superseded ? "An earlier edit to this file — click to see what changed" : "")
-        .onHover { hovering = $0 }
-        .animation(Motion.reveal, value: hovering)
     }
 
+    /// How many rows a card draws before it stops and offers the rest.
+    ///
+    /// This is the transcript's single biggest source of views, and the reason
+    /// every mode but Summary scrolled badly. Summary hides ordinary diffs
+    /// outright, so it never pays for them; the other three drew every row of
+    /// every edit in the conversation, and each row is four `Text`s with
+    /// selection enabled on the one that matters. A session with forty edits
+    /// averaging a hundred rows is sixteen thousand text views standing in an
+    /// eager stack — all built, all measured, all hit-tested as the pointer
+    /// crosses them. That is the lag, and it is linear in how much the agent has
+    /// edited rather than in anything on screen.
+    ///
+    /// Eighty is about two screens of diff: enough that the overwhelming
+    /// majority of edits are shown whole and nothing changes for them, and the
+    /// ones that aren't are the ones nobody reads line by line in a chat
+    /// transcript anyway. The rest is one click away, and it's the card you
+    /// clicked that pays for it rather than all forty at once.
+    private static let rowCap = 80
+
     private func body(for rows: [DiffRow]) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // Enumerated, because the highlighted line for a row is found by
-            // position. Looking that position up with `firstIndex(where:)` per
-            // row made rendering a 400-line diff a quadratic scan — around
-            // 160,000 comparisons — on every redraw, and `ForEach` already
-            // knows the answer.
-            ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
-                // firstTextBaseline, not centre: a line that wraps to four
-                // visual rows would otherwise float its number against the
-                // middle of the block, and the gutter stops meaning anything.
-                HStack(alignment: .firstTextBaseline, spacing: 0) {
-                    gutter(row.old)
-                    gutter(row.new)
-                    Text(sign(row.kind))
-                        .font(Theme.monoSmall)
-                        .foregroundStyle(.tertiary)
-                        .frame(width: 14)
-                    text(for: row, at: index)
-                        .font(.system(size: 12 * scale, design: .monospaced))
-                        .foregroundStyle(row.kind == .context ? .secondary : .primary)
-                        .textSelection(.enabled)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.trailing, 10)
-                }
-                .padding(.vertical, 1.5)
-                .background(background(row.kind))
+        // Drawn by index rather than by enumerating into an array, because the
+        // highlighted line for a row is found by position — looking that
+        // position up with `firstIndex(where:)` per row made rendering a
+        // 400-line diff a quadratic scan on every redraw — and because a range
+        // needs no allocation to iterate, where `Array(rows.enumerated())` built
+        // and threw away a parallel array of every row each time.
+        let limit = wholeDiff ? rows.count : min(rows.count, Self.rowCap)
+        return VStack(alignment: .leading, spacing: 0) {
+            ForEach(0..<limit, id: \.self) { index in
+                line(rows[index], at: index)
             }
+            if limit < rows.count { more(rows.count - limit) }
         }
         .padding(.vertical, 5)
+    }
+
+    private func line(_ row: DiffRow, at index: Int) -> some View {
+        // firstTextBaseline, not centre: a line that wraps to four
+        // visual rows would otherwise float its number against the
+        // middle of the block, and the gutter stops meaning anything.
+        HStack(alignment: .firstTextBaseline, spacing: 0) {
+            gutter(row.old)
+            gutter(row.new)
+            Text(sign(row.kind))
+                .font(Theme.monoSmall)
+                .foregroundStyle(.tertiary)
+                .frame(width: 14)
+            text(for: row, at: index)
+                .font(.system(size: 12 * scale, design: .monospaced))
+                .foregroundStyle(row.kind == .context ? .secondary : .primary)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.trailing, 10)
+        }
+        .padding(.vertical, 1.5)
+        .background(background(row.kind))
+    }
+
+    /// The line that says what isn't being shown.
+    ///
+    /// It says how many, because "…" in the middle of a diff is indistinguishable
+    /// from the gap the context trimmer already leaves between hunks — and those
+    /// two mean very different things about what you're looking at.
+    private func more(_ hidden: Int) -> some View {
+        Button {
+            wholeDiff = true
+        } label: {
+            Text("Show \(hidden) more line\(hidden == 1 ? "" : "s")")
+                .font(.system(size: 10.5, weight: .medium))
+                .foregroundStyle(.tertiary)
+                .padding(.horizontal, 11)
+                .padding(.vertical, 6)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     /// Highlighted where possible.

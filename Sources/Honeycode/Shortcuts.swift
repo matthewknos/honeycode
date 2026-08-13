@@ -43,6 +43,11 @@ enum Shortcuts {
     static let previousColumn = Shortcut("Focus previous column", .leftArrow,
                                          [.command, .option], "⌘⌥←")
 
+    /// The focused conversation, into the floating window that stays above
+    /// other apps — and back again on a second press.
+    static let popOut = Shortcut("Pop out the conversation", "p",
+                                 [.command, .shift], "⌘⇧P")
+
     /// Sends whatever you last copied. The transcript's own selection can't be
     /// read — SwiftUI exposes no hook into it — so copying is the step that
     /// turns a selection into something this can act on. See `Relay`.
@@ -74,6 +79,6 @@ enum Shortcuts {
     ]
 
     static let columns: [Shortcut] = [
-        openBeside, closeColumn, nextColumn, previousColumn, sendTo,
+        openBeside, closeColumn, nextColumn, previousColumn, popOut, sendTo,
     ]
 }

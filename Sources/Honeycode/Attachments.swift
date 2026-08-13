@@ -176,13 +176,7 @@ private struct ImageAttachment: View {
                 // especially — they're crisp at any size, so there's no reason
                 // to make you open them in another app to read the labels.
                 Button { expanded = true } label: {
-                    Image(systemName: "arrow.up.left.and.arrow.down.right")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 20, height: 20)
-                        .background(Theme.surface, in: Circle())
-                        .overlay(Circle().strokeBorder(Theme.rule, lineWidth: 1))
-                        .contentShape(Circle())
+                    IconChip(symbol: "arrow.up.left.and.arrow.down.right")
                 }
                 .buttonStyle(.plain)
                 .help("Expand")
@@ -289,29 +283,55 @@ enum FileActions {
     }
 }
 
-struct FileActionButtons: View {
-    let url: URL
+/// A glyph on a raised circular chip — the small icon button used beside
+/// images, file cards and prose, shared so the chips all match.
+struct IconChip: View {
+    let symbol: String
+    var weight: Font.Weight = .medium
+    var diameter: CGFloat = 20
 
     var body: some View {
-        HStack(spacing: Theme.s2) {
+        Image(systemName: symbol)
+            .font(.system(size: 10, weight: weight))
+            .foregroundStyle(.secondary)
+            .frame(width: diameter, height: diameter)
+            .background(Theme.surface, in: Circle())
+            .overlay(Circle().strokeBorder(Theme.rule, lineWidth: 1))
+            .contentShape(Circle())
+    }
+}
+
+struct FileActionButtons: View {
+    let url: URL
+    /// Chipped or bare.
+    ///
+    /// The circle isn't decoration — over an image thumbnail it's the only
+    /// thing keeping a grey glyph legible against whatever pixels are behind
+    /// it. In a header row there's nothing to be legible against, and a chip
+    /// sitting beside the bare glyphs of `ArtifactButtons` reads as two
+    /// different classes of control when they're the same class of control.
+    var style: Style = .chip
+
+    enum Style { case chip, bare }
+
+    var body: some View {
+        HStack(spacing: style == .chip ? Theme.s2 : 6) {
             button("arrow.up.forward.app", "Open") { FileActions.open(url) }
             button("folder", "Reveal in Finder") { FileActions.reveal(url) }
         }
     }
 
+    @ViewBuilder
     private func button(_ symbol: String, _ label: String,
                         action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(.secondary)
-                .frame(width: 20, height: 20)
-                .background(Theme.surface, in: Circle())
-                .overlay(Circle().strokeBorder(Theme.rule, lineWidth: 1))
-                .contentShape(Circle())
+        switch style {
+        case .chip:
+            Button(action: action) { IconChip(symbol: symbol) }
+                .buttonStyle(.plain)
+                .help(label)
+        case .bare:
+            CodeBlock.iconButton(symbol, label, action: action)
         }
-        .buttonStyle(.plain)
-        .help(label)
     }
 }
 

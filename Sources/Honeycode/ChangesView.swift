@@ -39,7 +39,7 @@ enum Changes {
             // header state "+120 −40" for changes that were declined and never
             // reached disk, and the same wrong numbers went into the
             // pull-request description.
-            if state.isRefused {
+            if state.isDeclined {
                 byFile[file]?.refused = true
             } else {
                 byFile[file]?.added += rows.count { $0.kind == .add }

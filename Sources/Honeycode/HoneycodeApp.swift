@@ -156,6 +156,23 @@ struct HoneycodeApp: App {
                                   modifiers: Shortcuts.closeColumn.modifiers)
                 .disabled(workspace.columns.count < 2)
 
+                // One title for both directions, because it's one window and
+                // one key: press it on the conversation that's already out
+                // there and it comes back.
+                Button(workspace.selection != nil
+                       && workspace.poppedOut == workspace.selection
+                       ? "Bring Back" : "Pop Out") {
+                    guard let id = workspace.selection else { return }
+                    if workspace.poppedOut == id {
+                        workspace.popIn()
+                    } else {
+                        workspace.popOut(id)
+                    }
+                }
+                .keyboardShortcut(Shortcuts.popOut.key,
+                                  modifiers: Shortcuts.popOut.modifiers)
+                .disabled(workspace.selected == nil)
+
                 Button("Focus Next Column") { workspace.focusColumn(by: 1) }
                     .keyboardShortcut(Shortcuts.nextColumn.key,
                                       modifiers: Shortcuts.nextColumn.modifiers)

@@ -243,8 +243,6 @@ enum ToolState: Codable, Sendable, Equatable {
     var isApplied: Bool { if case .applied = self { return true }; return false }
     var isDeclined: Bool { if case .declined = self { return true }; return false }
     var isFailed: Bool { if case .failed = self { return true }; return false }
-    /// Struck through and dimmed — the change never happened.
-    var isRefused: Bool { isDeclined }
 
     var message: String? {
         switch self {
@@ -864,7 +862,13 @@ final class Session: ObservableObject, Identifiable {
         // Restored so the readouts are right before the first turn of a resumed
         // session, rather than blank until it next reports.
         if let used = snapshot.contextUsed, let window = snapshot.contextWindow {
-            context = ContextUsage(used: used, window: window)
+            // Clamped, because sessions written before the occupancy fix hold
+            // a turn-total rather than a prompt size — one of them recorded
+            // 14,071,235 against a 1,000,000 window. Left alone those restore
+            // as a meter reading 1,407%, and the first correct figure only
+            // arrives after the next turn ends. A full window is the honest
+            // reading of "more than a full window" in the meantime.
+            context = ContextUsage(used: min(used, window), window: window)
         }
 
         // A transcript saved mid-turn can carry an unclosed reasoning block,
@@ -1251,8 +1255,6 @@ final class Session: ObservableObject, Identifiable {
         clearQueue()
         adapter.interrupt()
     }
-    func shutdown() { adapter.interrupt() }
-
     /// Shut a session down and let go of it *later*.
     ///
     /// The adapters hold their session `unowned` — deliberately, since the
@@ -1267,11 +1269,11 @@ final class Session: ObservableObject, Identifiable {
     /// did. Parking the reference for a moment costs an idle object for a
     /// second and makes the ordering explicit rather than lucky.
     ///
-    /// Everything that discards a session goes through here rather than calling
-    /// `shutdown()` and releasing: a throwaway finishing its turn, one timing
-    /// out, and a real session being deleted.
+    /// Everything that discards a session goes through here rather than
+    /// interrupting the adapter and releasing: a throwaway finishing its turn,
+    /// one timing out, and a real session being deleted.
     func retire() {
-        shutdown()
+        adapter.interrupt()
         DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
             withExtendedLifetime(self) {}
         }
@@ -1558,6 +1560,22 @@ final class Workspace: ObservableObject {
         }
     }
 
+    /// The conversation in the floating window, if any.
+    ///
+    /// One at a time, deliberately. The pop-out exists to be watched while
+    /// you're doing something else, and three overlapping always-on-top windows
+    /// over the thing you were trying to look at is the opposite of that.
+    ///
+    /// Its column is *kept*, and draws a placeholder — see `SessionColumns`.
+    /// Removing it would reshuffle the arrangement on the way out and again on
+    /// the way back, and leave a session that's on screen with no home to
+    /// return to.
+    @Published var poppedOut: Session.ID? {
+        didSet {
+            UserDefaults.standard.set(poppedOut?.uuidString, forKey: Self.poppedOutKey)
+        }
+    }
+
     /// Three, and the reason is width rather than taste.
     ///
     /// A column narrower than `minColumnWidth` can't hold a composer with a
@@ -1621,6 +1639,26 @@ final class Workspace: ObservableObject {
         if selection == id { selection = columns[min(index, columns.count - 1)] }
     }
 
+    /// Send a session to the floating window.
+    ///
+    /// It also takes the keyboard, because popping out is a statement about
+    /// which conversation you're in — and the placeholder it leaves behind has
+    /// nothing to focus.
+    func popOut(_ id: Session.ID) {
+        guard sessions.contains(where: { $0.id == id }) else { return }
+        poppedOut = id
+        selection = id
+    }
+
+    /// Bring it back, into the column it left if that column is still there and
+    /// into a new one otherwise — popping out from the sidebar doesn't require
+    /// the session to have been on screen first.
+    func popIn() {
+        guard let id = poppedOut else { return }
+        poppedOut = nil
+        reveal(id)
+    }
+
     /// Move the keyboard one column left or right. Doesn't wrap: the ends are
     /// the ends, and wrapping in a three-item row reads as a jump.
     func focusColumn(by offset: Int) {
@@ -1670,6 +1708,7 @@ final class Workspace: ObservableObject {
     private static let selectionKey = "bench.selection"
     private static let collapsedKey = "bench.collapsed"
     private static let columnsKey = "bench.columns"
+    private static let poppedOutKey = "bench.poppedOut"
 
     init() {
         // Whichever store is built first pulls the old app's data across. It
@@ -1714,6 +1753,12 @@ final class Workspace: ObservableObject {
         selection = sessions.contains { $0.id == remembered } ? remembered : sessions.first?.id
         collapsed = Set((UserDefaults.standard.stringArray(forKey: Self.collapsedKey) ?? [])
             .compactMap(Account.init(rawValue:)))
+        // The floating window comes back with the arrangement, for the same
+        // reason the columns do: where you left a conversation is part of where
+        // you left off. A session deleted since simply doesn't reopen.
+        poppedOut = UserDefaults.standard.string(forKey: Self.poppedOutKey)
+            .flatMap(UUID.init(uuidString:))
+            .flatMap { id in sessions.contains { $0.id == id } ? id : nil }
 
         // Only the transcripts about to be drawn are read on this thread. The
         // rest arrive from `hydrateRemaining` a moment after the window is up.
@@ -1873,6 +1918,8 @@ final class Workspace: ObservableObject {
         // didSet repairs the column list, and it can only do that correctly
         // once the deleted session is no longer in it.
         columns.removeAll { $0 == session.id }
+        // The floating window is showing a conversation that no longer exists.
+        if poppedOut == session.id { poppedOut = nil }
         if selection == session.id { selection = columns.first ?? sessions.first?.id }
         save()
     }

@@ -154,6 +154,18 @@ final class ClaudeAdapter: AgentAdapter {
     private var launchedResuming = false
     private var sawContent = false
     private var resumeFallbackUsed = false
+    /// The largest prompt any single API call in the current turn sent.
+    ///
+    /// Reset per turn rather than kept for the session, because occupancy
+    /// falls as well as rises: a compaction is precisely the moment the number
+    /// should drop, and a session-wide maximum would hold the pre-compaction
+    /// figure for the rest of the conversation.
+    private var lastPromptTokens = 0
+    /// Whether a turn is open on the wire — set when one is written, cleared by
+    /// the `result` frame that ends it. See `send`.
+    private var turnInFlight = false
+    /// Messages typed while a turn was open, in order, waiting for it to end.
+    private var held: [String] = []
     /// The turn in flight, kept so it can be replayed if the resume was stale.
     private var pendingTurn: String?
     private var buffer = Data()
@@ -207,6 +219,17 @@ final class ClaudeAdapter: AgentAdapter {
         teardown()
     }
 
+    /// Killing the process ends the turn, whatever the reason for killing it.
+    ///
+    /// Clearing the turn used to be each caller's job, and two callers didn't
+    /// do it: `restart()` and `reset()`. Change the model, the effort or the
+    /// isolation lock mid-turn — or toggle permissions, which restarts every
+    /// adapter in the app at once — and the process died with `isRunning` still
+    /// true. Nothing was left that could put it back: the termination handler is
+    /// unhooked two lines above, before the kill, so the crash path never ran,
+    /// and `endTurn` can't arrive from a process that no longer exists. The
+    /// session sat on "Working…" indefinitely, and `Session.send` queued every
+    /// later message behind a turn that had already died.
     private func teardown() {
         outPipe.fileHandleForReading.readabilityHandler = nil
         process.terminationHandler = nil
@@ -216,6 +239,13 @@ final class ClaudeAdapter: AgentAdapter {
         inPipe = Pipe(); outPipe = Pipe(); errPipe = Pipe()
         lock.lock(); buffer = Data(); lock.unlock()
         started = false
+        // A `turnInFlight` left set is worse than the bug it guards against:
+        // every later message would be held for a turn that can no longer end,
+        // and the session would go mute permanently rather than once. Held
+        // messages go with it — they were waiting on the turn this just killed.
+        turnInFlight = false
+        held.removeAll()
+        DispatchQueue.main.async { self.session.isRunning = false }
     }
 
     // MARK: Lifecycle
@@ -325,7 +355,6 @@ final class ClaudeAdapter: AgentAdapter {
                     self.recoverFromStaleResume()
                     return
                 }
-                self.session.isRunning = false
                 if proc.terminationStatus != 0 {
                     self.session.items.append(.notice(id: UUID(), text:
                         text.isEmpty ? "claude exited unexpectedly." : text))
@@ -394,8 +423,42 @@ final class ClaudeAdapter: AgentAdapter {
 
     // MARK: Sending
 
+    /// Write a turn, or hold it until the one in flight finishes.
+    ///
+    /// **The CLI silently discards input written mid-turn.** Verified against
+    /// 2.1.220: a turn written to stdin eight seconds into a long turn was
+    /// never acknowledged — the first turn completed normally and the second
+    /// produced no `result`, no error, nothing, for as long as the process was
+    /// left running. It is not queued and it is not rejected; it is dropped.
+    ///
+    /// `Session.send` already holds messages while `isRunning`, and that is the
+    /// guard that should normally do this job. This one exists because that
+    /// guard is only as good as `isRunning`, which lives on the other side of a
+    /// hop to the main queue and is set from several places — and the cost of
+    /// it being wrong once is a message the user watched land in the transcript
+    /// and never get answered, with nothing on screen to say so. The adapter
+    /// knows for itself whether a turn is open, so it can refuse to write into
+    /// the window where writes go nowhere.
     func send(_ text: String) {
+        guard !turnInFlight else {
+            held.append(text)
+            return
+        }
+        turnInFlight = true
+        write(text)
+    }
+
+    /// The next held message, if the turn that just ended left one waiting.
+    private func flushHeld() {
+        guard !held.isEmpty else { return }
+        let next = held.removeFirst()
+        turnInFlight = true
+        write(next)
+    }
+
+    private func write(_ text: String) {
         pendingTurn = text
+        lastPromptTokens = 0
         guard startIfNeeded() else { return }
         DispatchQueue.main.async { self.session.isRunning = true }
 
@@ -424,13 +487,17 @@ final class ClaudeAdapter: AgentAdapter {
         pendingTurn = nil
         teardown()
         DispatchQueue.main.async {
-            self.session.isRunning = false
             self.session.append(.notice(id: UUID(), text: reason))
         }
     }
 
     func interrupt() {
-        guard started else { return }
+        // Deliberately not guarded on `started`. Stop has to work when the
+        // process is *already* gone, which is exactly the case a restart
+        // mid-turn leaves behind: returning early there meant neither Esc nor
+        // the stop button could clear the spinner, and the session was wedged
+        // until the app was relaunched.
+        //
         // Land whatever the pacer is still holding: it's text the model
         // actually produced, and dropping it would make a stop look like it
         // rewound the reply.
@@ -446,8 +513,11 @@ final class ClaudeAdapter: AgentAdapter {
         // A finer-grained mid-turn interrupt needs the control protocol, which
         // isn't wired up here.
         pendingTurn = nil
+        // `teardown` clears the turn, the held messages and the spinner.
+        // Dropping what was queued is the right reading of a stop, and matches
+        // `Session.stop`: you interrupted the thing those messages were waiting
+        // on, so sending them anyway is the opposite of stopping.
         teardown()
-        DispatchQueue.main.async { self.session.isRunning = false }
     }
 
     // MARK: Reading
@@ -487,7 +557,7 @@ final class ClaudeAdapter: AgentAdapter {
             // The init frame advertises the whole surface — commands, skills,
             // sub-agents, MCP servers — and every bit of it was being dropped
             // on the floor by the `default` below.
-            let slash = (json["slash_commands"] as? [String] ?? []).map { $0 }
+            let slash = json["slash_commands"] as? [String] ?? []
             let skills = Set(json["skills"] as? [String] ?? [])
             let commands = slash.map {
                 AgentCommand(name: $0, isSkill: skills.contains($0))
@@ -528,6 +598,12 @@ final class ClaudeAdapter: AgentAdapter {
         case "assistant":
             guard let message = json["message"] as? [String: Any],
                   let content = message["content"] as? [[String: Any]] else { return }
+
+            // Occupancy is read here, per API call — not from the `result`
+            // frame, which totals them. See `promptTokens`.
+            if let used = Self.promptTokens(message["usage"]) {
+                lastPromptTokens = max(lastPromptTokens, used)
+            }
             for block in content where block["type"] as? String == "tool_use" {
                 let name = block["name"] as? String ?? "Tool"
                 let input = block["input"] as? [String: Any] ?? [:]
@@ -628,20 +704,33 @@ final class ClaudeAdapter: AgentAdapter {
                 return
             }
 
-            // How full the window is, from the turn's own accounting: the
-            // prompt Claude just sent is everything it still remembers.
-            let context = Self.context(json)
+            // How full the window is: the largest prompt any single call in
+            // this turn sent, against the window the result frame names.
+            let used = lastPromptTokens
+            let context = Self.window(json).flatMap { window in
+                used > 0 ? ContextUsage(used: min(used, window), window: window) : nil
+            }
 
             pendingTurn = nil
             // Land the tail of the reply before the turn is marked done,
             // otherwise the last batch arrives after the caret is removed.
             DispatchQueue.main.async { self.deltas.flush() }
             DispatchQueue.main.async {
+                // Cleared here rather than on the reader thread: `send` runs on
+                // the main queue, so keeping every access to `turnInFlight` and
+                // `held` on that one queue is what makes them safe to touch
+                // without a lock. A send arriving in the gap is held, and the
+                // flush two lines down picks it straight back up.
+                self.turnInFlight = false
                 if failed, !errors.isEmpty {
                     self.session.append(.notice(id: UUID(), text: errors))
                 }
                 if let context { self.session.context = context }
                 self.session.endTurn(cost: cost)
+                // After `endTurn`, so anything held goes out against a session
+                // that has already been marked idle — and so the transcript
+                // shows the finished reply before the next question opens.
+                self.flushHeld()
             }
 
         default:
@@ -656,6 +745,10 @@ final class ClaudeAdapter: AgentAdapter {
     private func recoverFromStaleResume() {
         resumeFallbackUsed = true
         session.hasStarted = false
+        // The `result` that brought us here returned before the turn was marked
+        // closed. `teardown` clears it, which is what lets the replay below go
+        // through `send` — otherwise it would hold the very turn it is retrying,
+        // waiting on one that has already failed.
         teardown()
         if !session.items.isEmpty {
             session.append(.notice(id: UUID(), text:
@@ -690,22 +783,43 @@ final class ClaudeAdapter: AgentAdapter {
         onMain { self.session.append(item) }
     }
 
-    /// Context occupancy from a `result` frame.
+    /// The prompt size of a single API call.
     ///
     /// The three input figures together *are* the prompt — fresh tokens, tokens
     /// written to cache, and tokens read back from it — so their sum is what
-    /// the model was holding. `modelUsage` carries the window size per model,
-    /// which is the only place it's stated.
-    private static func context(_ json: [String: Any]) -> ContextUsage? {
-        guard let usage = json["usage"] as? [String: Any] else { return nil }
+    /// the model was holding for that one call.
+    private static func promptTokens(_ raw: Any?) -> Int? {
+        guard let usage = raw as? [String: Any] else { return nil }
         let used = (usage["input_tokens"] as? Int ?? 0)
             + (usage["cache_creation_input_tokens"] as? Int ?? 0)
             + (usage["cache_read_input_tokens"] as? Int ?? 0)
+        return used > 0 ? used : nil
+    }
 
+    /// Context occupancy for the turn that just ended.
+    ///
+    /// The `used` figure comes from the assistant frames, not from here, and
+    /// that distinction is the whole point of this comment.
+    ///
+    /// A `result` frame's `usage` is the turn's *total* across every API call
+    /// it took — and an agentic turn is one call per tool round-trip, each of
+    /// which re-reads the entire cached prefix. So `cache_read_input_tokens`
+    /// gets counted again for every tool the agent ran. Measured on a
+    /// six-tool turn: each assistant frame reported ~24,000 tokens of prompt,
+    /// the seven of them summing to the 168,429 the `result` frame declared.
+    /// Reading occupancy from here therefore overstated it by roughly the
+    /// round-trip count, which is how a session on a 1,000,000-token window
+    /// came to have 14,071,235 recorded against it.
+    ///
+    /// The largest single call is the right answer: the prompt only grows
+    /// within a turn, so the last one holds everything the model still had.
+    ///
+    /// `modelUsage` is still read from here — the window size per model is
+    /// stated nowhere else in the stream.
+    private static func window(_ json: [String: Any]) -> Int? {
         let models = json["modelUsage"] as? [String: [String: Any]] ?? [:]
         let window = models.values.compactMap { $0["contextWindow"] as? Int }.max() ?? 0
-        guard used > 0, window > 0 else { return nil }
-        return ContextUsage(used: used, window: window)
+        return window > 0 ? window : nil
     }
 
     /// Refusal or failure?

@@ -430,6 +430,28 @@ struct HoverCapsule: ButtonStyle {
     }
 }
 
+/// The tertiary caption above a run of popover rows — one view, so the
+/// headers in every popover match.
+struct PopoverHeader: View {
+    let text: String
+    /// Zero where the container's own padding already clears the top.
+    var top: CGFloat = Theme.s2
+
+    init(_ text: String, top: CGFloat = Theme.s2) {
+        self.text = text
+        self.top = top
+    }
+
+    var body: some View {
+        Text(text)
+            .font(Theme.label)
+            .foregroundStyle(.tertiary)
+            .padding(.horizontal, Theme.s5)
+            .padding(.top, top)
+            .padding(.bottom, Theme.s3)
+    }
+}
+
 /// One entry in a `PopoverMenu`.
 struct PopoverChoice: Identifiable {
     let title: String
@@ -461,12 +483,7 @@ struct PopoverMenu<Label: View>: View {
             .popover(isPresented: $showing, arrowEdge: .bottom) {
                 VStack(alignment: .leading, spacing: 0) {
                     if let header {
-                        Text(header)
-                            .font(Theme.label)
-                            .foregroundStyle(.tertiary)
-                            .padding(.horizontal, Theme.s5)
-                            .padding(.top, Theme.s2)
-                            .padding(.bottom, Theme.s3)
+                        PopoverHeader(header)
                     }
                     ForEach(choices) { choice in
                         PopoverRow(title: choice.title,

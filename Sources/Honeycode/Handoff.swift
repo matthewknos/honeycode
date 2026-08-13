@@ -146,15 +146,9 @@ struct HandoffMenu: View {
 
     var body: some View {
         Button { showing.toggle() } label: {
-            Image(systemName: "arrow.turn.up.right")
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(.secondary)
-                .frame(width: 22, height: 22)
-                // A chip behind it: this sits beside prose, and a bare glyph
-                // against a sentence reads as a smudge rather than a control.
-                .background(Theme.surface, in: Circle())
-                .overlay(Circle().strokeBorder(Theme.rule, lineWidth: 1))
-                .contentShape(Circle())
+            // A chip behind it: this sits beside prose, and a bare glyph
+            // against a sentence reads as a smudge rather than a control.
+            IconChip(symbol: "arrow.turn.up.right", weight: .semibold, diameter: 22)
         }
         .buttonStyle(.plain)
         .help(payload == nil

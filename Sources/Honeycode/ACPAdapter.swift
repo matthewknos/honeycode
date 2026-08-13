@@ -178,7 +178,6 @@ final class ACPAdapter: AgentAdapter {
                 // exception that Swift can't catch. Same gap as the Claude
                 // adapter had, with the same two consequences.
                 self.teardown()
-                self.session.isRunning = false
                 if proc.terminationStatus != 0 {
                     self.session.items.append(.notice(id: UUID(), text:
                         text.isEmpty ? "\(self.agent.displayName) exited unexpectedly." : text))
@@ -239,6 +238,12 @@ final class ACPAdapter: AgentAdapter {
         toolContent = [:]
         toolTarget = [:]
         started = false
+        // Killing the process ends the turn, and saying so here rather than at
+        // each call site is what stops a `reset()` mid-turn from leaving a
+        // spinner nothing can clear — the termination handler is unhooked
+        // before the kill, so it isn't coming to do it. Same fix, same reason,
+        // as the Claude adapter.
+        DispatchQueue.main.async { self.session.isRunning = false }
     }
 
     // MARK: Sending
@@ -308,8 +313,12 @@ final class ACPAdapter: AgentAdapter {
     }
 
     func interrupt() {
-        guard started else { return }
-        if let sessionID {
+        // The cancel needs a live process to go to; clearing the spinner does
+        // not, and must happen either way. Guarding the whole method on
+        // `started` meant a stop after the process was already gone did
+        // nothing at all, which is the one case where the user is pressing it
+        // because the session looks stuck.
+        if started, let sessionID {
             notify("session/cancel", params: ["sessionId": sessionID])
         }
         DispatchQueue.main.async { self.session.isRunning = false }

@@ -25,6 +25,20 @@ final class Program {
         crew.onIdle = { [weak self] in self?.prompt() }
     }
 
+    /// One message, printed, then out. `ai -p "…"`.
+    ///
+    /// The point of it is that it composes: a coding agent already sitting in a
+    /// terminal can hand work to the other subscriptions through the shell it
+    /// already has, with nothing to install, register or approve. Whatever an
+    /// organisation decides about agent-to-agent protocols later, running a
+    /// program stays allowed.
+    func once(_ text: String) {
+        Migration.run()
+        Support.prepare()
+        crew.onIdle = { exit(0) }
+        crew.submit(text)
+    }
+
     func run() {
         Migration.run()
         Support.prepare()
@@ -131,6 +145,20 @@ final class Program {
 
 // ctrl-c interrupts the run rather than killing the process — a crew mid-flight
 // has child processes to stop, and the default handler would orphan them.
+let arguments = Array(CommandLine.arguments.dropFirst())
+
+func usage() -> Never {
+    FileHandle.standardError.write(Data("""
+    usage: ai                      interactive
+           ai -p "<message>"       one message, printed, then exit
+
+    Name the agents in the message. The first one leads:
+      ai -p "a landing page for a dentist @claude-p @copilot:free @kimi"
+
+    """.utf8))
+    exit(2)
+}
+
 let program = MainActor.assumeIsolated {
     Program(directory: URL(fileURLWithPath: FileManager.default.currentDirectoryPath))
 }
@@ -139,5 +167,23 @@ let interrupts = DispatchSource.makeSignalSource(signal: SIGINT, queue: .main)
 interrupts.setEventHandler { MainActor.assumeIsolated { program.stop() } }
 interrupts.resume()
 
-MainActor.assumeIsolated { program.run() }
+switch arguments.first {
+case nil:
+    MainActor.assumeIsolated { program.run() }
+case "-p", "--print":
+    let message = arguments.dropFirst().joined(separator: " ")
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !message.isEmpty else { usage() }
+    MainActor.assumeIsolated { program.once(message) }
+case "-h", "--help":
+    usage()
+default:
+    // Bare words are the message, so `ai "do the thing @kimi"` works without
+    // the flag — the flag exists for the case where the message starts with
+    // something that looks like one.
+    let message = arguments.joined(separator: " ")
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !message.isEmpty, !message.hasPrefix("-") else { usage() }
+    MainActor.assumeIsolated { program.once(message) }
+}
 RunLoop.main.run()

@@ -1,5 +1,5 @@
 import Foundation
-import SwiftUI
+import Combine
 
 /// How much of the plan's allowance an account has spent.
 ///
@@ -55,7 +55,13 @@ final class UsageStore: ObservableObject {
     /// The cap to measure that against. Only meaningful for a usage-based seat,
     /// where the CLI reports no percentage because there's no per-user limit it
     /// knows about — the limit lives in the contract, so it has to be typed in.
-    @AppStorage("usage.monthlyCap") var monthlyCap: Double = 500
+    /// Read straight from defaults rather than through `@AppStorage`, which is
+    /// SwiftUI and so can't be here. No loss: the field that *writes* this key
+    /// lives in `SettingsView` and keeps its wrapper, and this side only ever
+    /// read it.
+    var monthlyCap: Double {
+        (UserDefaults.standard.object(forKey: "usage.monthlyCap") as? Double) ?? 500
+    }
 
     private var lastChecked: [Account: Date] = [:]
     private var inFlight: Set<Account> = []

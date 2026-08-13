@@ -82,3 +82,33 @@ enum Shortcuts {
         openBeside, closeColumn, nextColumn, previousColumn, popOut, sendTo,
     ]
 }
+
+// MARK: - Key equivalents for engine types
+//
+// `KeyEquivalent` is SwiftUI, and `Account` and `TranscriptMode` are engine
+// types that `honeycoded` also decodes — so which key selects one is a fact
+// about this app, not about the type, and it belongs on this side of the line.
+
+extension Account {
+    /// ⌘1 / ⌘2 / ⌘3 / ⌘4
+    var shortcut: KeyEquivalent {
+        switch self {
+        case .personal: return "1"
+        case .work:     return "2"
+        case .kimi:     return "3"
+        case .copilot:  return "4"
+        }
+    }
+}
+
+extension TranscriptMode {
+    /// ⌥⌘1…4
+    var shortcut: KeyEquivalent {
+        switch self {
+        case .summary:  return "1"
+        case .normal:   return "2"
+        case .thinking: return "3"
+        case .verbose:  return "4"
+        }
+    }
+}

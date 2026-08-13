@@ -1,4 +1,4 @@
-import SwiftUI
+import Foundation
 import Combine
 
 /// Which agent and which credentials a session runs under.
@@ -37,15 +37,6 @@ enum Account: String, CaseIterable, Identifiable, Codable {
         case .work:     return "Enterprise"
         case .kimi:     return "Kimi"
         case .copilot:  return "Copilot"
-        }
-    }
-
-    var accent: Color {
-        switch self {
-        case .personal: return .accentPersonal
-        case .work:     return .accentWork
-        case .kimi:     return .accentKimi
-        case .copilot:  return .accentCopilot
         }
     }
 
@@ -91,15 +82,6 @@ enum Account: String, CaseIterable, Identifiable, Codable {
     // and three different glyphs down one column is visual noise. A single
     // colour-coded dot carries the same information with none of the opinion.
 
-    /// ⌘1 / ⌘2 / ⌘3 / ⌘4
-    var shortcut: KeyEquivalent {
-        switch self {
-        case .personal: return "1"
-        case .work:     return "2"
-        case .kimi:     return "3"
-        case .copilot:  return "4"
-        }
-    }
 
     /// `CLAUDE_CONFIG_DIR`, which is the whole of account switching for Claude.
     /// Nil for the ACP agents, which keep their own credentials elsewhere and
@@ -279,16 +261,6 @@ enum TranscriptMode: String, CaseIterable, Identifiable {
         case .normal:   return "Adds tool calls and edits"
         case .thinking: return "Adds the model's reasoning"
         case .verbose:  return "Everything, expanded"
-        }
-    }
-
-    /// ⌥⌘1…4
-    var shortcut: KeyEquivalent {
-        switch self {
-        case .summary:  return "1"
-        case .normal:   return "2"
-        case .thinking: return "3"
-        case .verbose:  return "4"
         }
     }
 
@@ -1519,6 +1491,13 @@ final class Session: ObservableObject, Identifiable {
 /// sessions per account, rows shuffling under the cursor costs more than
 /// surfacing the freshest one gains — position becomes muscle memory.
 final class Workspace: ObservableObject {
+
+    /// Whatever is showing this workspace, if anything is. See `WorkspaceHost`.
+    ///
+    /// Weak because the host owns the workspace in both cases that exist, and a
+    /// strong reference here would be the retain cycle.
+    weak var host: WorkspaceHost?
+
     @Published private(set) var sessions: [Session] = []
     /// The column with the keyboard, not "the session you can see".
     ///
@@ -1785,26 +1764,21 @@ final class Workspace: ObservableObject {
         if stored.contains(where: { $0.id == nil }) { save() }
         SessionStore.prune(keeping: Set(sessions.map(\.id)))
 
-        // The last turn of the session is the one most likely to be lost, so
-        // catch the quit rather than relying on each turn's own save.
-        NotificationCenter.default.addObserver(
-            forName: NSApplication.willTerminateNotification, object: nil, queue: .main
-        ) { [weak self] _ in
-            self?.sessions.forEach { $0.persist() }
-            self?.save()
-            // Transcript writes are queued off the main thread now, so quitting
-            // has to wait for them — otherwise the save above is the one that
-            // gets dropped.
-            SessionStore.drain()
-        }
+    }
 
-        // Clicking a notification jumps to the session that finished.
-        NotificationCenter.default.addObserver(
-            forName: Notifier.activated, object: nil, queue: .main
-        ) { [weak self] note in
-            guard let id = note.userInfo?[Notifier.sessionKey] as? UUID else { return }
-            self?.selection = id
-        }
+    /// Write everything down, and wait for it to land.
+    ///
+    /// The last turn of a session is the one most likely to be lost, so this
+    /// exists to be called at the moment the process is going away rather than
+    /// relying on each turn's own save. Whose job it is to notice that moment
+    /// is the host's: an app hears `applicationWillTerminate`, a daemon hears
+    /// `SIGTERM`, and `Workspace` should have to know about neither.
+    func flush() {
+        sessions.forEach { $0.persist() }
+        save()
+        // Transcript writes are queued off the main thread, so quitting has to
+        // wait for them — otherwise the save above is the one that gets dropped.
+        SessionStore.drain()
     }
 
     /// Read every transcript nobody has asked for yet, off the main thread.
@@ -1841,7 +1815,8 @@ final class Workspace: ObservableObject {
             // conversation you're looking at but haven't got the keyboard in —
             // and a notification about text appearing in front of you is how
             // an app trains you to switch its notifications off.
-            let watching = NSApp.isActive && self.columns.contains(finished.id)
+            let watching = (self.host?.isForeground ?? false)
+                && self.columns.contains(finished.id)
             guard !watching else {
                 // Nor an unread mark. `endTurn` sets one unconditionally,
                 // because a session has no idea whether anyone is looking at
@@ -1850,9 +1825,9 @@ final class Workspace: ObservableObject {
                 finished.needsAttention = false
                 return
             }
-            Notifier.post(sessionID: finished.id,
-                          title: "\(finished.account.title) · \(finished.name)",
-                          body: finished.lastReply)
+            self.host?.announce(sessionID: finished.id,
+                                title: "\(finished.account.title) · \(finished.name)",
+                                body: finished.lastReply)
         }
     }
 

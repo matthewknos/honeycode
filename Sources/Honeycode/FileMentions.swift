@@ -57,7 +57,7 @@ enum SlashCommand {
         guard !query.isEmpty else { return Array(commands.prefix(limit)) }
         return commands
             .compactMap { command -> (AgentCommand, Int)? in
-                guard let score = CommandPalette.score(query, in: command.name)
+                guard let score = Fuzzy.score(query, in: command.name)
                 else { return nil }
                 return (command, score)
             }
@@ -168,12 +168,12 @@ final class FileIndex: ObservableObject {
     private func score(_ query: String, limit: Int) -> [String] {
         paths
             .compactMap { path -> (String, Int)? in
-                guard let score = CommandPalette.score(query, in: path) else { return nil }
+                guard let score = Fuzzy.score(query, in: path) else { return nil }
                 // A hit in the filename beats the same hit buried in a
                 // directory name — you type `mod` meaning Models.swift, not
                 // `modules/thing/other.swift`.
                 let name = (path as NSString).lastPathComponent
-                let bonus = CommandPalette.score(query, in: name) != nil ? 0 : 40
+                let bonus = Fuzzy.score(query, in: name) != nil ? 0 : 40
                 return (path, score + bonus)
             }
             .sorted { $0.1 < $1.1 }

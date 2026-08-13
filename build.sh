@@ -19,6 +19,17 @@ esac
 
 echo "==> Building Honeycode ($CONFIGURATION)"
 
+# AgentKit is the half that has to run without a UI, because honeycoded links it
+# and a daemon has no windows. Nothing in the language enforces that — SwiftUI
+# imports perfectly well into a background process and simply drags AppKit in
+# behind it — so the boundary is checked here instead. It failed exactly once,
+# in the direction you would expect: a `Color` on `Account`.
+if grep -lE '^import (SwiftUI|AppKit|WebKit|Charts|Quartz)$' "$ROOT"/Sources/AgentKit/*.swift 2>/dev/null | grep -q .; then
+  echo "==> AgentKit must not import UI frameworks:" >&2
+  grep -lE '^import (SwiftUI|AppKit|WebKit|Charts|Quartz)$' "$ROOT"/Sources/AgentKit/*.swift >&2
+  exit 1
+fi
+
 # Quit a running copy so we can overwrite the binary it has mapped.
 if pgrep -x Honeycode >/dev/null 2>&1; then
   echo "==> Stopping running Honeycode"

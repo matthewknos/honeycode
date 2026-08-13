@@ -1,4 +1,4 @@
-import SwiftUI
+import Foundation
 
 /// Finding a dev server in command output.
 enum DevServer {

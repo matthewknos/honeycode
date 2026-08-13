@@ -1,19 +1,5 @@
 import SwiftUI
 
-struct Todo: Identifiable, Codable, Sendable, Equatable {
-    enum Status: String, Codable { case pending, in_progress, completed, deleted }
-
-    let id: String
-    var subject: String
-    /// Present-continuous form ("Running tests"), shown while in progress.
-    var activeForm: String?
-    var status: Status
-
-    var label: String {
-        status == .in_progress ? (activeForm ?? subject) : subject
-    }
-}
-
 /// The agent's plan, as one live card.
 ///
 /// Unlike every other element in the transcript this is *mutable* — it's

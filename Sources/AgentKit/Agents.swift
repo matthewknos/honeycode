@@ -1,4 +1,4 @@
-import SwiftUI
+import Foundation
 import Combine
 
 // MARK: - What an agent is

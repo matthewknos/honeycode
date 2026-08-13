@@ -198,3 +198,20 @@ extension Color {
     static var diffAddText: Color { Color(nsColor: .honeycodeDiffAdd) }
     static var diffDelText: Color { Color(nsColor: .honeycodeDiffDel) }
 }
+
+/// The colour that stands for an account, everywhere it appears.
+///
+/// Lives here rather than on `Account` because `Account` is engine-side now and
+/// `honeycoded` has no use for a `Color` — and importing SwiftUI into the
+/// engine to satisfy one computed property is how the boundary would have been
+/// lost on the first day it existed.
+extension Account {
+    var accent: Color {
+        switch self {
+        case .personal: return .accentPersonal
+        case .work:     return .accentWork
+        case .kimi:     return .accentKimi
+        case .copilot:  return .accentCopilot
+        }
+    }
+}

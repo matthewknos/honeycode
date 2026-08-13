@@ -1,5 +1,5 @@
-import SwiftUI
-import AppKit
+import Foundation
+import Combine
 
 /// Instructions you write once and every agent can use.
 ///

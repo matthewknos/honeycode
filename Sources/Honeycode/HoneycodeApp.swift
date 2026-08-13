@@ -64,7 +64,9 @@ struct HoneycodeApp: App {
                 .environmentObject(background)
                 .environmentObject(workspace)
                 .onAppear {
-                    Notifier.configure()
+                    // Notifications, the quit hook and "is anyone looking at
+                    // this" — everything the engine hands back to its host.
+                    AppHost.shared.attach(to: workspace)
                     NSApp.appearance = appearance.appKit
                     // Starts the clock. Also the catch-up pass — an interval
                     // agent that missed fourteen fires while the app was quit

@@ -16,6 +16,16 @@ struct AgentModel: Identifiable, Hashable, Codable {
     /// and a flat list of that is a scroll rather than a choice.
     var family: String = "Anthropic"
 
+    /// Copilot's quota multiplier as a number — `0` for the free ones, `15` for
+    /// Opus 5. Nil where the account doesn't report one, which is every Claude
+    /// account: a subscription bills in dollars and the CLI says so per turn.
+    ///
+    /// The same fact as `blurb`, which is the rendered version of it. Kept
+    /// separately because "which of these is cheapest" is a comparison, and
+    /// comparing prose means parsing it back out again — which is exactly what
+    /// `ai` was about to do to offer `@copilot:cheap`.
+    var usage: Double?
+
     /// Derived from the id, because ACP doesn't say who makes what.
     static func family(of id: String) -> String {
         switch id.components(separatedBy: CharacterSet(charactersIn: "-.")).first ?? id {
@@ -58,6 +68,19 @@ enum ModelCatalog {
             return cached
         }
         return builtInFallback(for: account)
+    }
+
+    /// Whether the last live list is on disk, as opposed to the built-in
+    /// placeholder.
+    ///
+    /// The difference matters to anyone deciding whether to *wait*: a cached
+    /// list is the real one the agent sent last time, so it can be used at
+    /// once, while the built-in three are a guess worth six seconds to replace.
+    static func hasRemembered(for account: Account) -> Bool {
+        guard let data = UserDefaults.standard.data(forKey: cacheKey(account)),
+              let cached = try? JSONDecoder().decode([AgentModel].self, from: data)
+        else { return false }
+        return !cached.isEmpty
     }
 
     static func remember(_ models: [AgentModel], for account: Account) {
@@ -168,9 +191,12 @@ enum ModelCatalog {
     /// the very first Copilot session on a machine.
     static var copilotFallback: [AgentModel] {
         [
-            AgentModel(id: "claude-sonnet-5", title: "Claude Sonnet 5", blurb: "1× usage"),
-            AgentModel(id: "claude-opus-5", title: "Claude Opus 5", blurb: "15× usage"),
-            AgentModel(id: "claude-haiku-4.5", title: "Claude Haiku 4.5", blurb: "0.33× usage"),
+            AgentModel(id: "claude-sonnet-5", title: "Claude Sonnet 5",
+                       blurb: "1× usage", usage: 1),
+            AgentModel(id: "claude-opus-5", title: "Claude Opus 5",
+                       blurb: "15× usage", usage: 15),
+            AgentModel(id: "claude-haiku-4.5", title: "Claude Haiku 4.5",
+                       blurb: "0.33× usage", usage: 0.33),
         ]
     }
 
@@ -193,7 +219,8 @@ enum ModelCatalog {
             return AgentModel(id: id,
                               title: entry["name"] as? String ?? id,
                               blurb: usageLabel(meta) ?? (entry["description"] as? String ?? ""),
-                              family: AgentModel.family(of: id))
+                              family: AgentModel.family(of: id),
+                              usage: usageValue(meta))
         }
         remember(models, for: .copilot)
         return models
@@ -202,6 +229,12 @@ enum ModelCatalog {
     /// `"15x"` → `"15× usage"`. `"0x"` gets said plainly: it means the model
     /// doesn't draw down the quota at all, which is the most useful thing the
     /// row could tell you and reads as an error rendered literally.
+    /// `"0.33x"` → `0.33`. The number behind the label.
+    private static func usageValue(_ meta: [String: Any]?) -> Double? {
+        guard let usage = meta?["copilotUsage"] as? String else { return nil }
+        return Double(usage.replacingOccurrences(of: "x", with: ""))
+    }
+
     private static func usageLabel(_ meta: [String: Any]?) -> String? {
         guard let usage = meta?["copilotUsage"] as? String else { return nil }
         if usage == "0x" { return "Free — doesn't use quota" }

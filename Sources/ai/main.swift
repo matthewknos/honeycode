@@ -56,6 +56,9 @@ final class Program {
                 case "/help":
                     self.help()
                     self.prompt()
+                case _ where trimmed == "/models" || trimmed.hasPrefix("/models "):
+                    self.models(String(trimmed.dropFirst("/models".count))
+                        .trimmingCharacters(in: .whitespaces))
                 default:
                     self.crew.submit(trimmed)
                 }
@@ -68,7 +71,59 @@ final class Program {
         Console.line("  @claude-p @claude-w @kimi @copilot   who does the work")
         Console.line("  first one named leads: it plans, delegates, and assembles")
         Console.line("  no mention reuses whoever led last")
+        Console.line()
+        Console.line("  pick a model with a colon — no need to remember ids:")
+        Console.line("    @copilot:free     cheapest that costs no quota at all")
+        Console.line("    @copilot:cheap    lowest usage multiplier on offer")
+        Console.line("    @copilot:best     the strongest one available")
+        Console.line("    @copilot:haiku    any part of the name also works")
+        Console.line()
+        Console.line("  /models [account]   what each one can run")
         Console.line("  /help  /quit")
+    }
+
+    /// `/models` for the line-up, `/models copilot` for everything that
+    /// account offers.
+    private func models(_ argument: String) {
+        let wanted: [Account]
+        if argument.isEmpty {
+            wanted = Account.allCases
+        } else if let one = Mention.account(forHandle:
+                    argument.trimmingCharacters(in: CharacterSet(charactersIn: "@"))) {
+            wanted = [one]
+        } else {
+            Console.failure("no account called \u{22}\(argument)\u{22}")
+            return
+        }
+
+        // Sequential rather than all at once: the ACP accounts answer after a
+        // wait, and four overlapping waits would print the four blocks in
+        // whatever order they happened to land.
+        var queue = wanted
+        func next() {
+            guard !queue.isEmpty else { self.prompt(); return }
+            let account = queue.removeFirst()
+            self.crew.catalogue(for: account) { models, current in
+                Console.line()
+                Console.line(Console.paint("@" + Mention.handle(account),
+                                           Console.tint(account), bold: true)
+                             + Console.dim("  \(models.count) available"))
+                // The whole list only when asked for one account. Four accounts
+                // at twenty models each is a page you have to scroll past to
+                // get back to the prompt.
+                let shown = argument.isEmpty
+                    ? models.filter { $0.id == current }
+                    : models
+                for model in shown {
+                    Console.line(ModelPick.describe(model, current: model.id == current))
+                }
+                if argument.isEmpty && models.count > 1 {
+                    Console.line(Console.dim("    /models \(Mention.handle(account)) for the rest"))
+                }
+                next()
+            }
+        }
+        next()
     }
 
     func stop() { crew.interrupt() }

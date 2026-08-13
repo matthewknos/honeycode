@@ -101,6 +101,17 @@ enum AgentProtocol {
     case claudeStreamJSON
     /// Newline-delimited JSON-RPC over stdio, per the Agent Client Protocol.
     case acp(ACPAgent)
+
+    /// Whether the model list arrives over the wire rather than off disk.
+    ///
+    /// The distinction anything asking "what can this account run?" needs:
+    /// Claude reads its entitlements from a file and can answer at once, while
+    /// the ACP agents only say on `session/new` — so the honest answer before
+    /// one has connected is "ask me in a second".
+    var isACP: Bool {
+        if case .acp = self { return true }
+        return false
+    }
 }
 
 /// One rendered element of the transcript.

@@ -17,19 +17,28 @@ enum Mention {
         ("copilot", .copilot),
     ].sorted { $0.0.count > $1.0.count }
 
+    /// One agent, and optionally which model it should run.
+    struct Pick: Equatable {
+        let account: Account
+        /// Whatever followed the colon — `free`, `haiku`, `gpt-5-mini`.
+        /// Resolved later, against the list that account actually offers.
+        let model: String?
+    }
+
     /// The crew named in a message, in the order named, and the message with
     /// the mentions taken out.
     ///
     /// Order is the whole point: the first one named leads. Duplicates collapse
     /// to their first appearance, so `@kimi fix it, @kimi really` is one agent
     /// and not two copies racing each other in the same directory.
-    static func parse(_ text: String) -> (crew: [Account], prompt: String) {
-        var crew: [Account] = []
+    static func parse(_ text: String) -> (crew: [Pick], prompt: String) {
+        var crew: [Pick] = []
         var out = text
 
-        // Word-boundary matching on `@name`. A bare `@` followed by anything
-        // else — an email address, a file mention — is left exactly as typed.
-        let pattern = "(?<![\\w@])@([A-Za-z][A-Za-z0-9-]*)"
+        // Word-boundary matching on `@name`, with an optional `:model` after
+        // it. A bare `@` followed by anything else — an email address, a file
+        // mention — is left exactly as typed.
+        let pattern = "(?<![\\w@])@([A-Za-z][A-Za-z0-9-]*)(?::([A-Za-z0-9._-]+))?"
         guard let regex = try? NSRegularExpression(pattern: pattern) else {
             return ([], text)
         }
@@ -41,7 +50,13 @@ enum Mention {
                   let wordRange = Range(match.range(at: 1), in: text) else { continue }
             let word = String(text[wordRange]).lowercased()
             guard let account = names.first(where: { $0.0 == word })?.1 else { continue }
-            if !crew.contains(account) { crew.append(account) }
+            let model = Range(match.range(at: 2), in: text).map { String(text[$0]) }
+            // First mention wins, and it's the one that carries the model — a
+            // second `@kimi` later in the same sentence is the same agent, not
+            // a chance to change its mind halfway through a request.
+            if !crew.contains(where: { $0.account == account }) {
+                crew.append(Pick(account: account, model: model))
+            }
             cuts.append(whole)
         }
 

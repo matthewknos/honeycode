@@ -34,6 +34,12 @@ final class Crew {
     private var order: [Account] = []
     private var lead: Account?
     private var startedAt: Date?
+    /// The model each account was last asked to run, so `@copilot:free` once
+    /// keeps applying to `@copilot` for the rest of the session. Changing it
+    /// mid-conversation restarts that agent and resumes the same conversation,
+    /// which `Session.model` already handles.
+    private var chosen: [Account: String] = [:]
+    private let progress = Progress()
 
     /// Called when the whole run has settled and it's safe to ask for input.
     var onIdle: (() -> Void)?
@@ -52,26 +58,143 @@ final class Crew {
 
         guard !prompt.isEmpty else {
             if !crew.isEmpty {
-                Console.failure("Named \(crew.map(Mention.handle).joined(separator: ", ")) but didn't say what to do.")
+                Console.failure("Named \(crew.map { Mention.handle($0.account) }.joined(separator: ", ")) but didn't say what to do.")
             }
             onIdle?()
             return
         }
 
-        let team = crew.isEmpty ? [fallback] : crew
-        fallback = team[0]
-        lead = team[0]
-        order = Array(team.dropFirst())
-        startedAt = Date()
+        let team = crew.isEmpty ? [Mention.Pick(account: fallback, model: nil)] : crew
 
-        if order.isEmpty {
-            solo(team[0], prompt)
-        } else {
-            plan(team[0], with: order, prompt)
+        settleModels(team) { [weak self] in
+            guard let self else { return }
+            self.fallback = team[0].account
+            self.lead = team[0].account
+            self.order = team.dropFirst().map(\.account)
+            self.startedAt = Date()
+
+            if self.order.isEmpty {
+                self.solo(team[0].account, prompt)
+            } else {
+                self.plan(team[0].account, with: self.order, prompt)
+            }
         }
     }
 
+    /// Resolve `@copilot:free` against what that account actually offers, and
+    /// remember it.
+    ///
+    /// A hint that resolves to nothing is reported and then ignored rather than
+    /// guessed at — running an expensive model because a cheap one was
+    /// misspelled is the wrong way to be forgiving.
+    private func apply(_ pick: Mention.Pick) {
+        guard let hint = pick.model else { return }
+        let session = session(for: pick.account)
+        let catalogue = session.availableModels
+
+        switch ModelPick.resolve(hint, from: catalogue) {
+        case .chosen(let model):
+            guard chosen[pick.account] != model.id else { return }
+            chosen[pick.account] = model.id
+            session.model = model
+            let price = model.usage.map { $0 == 0 ? " · free" : " · \($0)× usage" } ?? ""
+            Console.status("@\(Mention.handle(pick.account)) → \(model.title)\(price)")
+        case .unknown(_, let options):
+            Console.failure("@\(Mention.handle(pick.account)): no model matching \u{22}\(hint)\u{22}"
+                            + (options.isEmpty ? "" : " — try /models"))
+        }
+    }
+
+    /// Every model an account offers, for `/models`.
+    ///
+    /// Asynchronous because of the ACP agents: the first call starts the
+    /// process, and the real list arrives a second or so later. Answering
+    /// immediately would show the built-in three every time — which is how you
+    /// end up believing Copilot offers Sonnet, Opus and Haiku and nothing else.
+    func catalogue(for account: Account, then report: @escaping ([AgentModel], String) -> Void) {
+        ready(account) { [weak self] in
+            guard let self else { return }
+            let session = self.session(for: account)
+            report(session.availableModels, session.model.id)
+        }
+    }
+
+    /// Wait until an account's real model list has landed.
+    ///
+    /// Claude reads its entitlements off disk and is ready at once. The ACP
+    /// agents only say on `session/new`, and Copilot measured **5.9 seconds**
+    /// to answer with its sixteen models — so the fixed 2.5s delay this
+    /// replaces was simply always wrong, and quietly: it showed the built-in
+    /// three, which look plausible enough that you'd never think to doubt them.
+    /// `@copilot:free` resolved against that list finds nothing, because the
+    /// free model is one of the thirteen it couldn't see.
+    ///
+    /// Polls rather than sleeping a fixed time, so the common case — already
+    /// connected — costs nothing at all.
+    private func ready(_ account: Account, then proceed: @escaping () -> Void) {
+        let session = session(for: account)
+        guard account.protocolKind.isACP else { proceed(); return }
+
+        // Always start connecting — a refreshed list is worth having even when
+        // we don't wait for it.
+        session.prepare()
+
+        // A cached list is the real one this agent sent last time, so there is
+        // nothing to wait for. Only the built-in placeholder is worth six
+        // seconds to replace. Waiting on *change* was the wrong test: with a
+        // warm cache the live list is identical to what's already there, so
+        // "has it changed" never became true and every run paid the full
+        // timeout before carrying on with the right answer anyway.
+        guard !ModelCatalog.hasRemembered(for: account) else { proceed(); return }
+
+        let before = Set(session.availableModels.map(\.id))
+        var waited: TimeInterval = 0
+        let step: TimeInterval = 0.25
+        var announced = false
+
+        func poll() {
+            let now = Set(session.availableModels.map(\.id))
+            if now != before && !now.isEmpty { proceed(); return }
+            guard waited < Self.connectPatience else {
+                // Carry on with what we have rather than refusing to run. A
+                // stale list still contains working models.
+                Console.failure("@\(Mention.handle(account)) didn't send its model list — using the last known one")
+                proceed()
+                return
+            }
+            if !announced, waited > 1 {
+                announced = true
+                Console.status("connecting to @\(Mention.handle(account))…")
+            }
+            waited += step
+            DispatchQueue.main.asyncAfter(deadline: .now() + step, execute: poll)
+        }
+        poll()
+    }
+
+    /// Copilot answered `session/new` in 5.9s on this machine; this is that
+    /// with room for a cold start and a slow network.
+    private static let connectPatience: TimeInterval = 20
+
+    /// Resolve every model hint before any work starts.
+    ///
+    /// Sequential, because two accounts connecting at once would interleave
+    /// their "connecting…" lines, and because it's once per process.
+    private func settleModels(_ picks: [Mention.Pick], then proceed: @escaping () -> Void) {
+        var queue = picks.filter { $0.model != nil }
+        func next() {
+            guard !queue.isEmpty else { proceed(); return }
+            let pick = queue.removeFirst()
+            ready(pick.account) { [weak self] in
+                self?.apply(pick)
+                next()
+            }
+        }
+        next()
+    }
+
     func interrupt() {
+        progress.end()
         for session in sessions.values where session.isRunning { session.interrupt() }
         streamer?.finish()
         streamer = nil
@@ -168,11 +291,17 @@ final class Crew {
         running = Set(assignments.map(\.to))
         replies = [:]
 
+        Console.breakLine()
+        Console.line()
         for assignment in assignments {
             let account = assignment.to
-            Console.speaker(account, note: "working")
-            Console.line(Console.dim("  " + assignment.task.prefix(160)))
+            let name = Console.paint("▸ @" + Mention.handle(account), Console.tint(account), bold: true)
+            Console.line(name + " " + Console.dim(String(assignment.task.prefix(110))))
+        }
+        Console.line()
 
+        for assignment in assignments {
+            let account = assignment.to
             let session = session(for: account)
 
             // `endTurn` is the only thing that calls `onTurnComplete`, and a CLI
@@ -183,6 +312,7 @@ final class Crew {
             // fails is silent rather than loud.
             let timeout = DispatchWorkItem { [weak self] in
                 guard let self, self.running.contains(account) else { return }
+                self.progress.clear()
                 Console.speaker(account, note: "gave up")
                 Console.failure("no reply in \(Int(Self.patience / 60)) minutes — carrying on without it")
                 session.interrupt()
@@ -193,6 +323,8 @@ final class Crew {
 
             session.onTurnComplete = { [weak self] done in
                 guard let self else { return }
+                self.progress.finish(account)
+                self.progress.clear()
                 Console.speaker(account, note: "done")
                 let reply = Self.lastTurn(of: done)
                 Console.line(reply)
@@ -200,6 +332,8 @@ final class Crew {
             }
             session.send(Self.instruction(assignment.task, from: leader))
         }
+
+        progress.begin(assignments.map { ($0.to, session(for: $0.to)) })
     }
 
     /// How long a delegate gets. Generous: the pieces of a real job run for
@@ -213,7 +347,12 @@ final class Crew {
         expiry[account]?.cancel()
         expiry[account] = nil
         if let reply, !reply.isEmpty { replies[account] = reply }
-        guard running.isEmpty else { return }
+        guard running.isEmpty else {
+            // Others still going: put the block back under what was just printed.
+            progress.begin(running.map { ($0, session(for: $0)) })
+            return
+        }
+        progress.end()
 
         // Nothing came back at all — assembling would ask the lead to combine
         // an empty set, which reads as a confident summary of work that was

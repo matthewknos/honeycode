@@ -198,6 +198,11 @@ private struct SkillEditor: View {
 private struct GeneralSettings: View {
     @Binding var appearance: HoneycodeApp.Appearance
     @AppStorage("agent.skipPermissions") private var skipPermissions = true
+    /// The key `Tenancy.gates` reads. `@AppStorage` and that property are the
+    /// same `UserDefaults` entry seen from two sides — the engine can't import
+    /// SwiftUI, and a second stored copy would be a setting that disagreed with
+    /// itself.
+    @AppStorage("tenancy.gateDelegation") private var gateDelegation = true
     @AppStorage("usage.monthlyCap") private var monthlyCap: Double = 500
     @State private var recordedSpend: Double = UsageStore.shared.baseline(for: .work)
 
@@ -226,6 +231,26 @@ private struct GeneralSettings: View {
             }
 
             Section {
+                Toggle("Keep Enterprise work inside Enterprise", isOn: $gateDelegation)
+                Text(gateDelegation
+                     ? "When an Enterprise session hands a piece of work to "
+                       + "Kimi, Copilot or your personal Claude, the task is "
+                       + "checked on this account before it is sent, and those "
+                       + "agents work in an empty folder with no sight of the "
+                       + "project. Anything that would carry customer names, "
+                       + "credentials or internal specifics comes back for "
+                       + "Enterprise to do itself."
+                     : "Off. An Enterprise session hands work to the other "
+                       + "agents unchecked, and they work in this project's "
+                       + "directory with the same access everyone else has.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.tertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } header: {
+                Text("Tenancy")
+            }
+
+            Section {
                 TextField("Monthly cap", value: $monthlyCap,
                           format: .currency(code: "USD"))
                 LabeledContent("Recorded spend") {
@@ -251,7 +276,7 @@ private struct GeneralSettings: View {
             }
         }
         .formStyle(.grouped)
-        .frame(height: 420)
+        .frame(height: 560)
         // Both flags are fixed at process launch, so live sessions restart.
         .onChange(of: skipPermissions) {
             NotificationCenter.default.post(name: ClaudeAdapter.permissionsChanged, object: nil)
@@ -373,6 +398,23 @@ private struct ShortcutSettings: View {
             }
 
             Section {
+                ForEach(Shortcuts.view) { shortcut in
+                    LabeledContent(shortcut.title) {
+                        Text(shortcut.display)
+                            .font(.system(size: 12, weight: .medium, design: .rounded))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            } header: {
+                Text("Presentation")
+            } footer: {
+                Text("Coding mode draws the transcript as a terminal — one "
+                     + "monospaced scrollback instead of cards. It appends "
+                     + "rather than redrawing, so a long session streams at the "
+                     + "same speed as a new one.")
+            }
+
+            Section {
                 ForEach(TranscriptMode.allCases) { mode in
                     LabeledContent(mode.title) {
                         Text("⌥⌘\(mode.shortcut.character.description)")
@@ -430,7 +472,7 @@ private struct BackgroundSettings: View {
     private var preview: some View {
         VStack(alignment: .leading, spacing: Theme.s4) {
             ZStack {
-                PaneBackground(store: store)
+                PaneBackground(store: store, honoursCodingMode: false)
 
                 // A miniature of the real thing — greeting and composer — so
                 // you're judging legibility rather than the photo.

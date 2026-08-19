@@ -47,8 +47,8 @@ enum Skills {
     /// while doesn't rewrite a document you may be keeping in version control
     /// somewhere else.
     static var enabled: Set<String> {
-        get { Set(UserDefaults.standard.stringArray(forKey: enabledKey) ?? []) }
-        set { UserDefaults.standard.set(Array(newValue), forKey: enabledKey) }
+        get { Set(Prefs.store.stringArray(forKey: enabledKey) ?? []) }
+        set { Prefs.store.set(Array(newValue), forKey: enabledKey) }
     }
 
     private static let enabledKey = "skills.enabled"

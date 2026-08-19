@@ -769,6 +769,9 @@ final class Session: ObservableObject, Identifiable {
     /// Opinions with a mirror already scheduled — see `askOpinion`.
     private var mirrorsPending: Set<UUID> = []
 
+    /// See `leadCrew`. Nil until this conversation is asked to lead one.
+    private var crew: Crew?
+
     private lazy var adapter: AgentAdapter = {
         switch account.protocolKind {
         case .claudeStreamJSON:  return ClaudeAdapter(session: self)
@@ -952,6 +955,57 @@ final class Session: ObservableObject, Identifiable {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         if Self.isClear(trimmed) { clear(); return }
+
+        // A message naming other agents is a crew run, not a turn: this
+        // conversation leads and the ones named help. Checked before anything
+        // else because everything else — hydrating, appending, dispatching —
+        // belongs to the turn this message turns out not to be.
+        //
+        // `@Sources/Models.swift` is a file and stays one. `AgentMention` only
+        // matches the four handles, so a path never reads as an agent unless
+        // somebody has a file called `kimi` in their project root.
+        let named = AgentMention.parse(trimmed).crew.map(\.account).filter { $0 != account }
+        if !named.isEmpty {
+            // One crew at a time. A second request while three delegates are
+            // still working would reuse their conversations mid-turn, so it
+            // waits the same way anything typed mid-turn does.
+            guard MainActor.assumeIsolated({ crew?.isBusy }) != true, !isRunning else {
+                queued.append(trimmed)
+                return
+            }
+            hydrate()
+            items.append(.user(id: UUID(), text: trimmed))
+            needsAttention = false
+            sendTick += 1
+            persist()
+            // `Crew` is `@MainActor`; `Session` is not, though every line of it
+            // runs there — the adapters deliver on the main queue and every
+            // stored property drives a view. Annotating the class to say so
+            // was tried and cascades into both adapters, which is a
+            // concurrency refactor rather than this feature. Asserted at the
+            // one boundary that needs it instead.
+            MainActor.assumeIsolated { leadCrew().submit(trimmed, ledBy: account) }
+            return
+        }
+
+        deliver(trimmed, shownAs: trimmed)
+    }
+
+    /// Send a turn without the crew intercept, and without assuming the person
+    /// typed it.
+    ///
+    /// `Crew` drives this session's turns during a run, and every one of them —
+    /// the briefing, the report — names other agents by handle. Routed back
+    /// through `send`, the lead would read its own briefing as a fresh request
+    /// for a crew and recurse. So the intercept lives in `send` and the
+    /// machinery lives here.
+    ///
+    /// `shown` nil means the transcript records nothing: the wire text is
+    /// plumbing the person never wrote. It is the same split `dispatchable`
+    /// makes for an open document, one level up.
+    func deliver(_ text: String, shownAs shown: String?) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
         // Before anything is appended or persisted: `conversationID` and
         // `hasStarted` are both in the snapshot, and sending on a session that
         // hasn't read it would start a fresh conversation with the agent.
@@ -964,7 +1018,7 @@ final class Session: ObservableObject, Identifiable {
             return
         }
 
-        items.append(.user(id: UUID(), text: trimmed))
+        if let shown, !shown.isEmpty { items.append(.user(id: UUID(), text: shown)) }
         needsAttention = false
         sendTick += 1
         // The transcript keeps what you typed; the agent gets what you typed
@@ -974,6 +1028,19 @@ final class Session: ObservableObject, Identifiable {
         // Save the prompt before the reply exists, so a crash mid-turn still
         // leaves a record of what was asked.
         persist()
+    }
+
+    /// The crew this conversation leads, made the first time it needs one.
+    ///
+    /// Kept for the session's life rather than per message, so a delegate that
+    /// wrote the header is still the one asked to make it bigger.
+    @MainActor
+    private func leadCrew() -> Crew {
+        if let crew { return crew }
+        let made = Crew(directory: directory,
+                        reporter: TranscriptReporter(host: self), host: self)
+        crew = made
+        return made
     }
 
     /// Drop everything waiting — stopping a turn should stop what you queued
@@ -1149,6 +1216,54 @@ final class Session: ObservableObject, Identifiable {
         }
 
         reviewer.send(prompt)
+    }
+
+    /// Put another session's reply on screen here, as it arrives.
+    ///
+    /// The second half of `askOpinion`, split out for a caller that already has
+    /// the agent running. A crew's delegates are started, timed out and
+    /// interrupted by `Crew` — it owns them, because it is the thing that knows
+    /// when a turn never landed — so what is left for this session to do is the
+    /// part `askOpinion` does after `send`: hold a placeholder open and mirror
+    /// into it.
+    ///
+    /// Returns the id of the block, for `stopMirroring`.
+    @discardableResult
+    func mirror(_ other: Session, labelled label: String) -> UUID {
+        hydrate()
+        let id = UUID()
+        append(.opinion(id: id, agent: label, text: "", done: false))
+        persist()
+
+        // Same throttle and the same reasoning as `askOpinion`'s: this fires
+        // twice per streamed token, and each mirror rescans both transcripts.
+        reviewerFeeds[id] = other.objectWillChange.sink { [weak self, weak other] in
+            guard let self, self.mirrorsPending.insert(id).inserted else { return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self, weak other] in
+                guard let self else { return }
+                self.mirrorsPending.remove(id)
+                guard let other else { return }
+                self.updateOpinion(id, from: other, done: false)
+            }
+        }
+        return id
+    }
+
+    /// Close a mirrored block. The session behind it is not touched — it
+    /// belongs to whoever started it.
+    func stopMirroring(_ id: UUID, from other: Session) {
+        updateOpinion(id, from: other, done: true)
+        reviewerFeeds[id] = nil
+        mirrorsPending.remove(id)
+        persist()
+    }
+
+    /// A line of plumbing in the transcript — what was split how, what was held
+    /// back, what a run cost.
+    func note(_ text: String) {
+        hydrate()
+        append(.notice(id: UUID(), text: text))
+        persist()
     }
 
     /// Run one prompt on this session's account, out of band, and hand back the
@@ -1519,7 +1634,7 @@ final class Workspace: ObservableObject {
     /// being off screen.
     @Published var selection: Session.ID? {
         didSet {
-            UserDefaults.standard.set(selection?.uuidString, forKey: Self.selectionKey)
+            Prefs.store.set(selection?.uuidString, forKey: Self.selectionKey)
             // Selecting something that isn't on screen puts it where you were
             // looking: it takes over the focused column rather than opening a
             // new one. Opening a new one is a separate, deliberate action.
@@ -1546,7 +1661,7 @@ final class Workspace: ObservableObject {
     /// exists, and always contains `selection`.
     @Published private(set) var columns: [Session.ID] = [] {
         didSet {
-            UserDefaults.standard.set(columns.map(\.uuidString), forKey: Self.columnsKey)
+            Prefs.store.set(columns.map(\.uuidString), forKey: Self.columnsKey)
         }
     }
 
@@ -1562,7 +1677,7 @@ final class Workspace: ObservableObject {
     /// return to.
     @Published var poppedOut: Session.ID? {
         didSet {
-            UserDefaults.standard.set(poppedOut?.uuidString, forKey: Self.poppedOutKey)
+            Prefs.store.set(poppedOut?.uuidString, forKey: Self.poppedOutKey)
         }
     }
 
@@ -1674,7 +1789,7 @@ final class Workspace: ObservableObject {
     @Published var renaming: Session.ID?
     @Published var collapsed: Set<Account> = [] {
         didSet {
-            UserDefaults.standard.set(collapsed.map(\.rawValue), forKey: Self.collapsedKey)
+            Prefs.store.set(collapsed.map(\.rawValue), forKey: Self.collapsedKey)
         }
     }
     /// The session awaiting a delete confirmation. Lives here rather than in a
@@ -1729,24 +1844,24 @@ final class Workspace: ObservableObject {
 
         // Reopen where you left off. Falls back to the first session if that
         // one has since been deleted.
-        let remembered = UserDefaults.standard.string(forKey: Self.selectionKey)
+        let remembered = Prefs.store.string(forKey: Self.selectionKey)
             .flatMap(UUID.init(uuidString:))
         // Columns come back before selection does. Setting `selection` is what
         // repairs an empty or stale column list, so restoring them the other
         // way round would have the selection rebuild a single column and throw
         // the arrangement away before it was ever read.
-        columns = (UserDefaults.standard.stringArray(forKey: Self.columnsKey) ?? [])
+        columns = (Prefs.store.stringArray(forKey: Self.columnsKey) ?? [])
             .compactMap(UUID.init(uuidString:))
             .filter { id in sessions.contains { $0.id == id } }
             .prefix(Self.maxColumns)
             .reduce(into: []) { unique, id in if !unique.contains(id) { unique.append(id) } }
         selection = sessions.contains { $0.id == remembered } ? remembered : sessions.first?.id
-        collapsed = Set((UserDefaults.standard.stringArray(forKey: Self.collapsedKey) ?? [])
+        collapsed = Set((Prefs.store.stringArray(forKey: Self.collapsedKey) ?? [])
             .compactMap(Account.init(rawValue:)))
         // The floating window comes back with the arrangement, for the same
         // reason the columns do: where you left a conversation is part of where
         // you left off. A session deleted since simply doesn't reopen.
-        poppedOut = UserDefaults.standard.string(forKey: Self.poppedOutKey)
+        poppedOut = Prefs.store.string(forKey: Self.poppedOutKey)
             .flatMap(UUID.init(uuidString:))
             .flatMap { id in sessions.contains { $0.id == id } ? id : nil }
 
@@ -1970,11 +2085,11 @@ final class Workspace: ObservableObject {
     func save() {
         let data = try? JSONEncoder().encode(
             sessions.filter { !$0.isEphemeral }.map(\.descriptor))
-        UserDefaults.standard.set(data, forKey: Self.storeKey)
+        Prefs.store.set(data, forKey: Self.storeKey)
     }
 
     private static func load() -> [SessionDescriptor] {
-        guard let data = UserDefaults.standard.data(forKey: storeKey),
+        guard let data = Prefs.store.data(forKey: storeKey),
               let list = try? JSONDecoder().decode([SessionDescriptor].self, from: data)
         else { return [] }
         return list

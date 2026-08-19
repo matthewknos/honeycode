@@ -161,7 +161,7 @@ final class AgentStore: ObservableObject {
 
     /// One switch for all of them, for the first time one misbehaves.
     @Published var paused = false {
-        didSet { UserDefaults.standard.set(paused, forKey: Self.pausedKey) }
+        didSet { Prefs.store.set(paused, forKey: Self.pausedKey) }
     }
 
     /// Runs in flight, by agent. Also the overlap guard.
@@ -180,7 +180,7 @@ final class AgentStore: ObservableObject {
     private static var file: URL { Support.folder.appendingPathComponent("Agents.json") }
 
     init() {
-        paused = UserDefaults.standard.bool(forKey: Self.pausedKey)
+        paused = Prefs.store.bool(forKey: Self.pausedKey)
         load()
     }
 

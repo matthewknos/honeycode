@@ -30,6 +30,10 @@ struct RootView: View {
     }
 
     @AppStorage("sidebar.mode") private var mode = SidebarMode.code
+    /// Read here only to cancel `forcesLightContent` — coding mode leaves the
+    /// artwork out of the hierarchy, so the light it was compensating for
+    /// isn't there any more.
+    @AppStorage("transcript.terminal") private var codingMode = false
 
     /// The appearance the window is actually in, so the flux override below has
     /// something to hand back when it isn't overriding.
@@ -80,7 +84,8 @@ struct RootView: View {
                     // columns and throw away every transcript's scroll position
                     // along with it. Assigning the inherited scheme is a no-op.
                     .environment(\.colorScheme,
-                                 background.forcesLightContent ? .light : systemScheme)
+                                 background.forcesLightContent && !codingMode
+                                     ? .light : systemScheme)
             }
         }
         .animation(Motion.reveal, value: expanded)
@@ -1079,6 +1084,7 @@ struct SessionView: View {
     var columned = false
     @State private var draft = ""
     @AppStorage("transcript.mode") private var mode = TranscriptMode.normal
+    @AppStorage("transcript.terminal") private var terminal = false
     @AppStorage("transcript.textScale") private var textScale: Double = 1
     @AppStorage("transcript.width") private var readingWidth: Double = Double(Theme.readingWidth)
     private func composer(prominent: Bool = false) -> some View {
@@ -1088,6 +1094,7 @@ struct SessionView: View {
                      width: CGFloat(readingWidth),
                      accent: columned ? session.account.accent : nil,
                      subtitle: columned ? session.name : nil,
+                     terminal: terminal && !prominent,
                      onFocused: { workspace.selection = session.id }) { text in
             // `/send` and the shared skills are Honeycode's, and are taken
             // before dispatch — the agent never sees either as a command.
@@ -1243,6 +1250,15 @@ struct SessionView: View {
                         Spacer(minLength: 0)
                     }
                 }
+            } else if terminal {
+                // Coding mode. A different renderer, not a different filter —
+                // see `TerminalTranscript`. The composer and everything around
+                // it stays: this is a view on the same session, and switching
+                // back brings the cards with it.
+                TerminalHeader(session: session)
+                TerminalTranscript(session: session, mode: mode,
+                                   scale: CGFloat(textScale))
+                composer()
             } else {
                 TranscriptView(session: session, onEdit: { text in
                                    // The prose goes back in the field and the
@@ -1308,6 +1324,7 @@ struct StatusRail: View {
     /// conversation lives rather than about the session itself.
     @EnvironmentObject private var workspace: Workspace
     @AppStorage("transcript.mode") private var mode = TranscriptMode.normal
+    @AppStorage("transcript.terminal") private var terminal = false
     @State private var showingChanges = false
     @State private var showingViewMenu = false
     /// Read when the menu opens, not when the rail draws — `gh auth status`
@@ -1453,6 +1470,15 @@ struct StatusRail: View {
                     } else {
                         workspace.popOut(session.id)
                     }
+                }
+
+                Divider().overlay(Theme.rule).padding(.vertical, Theme.s2)
+                PopoverHeader("Presentation")
+                PopoverRow(title: "Coding mode",
+                           blurb: "A terminal instead of cards. \(Shortcuts.codingMode.display)",
+                           selected: terminal) {
+                    terminal.toggle()
+                    showingViewMenu = false
                 }
 
                 Divider().overlay(Theme.rule).padding(.vertical, Theme.s2)

@@ -59,7 +59,7 @@ enum Console {
     /// `▸ claude-p` — who is about to speak.
     static func speaker(_ account: Account, note: String? = nil) {
         breakLine()
-        let name = paint("▸ " + Mention.handle(account), tint(account), bold: true)
+        let name = paint("▸ " + AgentMention.handle(account), tint(account), bold: true)
         line("\n" + name + (note.map { " " + dim($0) } ?? ""))
     }
 
@@ -71,5 +71,36 @@ enum Console {
     static func failure(_ text: String) {
         breakLine()
         line(paint("  ! " + text, "203"))
+    }
+
+    // MARK: Scrollback
+
+    /// Write a drained scrollback, in this account's colours.
+    ///
+    /// `breakLine` first because the prompt leaves the cursor after `> ` — the
+    /// same join the old per-call `Console.status`/`speaker` pair used to do,
+    /// now done once for the batch. `Scrollback` owns every newline after that.
+    static func emit(_ runs: [ScrollbackRun], accent: String) {
+        guard !runs.isEmpty else { return }
+        breakLine()
+        for run in runs { write(paint(run.text, style: run.style, accent: accent)) }
+    }
+
+    /// One place where a scrollback style becomes an escape code.
+    ///
+    /// The mapping is short on purpose. A terminal has four colours worth
+    /// spending — who is talking, what changed, what broke, and everything
+    /// quiet — and a palette with a shade per concept reads as decoration.
+    static func paint(_ text: String, style: ScrollbackStyle, accent: String) -> String {
+        switch style {
+        case .prose:                 return text
+        case .speaker:               return paint(text, accent, bold: true)
+        case .prompt:                return paint(text, "244", bold: true)
+        case .activity, .detail,
+             .notice:                return dim(text)
+        case .added:                 return paint(text, "71")
+        case .removed:               return paint(text, "167")
+        case .failure:               return paint(text, "203")
+        }
     }
 }

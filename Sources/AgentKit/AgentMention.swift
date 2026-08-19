@@ -6,7 +6,7 @@ import Foundation
 /// `@claude-w` — rather than the `Account` raw values, because those are a
 /// storage detail (`work` is labelled Enterprise everywhere a person looks) and
 /// nobody should have to learn a second vocabulary to use the same accounts.
-enum Mention {
+enum AgentMention {
 
     /// Every spelling that resolves, longest-first so `@claude-w` is never read
     /// as `@claude` followed by stray text.

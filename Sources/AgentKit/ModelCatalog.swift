@@ -62,7 +62,7 @@ enum ModelCatalog {
     /// machine. The last live list is cached per account rather than hardcoded,
     /// because a list written into this file goes stale the week it's written.
     static func remembered(for account: Account) -> [AgentModel] {
-        if let data = UserDefaults.standard.data(forKey: cacheKey(account)),
+        if let data = Prefs.store.data(forKey: cacheKey(account)),
            let cached = try? JSONDecoder().decode([AgentModel].self, from: data),
            !cached.isEmpty {
             return cached
@@ -77,7 +77,7 @@ enum ModelCatalog {
     /// list is the real one the agent sent last time, so it can be used at
     /// once, while the built-in three are a guess worth six seconds to replace.
     static func hasRemembered(for account: Account) -> Bool {
-        guard let data = UserDefaults.standard.data(forKey: cacheKey(account)),
+        guard let data = Prefs.store.data(forKey: cacheKey(account)),
               let cached = try? JSONDecoder().decode([AgentModel].self, from: data)
         else { return false }
         return !cached.isEmpty
@@ -85,7 +85,7 @@ enum ModelCatalog {
 
     static func remember(_ models: [AgentModel], for account: Account) {
         guard !models.isEmpty, let data = try? JSONEncoder().encode(models) else { return }
-        UserDefaults.standard.set(data, forKey: cacheKey(account))
+        Prefs.store.set(data, forKey: cacheKey(account))
     }
 
     private static func cacheKey(_ account: Account) -> String {

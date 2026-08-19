@@ -43,6 +43,10 @@ enum Shortcuts {
     static let previousColumn = Shortcut("Focus previous column", .leftArrow,
                                          [.command, .option], "⌘⌥←")
 
+    /// Coding mode. ⌘⇧T because it's the terminal, and because ⌘T is taken by
+    /// the system's own Fonts panel on every Mac ever made.
+    static let codingMode = Shortcut("Coding mode", "t", [.command, .shift], "⌘⇧T")
+
     /// The focused conversation, into the floating window that stays above
     /// other apps — and back again on a second press.
     static let popOut = Shortcut("Pop out the conversation", "p",
@@ -81,6 +85,8 @@ enum Shortcuts {
     static let columns: [Shortcut] = [
         openBeside, closeColumn, nextColumn, previousColumn, popOut, sendTo,
     ]
+
+    static let view: [Shortcut] = [codingMode]
 }
 
 // MARK: - Key equivalents for engine types

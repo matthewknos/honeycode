@@ -119,7 +119,7 @@ final class Progress {
         for _ in 0..<drawn { out += "\u{1B}[1A\u{1B}[2K" }
         for row in rows {
             let mark = row.done ? "✓" : "·"
-            let name = Console.paint("\(mark) @\(Mention.handle(row.account))",
+            let name = Console.paint("\(mark) @\(AgentMention.handle(row.account))",
                                      Console.tint(row.account))
             out += "  \(name)  \(Console.dim(row.state))\n"
         }

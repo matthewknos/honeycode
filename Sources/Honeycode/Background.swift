@@ -363,6 +363,19 @@ final class BackgroundStore: ObservableObject {
 /// as exactly the whitening this was meant to remove.
 struct PaneBackground: View {
     @ObservedObject var store: BackgroundStore
+    /// Settings previews its own swatch and must show the artwork whatever the
+    /// pane behind it is currently doing.
+    var honoursCodingMode = true
+
+    /// Coding mode turns the artwork off outright.
+    ///
+    /// Not for taste — the pane is opaque above it either way — but because
+    /// `flux` is a `WKWebView` running a canvas animation continuously, and a
+    /// photograph is a full-window blur pass. Both are spending the frame
+    /// budget of the mode you switched into *because* you wanted the frames.
+    /// Leaving the view out of the hierarchy is what tears the web process
+    /// down; hiding it would keep it drawing.
+    @AppStorage("transcript.terminal") private var terminal = false
 
     /// Enough at full strength to reduce any photograph to colour fields,
     /// without being so large that mid-slider positions all look identical.
@@ -372,7 +385,7 @@ struct PaneBackground: View {
         ZStack {
             Theme.canvas
 
-            switch store.selected?.backgroundKind {
+            switch (honoursCodingMode && terminal) ? nil : store.selected?.backgroundKind {
             case .flux:
                 // The veil goes *into* the animation rather than over it.
                 //

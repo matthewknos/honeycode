@@ -33,6 +33,74 @@ enum Mention {
     }
 }
 
+/// One row of the `@` list.
+///
+/// `@` used to mean a file and only a file. It now means "something to bring
+/// into this message", and there are two kinds: an agent, which joins the
+/// conversation, and a file, which is pointed at. Berd reached the same place
+/// from the other direction and answered it with three categories you cycle
+/// between; two, ranked together in one list, is the smaller answer — there are
+/// four agents and forty thousand files, so which one you meant is nearly
+/// always obvious from what you have typed, and a category toggle would be a
+/// control you had to operate to get to the common case.
+///
+/// Skills stay under `/` where they already are, which is why this is two
+/// categories and not three.
+enum MentionCandidate: Hashable {
+    case agent(Account)
+    case file(String)
+}
+
+extension Mention {
+
+    /// Every agent whose handle matches, best first.
+    ///
+    /// Matched against the canonical handle and the account's title, so both
+    /// `@ent` and `@claude-w` find Enterprise. The aliases in
+    /// `AgentMention.names` are deliberately not offered: `personal`, `work`
+    /// and `claude-p` all resolve to the same account, and a list showing three
+    /// rows that do the same thing is a choice between things that aren't
+    /// different.
+    static func agents(_ query: String) -> [Account] {
+        guard !query.isEmpty else { return Account.allCases }
+        return Account.allCases
+            .compactMap { account -> (Account, Int)? in
+                let handle = AgentMention.handle(account)
+                let scores = [Fuzzy.score(query, in: handle),
+                              Fuzzy.score(query, in: account.title)].compactMap { $0 }
+                guard let best = scores.min() else { return nil }
+                return (account, best)
+            }
+            .sorted { $0.1 < $1.1 }
+            .map(\.0)
+    }
+
+    /// The list under a live `@`: agents first, then files.
+    ///
+    /// Agents lead because there are four of them and they are the ones you
+    /// can't discover any other way — a file has the `+` button, the drop
+    /// target and the palette, whereas nothing else in the window tells you
+    /// that typing `@kimi` here hands a piece of the work to Kimi. They are
+    /// also cheap to be wrong about: four rows costs one glance, and a file
+    /// query almost never matches a handle.
+    @MainActor
+    static func candidates(_ query: String, files: FileIndex,
+                           limit: Int = 7) -> [MentionCandidate] {
+        let agents = agents(query).prefix(query.isEmpty ? 4 : 3)
+        let room = limit - agents.count
+        return agents.map(MentionCandidate.agent)
+            + files.matches(query, limit: max(0, room)).map(MentionCandidate.file)
+    }
+
+    /// What gets written into the draft when a row is chosen.
+    static func insertion(for candidate: MentionCandidate) -> String {
+        switch candidate {
+        case .agent(let account): return AgentMention.handle(account)
+        case .file(let path):     return path
+        }
+    }
+}
+
 /// Where a `/` command starts, if the caret is inside one.
 ///
 /// Stricter than a mention on purpose: a slash command is only a command when
@@ -184,17 +252,52 @@ final class FileIndex: ObservableObject {
 
 /// The completion list, shown above the composer while a mention is live.
 struct MentionList: View {
-    let matches: [String]
+    let matches: [MentionCandidate]
     let highlighted: Int
-    let onSelect: (String) -> Void
+    let onSelect: (MentionCandidate) -> Void
 
     var body: some View {
         CompletionPanel {
-            ForEach(Array(matches.enumerated()), id: \.element) { index, path in
-                row(path, active: index == highlighted)
-                    .onTapGesture { onSelect(path) }
+            ForEach(Array(matches.enumerated()), id: \.element) { index, candidate in
+                Group {
+                    switch candidate {
+                    case .agent(let account): agentRow(account, active: index == highlighted)
+                    case .file(let path):     row(path, active: index == highlighted)
+                    }
+                }
+                .onTapGesture { onSelect(candidate) }
             }
         }
+    }
+
+    /// An agent reads differently from a file on purpose. The dot carries the
+    /// account's own colour — the same one the sidebar and the terminal use —
+    /// so the four handles are recognisable before the name is read, and the
+    /// blurb says what the row will actually do, which for the first few weeks
+    /// is the entire point of the feature being discoverable at all.
+    private func agentRow(_ account: Account, active: Bool) -> some View {
+        HStack(spacing: Theme.s4) {
+            Circle()
+                .fill(account.accent)
+                .frame(width: 7, height: 7)
+                .frame(width: 12)
+            Text("@" + AgentMention.handle(account))
+                .font(.system(size: 12.5))
+                .lineLimit(1)
+            Text(account.title)
+                .font(.system(size: 11))
+                .foregroundStyle(.tertiary)
+                .lineLimit(1)
+            Spacer(minLength: 0)
+            Text("helps with this")
+                .font(.system(size: 10.5))
+                .foregroundStyle(.quaternary)
+        }
+        .padding(.horizontal, Theme.s4)
+        .padding(.vertical, Theme.s3 - 1)
+        .background(active ? AnyShapeStyle(.selection) : AnyShapeStyle(.clear),
+                    in: RoundedRectangle(cornerRadius: Theme.cornerCard - 2))
+        .contentShape(Rectangle())
     }
 
     private func row(_ path: String, active: Bool) -> some View {

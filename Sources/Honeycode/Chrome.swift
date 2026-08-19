@@ -94,6 +94,45 @@ struct RaisedSurface: ViewModifier {
     }
 }
 
+/// The composer's ground, in both modes.
+///
+/// Coding mode isn't a restyled card — it's the absence of one. A terminal
+/// prompt sits directly on the same ground as the scrollback above it, divided
+/// by a rule and nothing else, and the focus ring becomes a caret-coloured
+/// underline because there is no border left to tint. Wrapping the choice in
+/// one modifier keeps the composer from growing a `if terminal` at every
+/// corner radius.
+struct ComposerSurface: ViewModifier {
+    let terminal: Bool
+    let glass: Bool
+    var focused: Bool = false
+    var tint: Color?
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if terminal {
+            content
+                // Opaque, and not the glass the rest of the app uses. Every
+                // translucent surface is an offscreen pass per frame, and the
+                // one place that cost is least affordable is the pane you
+                // switched to because it was faster.
+                .background(Theme.canvas)
+                // A hairline, and it stays a hairline. The focus ring moved to
+                // the caret: a full-bleed rule that lights up is a two-thousand
+                // point announcement that you clicked in the only field on
+                // screen, and no terminal has ever needed one.
+                .overlay(alignment: .top) {
+                    Rectangle().fill(Theme.rule).frame(height: 1)
+                }
+        } else {
+            content.modifier(RaisedSurface(glass: glass,
+                                           radius: Theme.cornerCard * 2,
+                                           focused: focused,
+                                           tint: tint))
+        }
+    }
+}
+
 // MARK: - Content over a background image
 
 /// Whether the surrounding content is sitting on glass.

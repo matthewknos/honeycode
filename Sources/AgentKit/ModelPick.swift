@@ -91,19 +91,4 @@ enum ModelPick {
         }
         return nil
     }
-
-    /// One line per model, for `/models`.
-    static func describe(_ model: AgentModel, current: Bool) -> String {
-        let mark = current ? "•" : " "
-        let price: String
-        if let usage = model.usage {
-            price = usage == 0 ? "free" : (usage == floor(usage)
-                ? "\(Int(usage))×" : String(format: "%g×", usage))
-        } else {
-            price = ""
-        }
-        let name = model.title.padding(toLength: max(28, model.title.count),
-                                       withPad: " ", startingAt: 0)
-        return "  \(mark) \(name)\(price.padding(toLength: 7, withPad: " ", startingAt: 0))\(Console.dim(model.id))"
-    }
 }

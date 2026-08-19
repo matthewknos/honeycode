@@ -19,6 +19,7 @@ struct HoneycodeApp: App {
     /// light against dark without going to System Settings and back.
     @AppStorage("appearance") private var appearance = Appearance.system
     @AppStorage("transcript.mode") private var transcriptMode = TranscriptMode.normal
+    @AppStorage("transcript.terminal") private var codingMode = false
 
     enum Appearance: String, CaseIterable, Identifiable {
         case system, light, dark
@@ -89,6 +90,16 @@ struct HoneycodeApp: App {
                         Text(option.title).tag(option)
                     }
                 }
+                Divider()
+                // A toggle rather than a member of the detail picker below.
+                // The four detail levels are all the same renderer; this one
+                // swaps the renderer, and putting it in that list would say
+                // "less detail again" when it means "different machine".
+                Button(codingMode ? "Leave Coding Mode" : "Coding Mode") {
+                    codingMode.toggle()
+                }
+                    .keyboardShortcut(Shortcuts.codingMode.key,
+                                      modifiers: Shortcuts.codingMode.modifiers)
                 Divider()
                 ForEach(TranscriptMode.allCases) { option in
                     Button(option.title) { transcriptMode = option }

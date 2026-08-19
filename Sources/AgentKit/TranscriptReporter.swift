@@ -1,0 +1,122 @@
+import Foundation
+
+/// A crew run, as a conversation.
+///
+/// The window's answer to `ConsoleReporter`, and shaped by one fact the
+/// terminal doesn't have: **the lead is already on screen.** In `ai` the lead's
+/// reply has to be printed, because nothing else would. Here the lead *is* this
+/// session — it streams into this transcript by itself, the way it does for
+/// every other turn — so anything this class also printed would arrive twice.
+///
+/// So most of the protocol is deliberately quiet, and what's left is the part
+/// the transcript genuinely can't see for itself:
+///
+/// - the delegates, which are separate sessions nobody is looking at, mirrored
+///   into blocks here the way a second opinion already is;
+/// - the plumbing — how the work was split, what the tenancy check held back,
+///   what the whole run cost across four accounts, none of which any one
+///   session's own rendering knows about.
+@MainActor
+final class TranscriptReporter: CrewReporter {
+
+    /// Weak for the reason `Crew.host` is: the session owns the crew, which
+    /// owns this. A strong reference here would close the loop.
+    private weak var host: Session?
+    /// The block each working delegate is being mirrored into, and the session
+    /// it is being mirrored from — needed again at the end, because closing a
+    /// block means reading one last time from the transcript behind it.
+    private var blocks: [Account: (id: UUID, session: Session)] = [:]
+
+    init(host: Session) {
+        self.host = host
+    }
+
+    // MARK: What the transcript can't see for itself
+
+    func status(_ text: String) { host?.note(text) }
+
+    func problem(_ text: String) { host?.note(text) }
+
+    /// Only the lead's own phase changes, and only the ones that explain a
+    /// pause. A delegate's "done" is already visible — its block stops
+    /// spinning — and saying it again in a notice underneath is the app
+    /// narrating what the reader just watched happen.
+    func speaker(_ account: Account, note: String) {
+        guard let host, account == host.account else { return }
+        host.note(note)
+    }
+
+    /// Nothing. Every call carries text that is already on screen: the lead's
+    /// plan is an `.assistant` block in this very transcript, and a delegate's
+    /// report is the block it has been streaming into since it started. This is
+    /// the method whose emptiness is the design — see the type's note.
+    func prose(_ text: String) {}
+
+    func plan(_ assignments: [CrewAssignment]) {
+        guard !assignments.isEmpty else { return }
+        let lines = assignments.map {
+            "@\(AgentMention.handle($0.to)) — \(Self.summarise($0.task))"
+        }
+        host?.note(lines.joined(separator: "\n"))
+    }
+
+    func held(_ assignment: CrewAssignment, reason: String) {
+        host?.note("@\(AgentMention.handle(assignment.to)) — not sent: \(reason)")
+    }
+
+    // MARK: The delegates
+
+    /// Nothing here either. `stream` exists for the terminal, which has to be
+    /// told which session to print; a delegate's output reaches this transcript
+    /// through `working`, and the lead's reaches it by being the lead.
+    func stream(_ session: Session, as account: Account) {}
+
+    func endStream() {}
+
+    func working(_ delegates: [(account: Account, session: Session)]) {
+        let now = Set(delegates.map(\.account))
+
+        // Anyone who has dropped out of the set has finished — including the
+        // case where the set is empty, which is how a run ends.
+        for (account, block) in blocks where !now.contains(account) {
+            host?.stopMirroring(block.id, from: block.session)
+            blocks[account] = nil
+        }
+
+        for delegate in delegates where blocks[delegate.account] == nil {
+            let label = "\(delegate.account.title) · \(delegate.session.model.title)"
+            guard let id = host?.mirror(delegate.session, labelled: label) else { continue }
+            blocks[delegate.account] = (id: id, session: delegate.session)
+        }
+    }
+
+    /// Deliberately not the place a block is closed.
+    ///
+    /// `landed` says a turn finished; the block should stay open until the run
+    /// stops mirroring it, because a delegate's last streamed delta and its
+    /// completion can share a tick. `working` closes it a moment later with a
+    /// final read, which is the one that catches that delta.
+    func landed(_ account: Account) {}
+
+    func finished(seconds: Int, spend: String) {
+        // Worth saying here and not in the terminal's sense of "worth saying":
+        // the rail above counts this session's own cost, and a crew spends on
+        // three others it has never heard of.
+        host?.note("\(seconds)s · \(spend)")
+    }
+
+    /// A task, short enough to sit in a notice.
+    ///
+    /// The first sentence rather than the first N characters where there is
+    /// one: an assignment opens by saying what to build, and cutting mid-clause
+    /// turns that into a riddle.
+    private static func summarise(_ task: String, limit: Int = 120) -> String {
+        let flat = task.replacingOccurrences(of: "\n", with: " ")
+            .replacingOccurrences(of: "  ", with: " ")
+            .trimmingCharacters(in: .whitespaces)
+        if let stop = flat.firstIndex(of: "."), flat.distance(from: flat.startIndex, to: stop) < limit {
+            return String(flat[..<stop])
+        }
+        return flat.count > limit ? String(flat.prefix(limit - 1)) + "…" : flat
+    }
+}

@@ -18,7 +18,7 @@ enum Migration {
     private static let newFolder = "Honeycode"
 
     static func run() {
-        let defaults = UserDefaults.standard
+        let defaults = Prefs.store
         guard !defaults.bool(forKey: didRunKey) else { return }
 
         migratePreferences()
@@ -44,7 +44,7 @@ enum Migration {
               let plist = try? PropertyListSerialization.propertyList(
                 from: data, format: nil) as? [String: Any] else { return }
 
-        let defaults = UserDefaults.standard
+        let defaults = Prefs.store
         for (key, value) in plist {
             // Window frames and split positions are the old app's furniture,
             // and AppKit will write its own. Everything else — the session
@@ -115,6 +115,12 @@ enum Support {
             // two they exist only to be handed to one composer once. Swept on
             // the same schedule rather than kept indefinitely.
             prune("Relays")
+            // Whatever an off-tenant delegate wrote in the empty directory it
+            // was given. Kept for a while rather than deleted at the end of the
+            // run, because the work is often the point — but it is scratch, and
+            // scratch that never expires is a second copy of your projects
+            // accumulating somewhere nobody looks.
+            prune("Crew")
         }
     }
 

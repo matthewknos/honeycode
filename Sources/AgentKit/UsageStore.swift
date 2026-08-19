@@ -60,7 +60,7 @@ final class UsageStore: ObservableObject {
     /// lives in `SettingsView` and keeps its wrapper, and this side only ever
     /// read it.
     var monthlyCap: Double {
-        (UserDefaults.standard.object(forKey: "usage.monthlyCap") as? Double) ?? 500
+        (Prefs.store.object(forKey: "usage.monthlyCap") as? Double) ?? 500
     }
 
     private var lastChecked: [Account: Date] = [:]
@@ -100,21 +100,21 @@ final class UsageStore: ObservableObject {
 
     private func loadSpend() {
         for account in Account.allCases {
-            let tracked = UserDefaults.standard.double(forKey: Self.spendKey(account))
-            let baseline = UserDefaults.standard.double(forKey: Self.baselineKey(account))
+            let tracked = Prefs.store.double(forKey: Self.spendKey(account))
+            let baseline = Prefs.store.double(forKey: Self.baselineKey(account))
             if tracked + baseline > 0 { monthlySpend[account] = tracked + baseline }
         }
     }
 
     func baseline(for account: Account) -> Double {
-        UserDefaults.standard.double(forKey: Self.baselineKey(account))
+        Prefs.store.double(forKey: Self.baselineKey(account))
     }
 
     /// Set the known-true figure. Honeycode's own tally restarts from zero and
     /// accrues on top, so setting it twice can't double-count.
     func setBaseline(_ amount: Double, for account: Account) {
-        UserDefaults.standard.set(amount, forKey: Self.baselineKey(account))
-        UserDefaults.standard.set(0.0, forKey: Self.spendKey(account))
+        Prefs.store.set(amount, forKey: Self.baselineKey(account))
+        Prefs.store.set(0.0, forKey: Self.spendKey(account))
         monthlySpend[account] = amount
     }
 
@@ -124,8 +124,8 @@ final class UsageStore: ObservableObject {
     /// would have to get right by hand and would quietly get wrong.
     func record(cost: Double, for account: Account) {
         guard cost > 0 else { return }
-        let tracked = UserDefaults.standard.double(forKey: Self.spendKey(account)) + cost
-        UserDefaults.standard.set(tracked, forKey: Self.spendKey(account))
+        let tracked = Prefs.store.double(forKey: Self.spendKey(account)) + cost
+        Prefs.store.set(tracked, forKey: Self.spendKey(account))
         monthlySpend[account] = tracked + baseline(for: account)
     }
 

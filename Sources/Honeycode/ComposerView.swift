@@ -25,6 +25,15 @@ struct ComposerView: View {
     /// sidebar, so neither earns its pixels.
     var accent: Color?
     var subtitle: String?
+    /// Coding mode. Sheds the card, the rail and the proportional type, and
+    /// keeps everything that makes the field worth having — mentions, slash
+    /// commands, attachments, dictation.
+    ///
+    /// A flag rather than a second composer, because the alternative is
+    /// reimplementing `@` completion for the sake of a font. What a terminal
+    /// prompt is *made of* is a caret, one line and no chrome; none of that is
+    /// a reason to lose the parts you'd have to build again.
+    var terminal = false
     /// Clicking into a composer is what focuses its column.
     var onFocused: (() -> Void)?
     let onSend: (String) -> Void
@@ -65,9 +74,9 @@ struct ComposerView: View {
     /// for commands (the only way to make one go was to clear what you'd typed).
     @State private var dismissed = false
 
-    private var mentionMatches: [String] {
+    private var mentionMatches: [MentionCandidate] {
         guard !dismissed, let mention else { return [] }
-        return files.matches(Mention.query(in: draft, range: mention))
+        return Mention.candidates(Mention.query(in: draft, range: mention), files: files)
     }
 
     /// `/` completions. Mutually exclusive with mentions by construction — a
@@ -133,13 +142,20 @@ struct ComposerView: View {
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
             card
-            hintLine
+            // A terminal doesn't caption its prompt. What the hint line says —
+            // what Return does, which session this is — coding mode says once
+            // in the header instead of under every keystroke.
+            if !terminal { hintLine }
         }
-        .frame(maxWidth: width)
+        // Coding mode spans the pane rather than centring a reading column,
+        // and loses the margin with it: a terminal's prompt is flush with its
+        // scrollback, and an inset one reads as a widget sitting on top of the
+        // output instead of the last line of it.
+        .frame(maxWidth: terminal ? .infinity : width)
         .frame(maxWidth: .infinity)
-        .padding(.horizontal, Theme.pane)
-        .padding(.top, Theme.s5)
-        .padding(.bottom, Theme.s6 - Theme.s1)
+        .padding(.horizontal, terminal ? 0 : Theme.pane)
+        .padding(.top, terminal ? 0 : Theme.s5)
+        .padding(.bottom, terminal ? 0 : Theme.s6 - Theme.s1)
         .animation(Motion.hover, value: canSend)
         .animation(Motion.reveal, value: completionCount)
         .onChange(of: draft) { _, new in
@@ -280,54 +296,77 @@ struct ComposerView: View {
         highlighted = 0
     }
 
-    /// Swap the typed fragment for the real path. The trailing space both reads
-    /// naturally and closes the mention, since a mention can't contain one.
-    private func accept(_ path: String) {
+    /// Swap the typed fragment for the real thing — a path, or an agent's
+    /// handle. The trailing space both reads naturally and closes the mention,
+    /// since a mention can't contain one.
+    private func accept(_ candidate: MentionCandidate) {
         // Recomputed here rather than read from state, and read exactly once —
         // the range has to come from the same value of `draft` that's about to
         // be mutated with it. Nothing clears it afterwards because there's
         // nothing to clear: replacing the fragment with a path and a space
         // ends the mention, and the next read of `mention` sees that.
         guard let range = Mention.range(in: draft) else { return }
-        draft.replaceSubrange(range, with: "@\(path) ")
+        draft.replaceSubrange(range, with: "@\(Mention.insertion(for: candidate)) ")
         highlighted = 0
     }
 
     private var card: some View {
+        contents
+            .padding(.horizontal, terminal ? Theme.s5 + Theme.s1 : Theme.s5)
+            .padding(.vertical, terminal ? Theme.s4 : Theme.s5 - Theme.s1)
+            .modifier(ComposerSurface(terminal: terminal,
+                                      glass: background.isGlassy,
+                                      focused: focused,
+                                      tint: accent))
+            .animation(Motion.hover, value: focused)
+            .onChange(of: focused) { _, now in
+                // Only on gaining focus. Reporting the loss too would fight the
+                // gain from the composer you just clicked into, and the last write
+                // would win by timing rather than by intent.
+                if now { onFocused?() }
+            }
+    }
+
+    private var contents: some View {
         VStack(alignment: .leading, spacing: Theme.s4) {
             if let pending = session.relayPending { relayNotice(pending) }
             if !session.attachments.isEmpty { attachmentRow }
 
-            TextField("Message \(session.account.shortTitle)…", text: $draft, axis: .vertical)
-                .textFieldStyle(.plain)
-                .font(Theme.body)
-                .lineSpacing(2)
-                .lineLimit(prominent ? (2...12) : (1...10))
-                .focused($focused)
-                .onSubmit {
-                    // Return completes the suggestion rather than sending a
-                    // half-typed path — the same bargain every editor makes.
-                    if completionCount > 0 {
-                        acceptHighlighted()
-                    } else if canSend {
-                        send()
-                    }
+            HStack(alignment: .firstTextBaseline, spacing: Theme.s3) {
+                if terminal {
+                    // The caret. It is the only chrome coding mode keeps,
+                    // because a prompt with nothing in front of it doesn't
+                    // read as a place to type.
+                    Text("›")
+                        .font(Theme.mono.weight(.semibold))
+                        // The caret carries focus, which is where a terminal
+                        // has always put it.
+                        .foregroundStyle(focused
+                                         ? AnyShapeStyle(session.account.accent)
+                                         : AnyShapeStyle(.tertiary))
                 }
+                TextField(terminal ? "" : "Message \(session.account.shortTitle)…",
+                          text: $draft, axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .font(terminal ? Theme.mono : Theme.body)
+                    .lineSpacing(terminal ? 1.5 : 2)
+                    .lineLimit(prominent ? (2...12) : (1...10))
+                    .focused($focused)
+                    .onSubmit {
+                        // Return completes the suggestion rather than sending a
+                        // half-typed path — the same bargain every editor makes.
+                        if completionCount > 0 {
+                            acceptHighlighted()
+                        } else if canSend {
+                            send()
+                        }
+                    }
+            }
 
-            rail
-        }
-        .padding(.horizontal, Theme.s5)
-        .padding(.vertical, Theme.s5 - Theme.s1)
-        .modifier(RaisedSurface(glass: background.isGlassy,
-                                radius: Theme.cornerCard * 2,
-                                focused: focused,
-                                tint: accent))
-        .animation(Motion.hover, value: focused)
-        .onChange(of: focused) { _, now in
-            // Only on gaining focus. Reporting the loss too would fight the
-            // gain from the composer you just clicked into, and the last write
-            // would win by timing rather than by intent.
-            if now { onFocused?() }
+            // The rail states the model, the spend and the context — all of
+            // which coding mode puts in the status line instead, where a
+            // terminal has always kept them.
+            if !terminal { rail }
         }
     }
 

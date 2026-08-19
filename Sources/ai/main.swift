@@ -10,6 +10,41 @@ import Foundation
 // The engine underneath is AgentKit, the same code Honeycode.app runs on, which
 // is why this is a few hundred lines rather than a rewrite.
 
+/// The one help text, shared by `/help` and `--help`.
+///
+/// It was two, and the CLI-facing one was the poorer: it named `-p` and nothing
+/// else, so the colon syntax and `/models` existed only for someone already
+/// sitting in the REPL. That is backwards — the flag surface is the one another
+/// program reads, and it was the half that documented least.
+///
+/// Outside `Program` because `Program` is `@MainActor` and `--help` is answered
+/// before there is a main actor worth hopping to.
+enum Help {
+    static let lines: [String] = [
+        "",
+        "  @claude-p @claude-w @kimi @copilot   who does the work",
+        "  first one named leads: it plans, delegates, and assembles",
+        "  no mention reuses whoever led last",
+        "",
+        "  pick a model with a colon — every handle, not just copilot:",
+        "    @kimi:k3           any part of the title or id",
+        "    @copilot:free      cheapest that costs no quota at all",
+        "    @copilot:cheap     lowest usage multiplier on offer",
+        "    @copilot:best      the strongest one available",
+        "    @claude-w:haiku    exact ids work too, if you know them",
+        "  it sticks for the session, until another colon changes it",
+        "",
+        "  what's on offer:",
+        "    ai --models [account]   from a shell",
+        "    /models [account]       from here",
+        "    ai --describe           all of the above as JSON, for other tools",
+        "",
+        "  ai                      interactive",
+        "  ai -p \"<message>\"       one message, printed, then exit",
+        "  /help  /quit",
+    ]
+}
+
 @MainActor
 final class Program {
 
@@ -21,8 +56,17 @@ final class Program {
 
     init(directory: URL) {
         self.directory = directory
-        self.crew = Crew(directory: directory)
+        self.crew = Crew(directory: directory, reporter: ConsoleReporter())
         crew.onIdle = { [weak self] in self?.prompt() }
+    }
+
+    /// Everything that has to happen before the first turn, whichever way the
+    /// program was entered. `adopt` first: the migrations that follow read and
+    /// write preferences, and they should be reading the shared domain.
+    private func begin() {
+        Prefs.adopt()
+        Migration.run()
+        Support.prepare()
     }
 
     /// One message, printed, then out. `ai -p "…"`.
@@ -33,17 +77,32 @@ final class Program {
     /// organisation decides about agent-to-agent protocols later, running a
     /// program stays allowed.
     func once(_ text: String) {
-        Migration.run()
-        Support.prepare()
+        begin()
         crew.onIdle = { exit(0) }
         crew.submit(text)
     }
 
-    func run() {
-        Migration.run()
-        Support.prepare()
+    /// `ai --models [account]`, then out.
+    ///
+    /// The same answer `/models` gives, reachable without a terminal session to
+    /// type into. That gap is not cosmetic: anything driving `ai -p` could ask
+    /// for work to be done but could not ask what was available to do it with,
+    /// so it had to guess — and did.
+    func listModels(_ argument: String) {
+        begin()
+        models(argument) { exit(0) }
+    }
 
-        let accounts = Account.allCases.map { "@" + Mention.handle($0) }.joined(separator: "  ")
+    /// `ai --describe`, then out.
+    func describe() {
+        begin()
+        Describe.run(crew) { exit(0) }
+    }
+
+    func run() {
+        begin()
+
+        let accounts = Account.allCases.map { "@" + AgentMention.handle($0) }.joined(separator: "  ")
         Console.line()
         Console.line(Console.paint("ai", "244", bold: true) + Console.dim("  ·  " + directory.path))
         Console.line(Console.dim("  " + accounts))
@@ -72,7 +131,7 @@ final class Program {
                     self.prompt()
                 case _ where trimmed == "/models" || trimmed.hasPrefix("/models "):
                     self.models(String(trimmed.dropFirst("/models".count))
-                        .trimmingCharacters(in: .whitespaces))
+                        .trimmingCharacters(in: .whitespaces)) { self.prompt() }
                 default:
                     self.crew.submit(trimmed)
                 }
@@ -81,32 +140,25 @@ final class Program {
     }
 
     private func help() {
-        Console.line()
-        Console.line("  @claude-p @claude-w @kimi @copilot   who does the work")
-        Console.line("  first one named leads: it plans, delegates, and assembles")
-        Console.line("  no mention reuses whoever led last")
-        Console.line()
-        Console.line("  pick a model with a colon — no need to remember ids:")
-        Console.line("    @copilot:free     cheapest that costs no quota at all")
-        Console.line("    @copilot:cheap    lowest usage multiplier on offer")
-        Console.line("    @copilot:best     the strongest one available")
-        Console.line("    @copilot:haiku    any part of the name also works")
-        Console.line()
-        Console.line("  /models [account]   what each one can run")
-        Console.line("  /help  /quit")
+        for line in Help.lines { Console.line(line) }
     }
 
     /// `/models` for the line-up, `/models copilot` for everything that
     /// account offers.
-    private func models(_ argument: String) {
+    ///
+    /// Takes a continuation rather than calling `prompt()` itself, because it
+    /// now has two callers that want different things afterwards: the REPL
+    /// wants its prompt back, and `ai --models` wants to exit.
+    private func models(_ argument: String, then finish: @escaping () -> Void) {
         let wanted: [Account]
         if argument.isEmpty {
             wanted = Account.allCases
-        } else if let one = Mention.account(forHandle:
+        } else if let one = AgentMention.account(forHandle:
                     argument.trimmingCharacters(in: CharacterSet(charactersIn: "@"))) {
             wanted = [one]
         } else {
             Console.failure("no account called \u{22}\(argument)\u{22}")
+            finish()
             return
         }
 
@@ -115,11 +167,11 @@ final class Program {
         // whatever order they happened to land.
         var queue = wanted
         func next() {
-            guard !queue.isEmpty else { self.prompt(); return }
+            guard !queue.isEmpty else { finish(); return }
             let account = queue.removeFirst()
             self.crew.catalogue(for: account) { models, current in
                 Console.line()
-                Console.line(Console.paint("@" + Mention.handle(account),
+                Console.line(Console.paint("@" + AgentMention.handle(account),
                                            Console.tint(account), bold: true)
                              + Console.dim("  \(models.count) available"))
                 // The whole list only when asked for one account. Four accounts
@@ -132,7 +184,7 @@ final class Program {
                     Console.line(ModelPick.describe(model, current: model.id == current))
                 }
                 if argument.isEmpty && models.count > 1 {
-                    Console.line(Console.dim("    /models \(Mention.handle(account)) for the rest"))
+                    Console.line(Console.dim("    /models \(AgentMention.handle(account)) for the rest"))
                 }
                 next()
             }
@@ -147,10 +199,23 @@ final class Program {
 // has child processes to stop, and the default handler would orphan them.
 let arguments = Array(CommandLine.arguments.dropFirst())
 
+/// Asked for. Goes to stdout and succeeds — `ai --help | grep` is a reasonable
+/// thing to do, and a help text on stderr behind a non-zero exit is not.
+func showHelp() -> Never {
+    for line in Help.lines { print(line) }
+    print()
+    exit(0)
+}
+
+/// Got it wrong. Short, to stderr, non-zero — the full text is one flag away
+/// and repeating it here buries the thing that was actually wrong.
 func usage() -> Never {
     FileHandle.standardError.write(Data("""
     usage: ai                      interactive
            ai -p "<message>"       one message, printed, then exit
+           ai --models [account]   what an account can run
+           ai --describe           capabilities and catalogue, as JSON
+           ai --help               all of it
 
     Name the agents in the message. The first one leads:
       ai -p "a landing page for a dentist @claude-p @copilot:free @kimi"
@@ -175,8 +240,15 @@ case "-p", "--print":
         .trimmingCharacters(in: .whitespacesAndNewlines)
     guard !message.isEmpty else { usage() }
     MainActor.assumeIsolated { program.once(message) }
+case "--models", "-m":
+    let account = arguments.dropFirst().joined(separator: " ")
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+    MainActor.assumeIsolated { program.listModels(account) }
+case "--describe":
+    guard arguments.count == 1 else { usage() }
+    MainActor.assumeIsolated { program.describe() }
 case "-h", "--help":
-    usage()
+    showHelp()
 default:
     // Bare words are the message, so `ai "do the thing @kimi"` works without
     // the flag — the flag exists for the case where the message starts with

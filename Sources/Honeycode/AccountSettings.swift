@@ -15,10 +15,51 @@ struct AccountSettings: View {
     @State private var editing: CustomAccount?
     @State private var confirming: CustomAccount?
 
+    /// Bound to preferences rather than to state: this is read at process
+    /// launch by every Claude session, so the value on screen has to be the
+    /// value on disk and not a copy of it.
+    private func claudeDirectory(_ account: Account) -> Binding<String> {
+        Binding(get: { Account.claudeDirectory(account) },
+                set: { Account.setClaudeDirectory($0, for: account) })
+    }
+
+    private func exists(_ account: Account) -> Bool {
+        FileManager.default.fileExists(atPath: Account.claudeDirectory(account))
+    }
+
     var body: some View {
         Form {
             Section {
-                ForEach([Account.personal, .work, .kimi, .copilot], id: \.self) { account in
+                // The two Claude accounts are switched entirely by
+                // `CLAUDE_CONFIG_DIR`, so where that points *is* the account.
+                // Editable because the defaults encode one particular machine's
+                // arrangement: the CLI puts a single account in `~/.claude`, and
+                // `~/.claude-personal` exists only where somebody has two and
+                // moved one. Pointed at a directory that has never existed, the
+                // failure reads as a login problem rather than a settings one.
+                ForEach([Account.personal, Account.work], id: \.self) { account in
+                    HStack(spacing: Theme.s4) {
+                        Circle().fill(account.accent).frame(width: 7, height: 7)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(account.title)
+                            Text(account.agentName)
+                                .font(Theme.label)
+                                .foregroundStyle(.tertiary)
+                        }
+                        Spacer()
+                        TextField("", text: claudeDirectory(account),
+                                  prompt: Text("~/.claude"))
+                            .font(Theme.monoSmall)
+                            .frame(width: 210)
+                        Image(systemName: exists(account) ? "checkmark.circle"
+                                                          : "exclamationmark.triangle")
+                            .font(.system(size: 11))
+                            .foregroundStyle(exists(account) ? AnyShapeStyle(.tertiary)
+                                                             : AnyShapeStyle(Color.orange))
+                            .help(exists(account) ? "Found" : "No such directory yet")
+                    }
+                }
+                ForEach([Account.kimi, Account.copilot], id: \.self) { account in
                     HStack(spacing: Theme.s4) {
                         Circle().fill(account.accent).frame(width: 7, height: 7)
                         Text(account.title)
@@ -30,9 +71,13 @@ struct AccountSettings: View {
             } header: {
                 Text("Built in")
             } footer: {
-                Text("These are wired to credentials Honeycode knows how to find.")
+                Text("Claude accounts are switched by CLAUDE_CONFIG_DIR — the directory "
+                     + "is the account. With one Claude login, point both at ~/.claude "
+                     + "or just use the one. Kimi and Copilot keep their own credentials "
+                     + "and are signed in through their own CLIs.")
                     .font(Theme.label)
                     .foregroundStyle(.tertiary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             Section {

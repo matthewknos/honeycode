@@ -176,12 +176,45 @@ enum Account: Hashable, Identifiable, Codable {
     /// `CLAUDE_CONFIG_DIR`, which is the whole of account switching for Claude.
     /// Nil for anything speaking ACP, which keeps its own credentials elsewhere
     /// and has no equivalent knob.
+    ///
+    /// Overridable, and that is not decoration. These two paths were the one
+    /// genuinely machine-specific thing left in the app: `~/.claude` is where
+    /// the Claude CLI puts a single account, and `~/.claude-personal` exists
+    /// only because this machine has two and one of them had to move. Somebody
+    /// cloning this repo with one Claude account would find "Claude Personal"
+    /// pointed at a directory that has never existed, and the failure would
+    /// look like an authentication problem rather than a configuration one.
+    ///
+    /// Defaults are unchanged, so nothing on this machine moves.
     var configDir: String? {
         switch self {
-        case .personal: return NSHomeDirectory() + "/.claude-personal"
-        case .work:     return NSHomeDirectory() + "/.claude"
+        case .personal: return Self.claudeDirectory(.personal)
+        case .work:     return Self.claudeDirectory(.work)
         case .kimi, .copilot, .custom: return nil
         }
+    }
+
+    /// Where a Claude account's credentials live, as configured.
+    static func claudeDirectory(_ account: Account) -> String {
+        if let set = Prefs.store.string(forKey: configKey(account)), !set.isEmpty {
+            return (set as NSString).expandingTildeInPath
+        }
+        return NSHomeDirectory() + (account == .work ? "/.claude" : "/.claude-personal")
+    }
+
+    /// Point an account at a different config directory. Empty restores the
+    /// default rather than storing a blank, which would read as "no directory".
+    static func setClaudeDirectory(_ path: String, for account: Account) {
+        let trimmed = path.trimmingCharacters(in: .whitespaces)
+        if trimmed.isEmpty {
+            Prefs.store.removeObject(forKey: configKey(account))
+        } else {
+            Prefs.store.set(trimmed, forKey: configKey(account))
+        }
+    }
+
+    private static func configKey(_ account: Account) -> String {
+        "account.configDir." + account.id
     }
 }
 

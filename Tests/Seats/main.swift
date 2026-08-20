@@ -163,5 +163,42 @@ check("the prompt survives", AgentMention.parse(line + "\n\nbuild it").prompt ==
 let doubled = AgentMention.parse("@kimi:k3\n\nlook at @kimi again").crew
 check("a handle named twice by two routes is still one agent", doubled.count == 1)
 
+// --- an account this app was never told about ---
+//
+// The four that ship are cases; a fifth is a value. What has to stay true is
+// that nothing downstream can tell the difference — a custom account keys a
+// dictionary, round-trips through a session descriptor, and answers to an
+// `@handle` exactly as the built-ins do.
+let mine = Account.custom("A1B2")
+check("a custom account is not any of the built-ins",
+      ![Account.personal, .work, .kimi, .copilot].contains(mine))
+check("two ids are two accounts", Account.custom("A") != Account.custom("B"))
+check("the same id is the same account", Account.custom("A") == Account.custom("A"))
+check("it can key a dictionary", [mine: 1][mine] == 1)
+
+// On-disk compatibility is the part with teeth: `id` used to be a raw value and
+// every saved session descriptor holds one. Changing what that string is would
+// orphan every existing conversation.
+check("personal still writes as \"personal\"", Account.personal.id == "personal")
+check("enterprise still writes as \"work\"", Account.work.id == "work")
+for built in [Account.personal, .work, .kimi, .copilot] {
+    check("\(built.id) round-trips", Account(id: built.id) == built)
+}
+check("an unknown id becomes a custom account rather than nil",
+      Account(id: "A1B2") == mine)
+
+let coded = try! JSONEncoder().encode([Account.work, mine])
+check("it encodes as the bare id", String(decoding: coded, as: UTF8.self) == #"["work","A1B2"]"#)
+check("and decodes back", try! JSONDecoder().decode([Account].self, from: coded) == [.work, mine])
+
+// `known` is the strict door: text somebody wrote must not conjure an account.
+check("a name nothing answers to is refused", Account.known("nope") == nil)
+check("but a built-in passes", Account.known("kimi") == .kimi)
+
+// Seats work the same on an account nobody had heard of.
+check("a custom account has seats too", Seat(mine, 2).account == mine)
+check("and its handle survives a definition that has gone",
+      !AgentMention.handle(mine).isEmpty)
+
 print(failures == 0 ? "\nall passed" : "\n\(failures) failed")
 exit(failures == 0 ? 0 : 1)

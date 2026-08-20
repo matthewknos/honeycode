@@ -96,13 +96,20 @@ enum Shortcuts {
 // about this app, not about the type, and it belongs on this side of the line.
 
 extension Account {
-    /// ⌘1 / ⌘2 / ⌘3 / ⌘4
-    var shortcut: KeyEquivalent {
+    /// ⌘1 / ⌘2 / ⌘3 / ⌘4, and nothing for the rest.
+    ///
+    /// The four that ship get the four keys. An added account gets none rather
+    /// than ⌘5 upwards: the number would depend on the order things were added,
+    /// so the same key would mean different accounts on two machines and a
+    /// different account on this one after a rename. A shortcut you cannot
+    /// predict is worse than no shortcut.
+    var shortcut: KeyEquivalent? {
         switch self {
         case .personal: return "1"
         case .work:     return "2"
         case .kimi:     return "3"
         case .copilot:  return "4"
+        case .custom:   return nil
         }
     }
 }

@@ -23,6 +23,16 @@ enum Console {
         case .work:     return "33"    // blue
         case .kimi:     return "141"   // purple
         case .copilot:  return "35"    // green
+        case .custom:
+            switch account.custom?.tint {
+            case .teal:   return "37"
+            case .pink:   return "205"
+            case .indigo: return "63"
+            case .brown:  return "137"
+            case .red:    return "203"
+            case .yellow: return "179"
+            case nil:     return "245" // grey: a definition that has gone
+            }
         }
     }
 

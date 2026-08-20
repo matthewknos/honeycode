@@ -6,15 +6,83 @@ import Combine
 /// Account switching is nothing more than an environment variable on the child
 /// process — `CLAUDE_CONFIG_DIR` picks the credential store, so work and
 /// personal are the same binary pointed at different config directories.
-enum Account: String, CaseIterable, Identifiable, Codable {
-    // Declaration order is display order — the sidebar, the account switcher and
-    // the ⌘-number shortcuts all read `allCases`. `work` keeps its raw value
-    // even though it's now labelled Enterprise: the raw value is what's written
-    // into every saved session descriptor on disk, and renaming it would orphan
-    // every existing Claude Work session.
+enum Account: Hashable, Identifiable, Codable {
+    // The four that ship. Declaration order is display order — the sidebar, the
+    // account switcher and the ⌘-number shortcuts all read `allCases`. `work`
+    // keeps its identifier even though it's now labelled Enterprise: that
+    // string is what's written into every saved session descriptor on disk, and
+    // renaming it would orphan every existing Claude Work session.
     case personal, work, kimi, copilot
 
-    var id: String { rawValue }
+    /// One somebody added. See `CustomAccount` — the payload is its id, so this
+    /// stays small, hashable and safe to use as a dictionary key, which
+    /// `Crew` does throughout.
+    case custom(String)
+
+    /// A case rather than a struct with static members, deliberately. Every
+    /// switch over an account in this codebase is exhaustive, and the compiler
+    /// pointing at each of them was the only reason adding this was tractable:
+    /// a struct would have compiled on the first try and been wrong in six
+    /// places nobody would have found until a fifth account existed.
+    var id: String {
+        switch self {
+        case .personal: return "personal"
+        case .work:     return "work"
+        case .kimi:     return "kimi"
+        case .copilot:  return "copilot"
+        case .custom(let id): return id
+        }
+    }
+
+    /// Round-trips through the same string that used to be the raw value, so
+    /// every session descriptor already on disk decodes unchanged.
+    init(id: String) {
+        switch id {
+        case "personal": self = .personal
+        case "work":     self = .work
+        case "kimi":     self = .kimi
+        case "copilot":  self = .copilot
+        default:         self = .custom(id)
+        }
+    }
+
+    /// The same lookup, but refusing a name nothing answers to.
+    ///
+    /// `init(id:)` is total on purpose — a session descriptor naming an account
+    /// that has since been removed must still decode, or the session is
+    /// orphaned and its transcript unreachable. Text somebody or something
+    /// *wrote*, though, has no such claim: a misspelled account in an agent
+    /// definition should be refused, not turned into a phantom that will never
+    /// launch anything.
+    static func known(_ id: String) -> Account? {
+        let account = Account(id: id)
+        if case .custom = account, CustomAccounts.find(id) == nil { return nil }
+        return account
+    }
+
+    init(from decoder: Decoder) throws {
+        self.init(id: try decoder.singleValueContainer().decode(String.self))
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(id)
+    }
+
+    /// The built-ins, then whatever has been added, in the order it was added.
+    ///
+    /// No longer synthesised, because the set is no longer fixed. Anything
+    /// walking this to build a sidebar or a shortcut list gets the additions
+    /// for free.
+    static var allCases: [Account] {
+        [.personal, .work, .kimi, .copilot] + CustomAccounts.all.map { .custom($0.id) }
+    }
+
+    /// The definition behind a custom account, or nil for one that ships.
+    var custom: CustomAccount? {
+        guard case .custom(let id) = self else { return nil }
+        return CustomAccounts.find(id)
+    }
 
     /// Names the *agent*, not just the credential set. With four accounts and
     /// three different agents behind them, "Personal" and "Enterprise" alone
@@ -26,6 +94,9 @@ enum Account: String, CaseIterable, Identifiable, Codable {
         case .work:     return "Claude Enterprise"
         case .kimi:     return "Kimi"
         case .copilot:  return "Copilot"
+        // An account whose definition has gone — removed while a session was
+        // open — still has to render as something rather than crash a sidebar.
+        case .custom:   return custom?.title ?? "Removed account"
         }
     }
 
@@ -37,6 +108,7 @@ enum Account: String, CaseIterable, Identifiable, Codable {
         case .work:     return "Enterprise"
         case .kimi:     return "Kimi"
         case .copilot:  return "Copilot"
+        case .custom:   return custom?.shortTitle ?? "Removed"
         }
     }
 
@@ -50,6 +122,13 @@ enum Account: String, CaseIterable, Identifiable, Codable {
         case .personal, .work: return .claudeStreamJSON
         case .kimi:            return .acp(.kimi)
         case .copilot:         return .acp(.copilot)
+        // A definition that has gone gets a command that will not be found,
+        // which reports itself properly rather than launching something else.
+        case .custom:
+            return .acp(custom?.agent
+                        ?? ACPAgent(id: id, displayName: "removed", command: "",
+                                    arguments: [], isNode: false,
+                                    dialect: .standard, usageReports: .none))
         }
     }
 
@@ -57,24 +136,35 @@ enum Account: String, CaseIterable, Identifiable, Codable {
     var agentName: String {
         switch protocolKind {
         case .claudeStreamJSON: return "Claude Code"
-        case .acp(let agent):   return agent == .kimi ? "Kimi Code" : "GitHub Copilot"
+        case .acp(let agent):
+            switch agent.id {
+            case "kimi":    return "Kimi Code"
+            case "copilot": return "GitHub Copilot"
+            default:        return agent.command
+            }
         }
     }
 
     /// Whether the agent reports what a turn cost. Claude sends
-    /// `total_cost_usd`; ACP has no equivalent field on either agent, so those
+    /// `total_cost_usd`; ACP has no equivalent field on any agent, so those
     /// sessions show tokens instead of money rather than a confident zero.
     var reportsCost: Bool {
-        if case .claudeStreamJSON = protocolKind { return true }
-        return false
+        switch self {
+        case .personal, .work: return true
+        case .kimi, .copilot, .custom: return false
+        }
     }
 
     /// Reasoning effort is a Claude launch flag. ACP has no concept of it —
     /// Kimi exposes a `thinking` option whose only value is "on" — so offering
     /// the control anywhere else is a switch wired to nothing.
     var hasEffort: Bool {
-        if case .claudeStreamJSON = protocolKind { return true }
-        return false
+        switch self {
+        case .personal, .work: return true
+        // Anything speaking ACP has no reasoning-effort concept to expose, and
+        // a custom account always speaks ACP.
+        case .kimi, .copilot, .custom: return false
+        }
     }
 
     // Symbols were tried here — folder / building / code-brackets — and pulled.
@@ -84,13 +174,13 @@ enum Account: String, CaseIterable, Identifiable, Codable {
 
 
     /// `CLAUDE_CONFIG_DIR`, which is the whole of account switching for Claude.
-    /// Nil for the ACP agents, which keep their own credentials elsewhere and
-    /// have no equivalent knob.
+    /// Nil for anything speaking ACP, which keeps its own credentials elsewhere
+    /// and has no equivalent knob.
     var configDir: String? {
         switch self {
         case .personal: return NSHomeDirectory() + "/.claude-personal"
         case .work:     return NSHomeDirectory() + "/.claude"
-        case .kimi, .copilot: return nil
+        case .kimi, .copilot, .custom: return nil
         }
     }
 }
@@ -1847,7 +1937,7 @@ final class Workspace: ObservableObject {
     @Published var renaming: Session.ID?
     @Published var collapsed: Set<Account> = [] {
         didSet {
-            Prefs.store.set(collapsed.map(\.rawValue), forKey: Self.collapsedKey)
+            Prefs.store.set(collapsed.map(\.id), forKey: Self.collapsedKey)
         }
     }
     /// The session awaiting a delete confirmation. Lives here rather than in a
@@ -1915,7 +2005,7 @@ final class Workspace: ObservableObject {
             .reduce(into: []) { unique, id in if !unique.contains(id) { unique.append(id) } }
         selection = sessions.contains { $0.id == remembered } ? remembered : sessions.first?.id
         collapsed = Set((Prefs.store.stringArray(forKey: Self.collapsedKey) ?? [])
-            .compactMap(Account.init(rawValue:)))
+            .compactMap(Account.known))
         // The floating window comes back with the arrangement, for the same
         // reason the columns do: where you left a conversation is part of where
         // you left off. A session deleted since simply doesn't reopen.

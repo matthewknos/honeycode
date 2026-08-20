@@ -526,6 +526,7 @@ struct TerminalTranscript: NSViewRepresentable {
             case .work:     return .systemBlue
             case .kimi:     return .systemPurple
             case .copilot:  return .systemGreen
+            case .custom:   return session?.account.custom?.tint.nsColour ?? .labelColor
             case nil:       return .labelColor
             }
         }

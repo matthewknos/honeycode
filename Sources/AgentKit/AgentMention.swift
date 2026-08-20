@@ -8,14 +8,27 @@ import Foundation
 /// nobody should have to learn a second vocabulary to use the same accounts.
 enum AgentMention {
 
-    /// Every spelling that resolves, longest-first so `@claude-w` is never read
-    /// as `@claude` followed by stray text.
-    static let names: [(String, Account)] = [
+    /// The spellings that ship. Several per account, because these are the
+    /// names already in the user's shell aliases and nobody should have to
+    /// learn a second vocabulary for the same credentials.
+    static let builtInNames: [(String, Account)] = [
         ("claude-personal", .personal), ("claude-p", .personal), ("personal", .personal),
         ("claude-work", .work), ("claude-w", .work), ("enterprise", .work), ("work", .work),
         ("kimi", .kimi),
         ("copilot", .copilot),
-    ].sorted { $0.0.count > $1.0.count }
+    ]
+
+    /// Every spelling that resolves, longest-first so `@claude-w` is never read
+    /// as `@claude` followed by stray text.
+    ///
+    /// Computed rather than stored now that the set can grow. An added account
+    /// gets exactly one spelling — the handle it was given — because it was
+    /// chosen a moment ago by the person typing it, and a second alias for a
+    /// name you just invented is a way to collide with the next one.
+    static var names: [(String, Account)] {
+        let custom = CustomAccounts.all.map { ($0.handle.lowercased(), Account.custom($0.id)) }
+        return (builtInNames + custom).sorted { $0.0.count > $1.0.count }
+    }
 
     /// One agent, and optionally how it should run.
     ///
@@ -170,6 +183,11 @@ enum AgentMention {
         case .work:     return "claude-w"
         case .kimi:     return "kimi"
         case .copilot:  return "copilot"
+        // An account whose definition has been removed while a session was open
+        // still needs a name that can be printed and can't be mistaken for a
+        // live one.
+        case .custom(let id):
+            return CustomAccounts.find(id)?.handle.lowercased() ?? "removed"
         }
     }
 

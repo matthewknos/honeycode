@@ -25,6 +25,9 @@ struct SettingsView: View {
             BackgroundSettings(store: background)
                 .tabItem { Label("Background", systemImage: "photo") }
 
+            AccountSettings()
+                .tabItem { Label("Accounts", systemImage: "person.2") }
+
             ShortcutSettings()
                 .tabItem { Label("Shortcuts", systemImage: "keyboard") }
         }

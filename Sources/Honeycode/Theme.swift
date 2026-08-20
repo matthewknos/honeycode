@@ -212,6 +212,34 @@ extension Account {
         case .work:     return .accentWork
         case .kimi:     return .accentKimi
         case .copilot:  return .accentCopilot
+        case .custom:   return custom?.tint.colour ?? .secondary
+        }
+    }
+}
+
+extension CustomAccount.Tint {
+    /// System colours rather than literals, so an added account sits in the
+    /// same palette as the four that ship and follows the appearance with them.
+    var colour: Color {
+        switch self {
+        case .teal:   return Color(nsColor: .systemTeal)
+        case .pink:   return Color(nsColor: .systemPink)
+        case .indigo: return Color(nsColor: .systemIndigo)
+        case .brown:  return Color(nsColor: .systemBrown)
+        case .red:    return Color(nsColor: .systemRed)
+        case .yellow: return Color(nsColor: .systemYellow)
+        }
+    }
+
+    /// The same colour for AppKit, which the terminal renderer draws in.
+    var nsColour: NSColor {
+        switch self {
+        case .teal:   return .systemTeal
+        case .pink:   return .systemPink
+        case .indigo: return .systemIndigo
+        case .brown:  return .systemBrown
+        case .red:    return .systemRed
+        case .yellow: return .systemYellow
         }
     }
 }

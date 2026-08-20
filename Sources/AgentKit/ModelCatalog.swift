@@ -89,7 +89,7 @@ enum ModelCatalog {
     }
 
     private static func cacheKey(_ account: Account) -> String {
-        "models." + account.rawValue
+        "models." + account.id
     }
 
     // MARK: What you last chose
@@ -114,7 +114,7 @@ enum ModelCatalog {
     }
 
     private static func pickKey(_ account: Account) -> String {
-        "model.pick." + account.rawValue
+        "model.pick." + account.id
     }
 
     private static func builtInFallback(for account: Account) -> [AgentModel] {

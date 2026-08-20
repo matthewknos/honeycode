@@ -143,7 +143,7 @@ enum Describe {
             crew.catalogue(for: account) { models, current in
                 reports.append(AccountReport(
                     handle: AgentMention.handle(account),
-                    account: account.rawValue,
+                    account: account.id,
                     title: account.title,
                     mention: "@" + AgentMention.handle(account),
                     current: models.first { $0.id == current }.map(Model.init)

@@ -85,7 +85,7 @@ final class UsageStore: ObservableObject {
     private static var monthKey: String { month.string(from: Date()) }
 
     private static func spendKey(_ account: Account) -> String {
-        "usage.spend.\(account.rawValue).\(monthKey)"
+        "usage.spend.\(account.id).\(monthKey)"
     }
 
     /// Spend that happened outside Honeycode, typed in from the admin console.
@@ -95,7 +95,7 @@ final class UsageStore: ObservableObject {
     /// gauge that under-reports is worse than none, because it tells you you're
     /// fine right up until you aren't.
     private static func baselineKey(_ account: Account) -> String {
-        "usage.baseline.\(account.rawValue).\(monthKey)"
+        "usage.baseline.\(account.id).\(monthKey)"
     }
 
     private func loadSpend() {

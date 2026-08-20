@@ -9,16 +9,93 @@ import Foundation
 /// lives. Keeping those four facts here rather than as `if account == .kimi`
 /// branches inside the adapter is what stops a third agent turning it into a
 /// switch statement with a stream parser attached.
-enum ACPAgent: String, Equatable {
-    case copilot
-    case kimi
+/// One ACP-speaking CLI, and the handful of ways it differs from the others.
+///
+/// Every agent here speaks the same protocol — newline-delimited JSON-RPC 2.0,
+/// the same `session/update` discriminators, the same blocking
+/// `session/request_permission` — so the adapter is shared. What differs is
+/// small and entirely declarative: what to launch, and where the model list
+/// lives. Keeping those facts here rather than as `if account == .kimi`
+/// branches inside the adapter is what stopped a third agent turning it into a
+/// switch statement with a stream parser attached.
+///
+/// It is a record rather than an enum for exactly that reason, taken one step
+/// further: a *fourth* agent — one this app has never heard of, added by
+/// whoever is running it — is now the same kind of thing as the two that ship
+/// with it. `kimi` and `copilot` are values of this type, not cases of it, and
+/// nothing in the adapter can tell the difference.
+struct ACPAgent: Equatable, Hashable {
 
-    var displayName: String {
-        switch self {
-        case .copilot: return "copilot"
-        case .kimi:    return "kimi"
+    /// Stable, and the key a custom agent's definition is stored under.
+    let id: String
+    /// What to call it when something goes wrong — "couldn't start `kimi`".
+    let displayName: String
+    /// The tool to run. A bare name is looked for in the usual places; anything
+    /// containing a slash is taken as the path it is.
+    let command: String
+    let arguments: [String]
+    /// Whether this is a Node program, which brings two problems with it — see
+    /// `environment`. Nearly every agent CLI is.
+    let isNode: Bool
+    let dialect: Dialect
+    let usageReports: UsageKind
+    /// Handed to the child on top of the app's own environment. Where an API
+    /// key goes for a CLI that authenticates with one.
+    var extraEnvironment: [String: String] = [:]
+
+    /// Which spelling of ACP this agent actually speaks.
+    ///
+    /// The protocol has one way to list models and one way to change them;
+    /// Kimi has another. Rather than ask whoever adds an agent to describe a
+    /// JSON path, they pick which of the two it behaves like — and `standard`
+    /// is the right guess for anything written against the spec.
+    enum Dialect: String, Codable, CaseIterable {
+        /// ACP's own `models.availableModels` and `session/set_model`.
+        case standard
+        /// The model as one select among several in `configOptions`, changed
+        /// with `session/set_config_option`. Kimi's spelling.
+        case configOptions
+
+        var title: String {
+            self == .standard ? "Standard ACP" : "Config options (Kimi-style)"
         }
     }
+
+    /// What `/usage` reports, if the agent knows the command at all.
+    ///
+    /// `none` matters more than it looks. A slash command an agent doesn't know
+    /// is not an error, it's a prompt: it reaches the model as the literal text
+    /// "/usage", costs a request, and comes back as a puzzled paragraph. An
+    /// agent nobody has checked should be asked nothing.
+    enum UsageKind: String, Codable, CaseIterable {
+        case credits, context, none
+
+        var title: String {
+            switch self {
+            case .credits: return "Credits used"
+            case .context: return "Context window"
+            case .none:    return "Doesn't report usage"
+            }
+        }
+    }
+
+    /// `/context` exists only where `/usage` reports credits — an agent that
+    /// answers `/usage` with the context window has already said it.
+    var hasContextCommand: Bool { usageReports == .credits }
+
+    // MARK: The two that ship
+
+    static let copilot = ACPAgent(
+        id: "copilot", displayName: "copilot", command: "copilot",
+        arguments: ["--acp"], isNode: false,
+        dialect: .standard, usageReports: .credits)
+
+    static let kimi = ACPAgent(
+        id: "kimi", displayName: "kimi", command: "kimi",
+        arguments: ["acp"], isNode: true,
+        dialect: .configOptions, usageReports: .context)
+
+    // MARK: Finding it
 
     /// Where the binary usually is, best first.
     ///
@@ -26,27 +103,20 @@ enum ACPAgent: String, Equatable {
     /// inherits launchd's `PATH`, which is `/usr/bin:/bin:/usr/sbin:/sbin` and
     /// contains neither Homebrew nor nvm.
     var binaryCandidates: [String] {
+        // Somebody who has given a path means that path. Searching for the
+        // basename of it in three other directories would be second-guessing
+        // the one piece of information they were most sure about.
+        guard !command.contains("/") else {
+            return [(command as NSString).expandingTildeInPath]
+        }
         let home = NSHomeDirectory()
-        switch self {
-        case .copilot:
-            return [home + "/.local/bin/copilot",
-                    "/opt/homebrew/bin/copilot",
-                    "/usr/local/bin/copilot"]
-        case .kimi:
-            // nvm installs per Node version, so the path carries a version
-            // number that will change under us. The fixed locations are tried
-            // first and the nvm tree is searched only if none of them hit.
-            return [home + "/.local/bin/kimi",
-                    "/opt/homebrew/bin/kimi",
-                    "/usr/local/bin/kimi"] + Self.nvmCandidates(for: "kimi")
-        }
-    }
-
-    var arguments: [String] {
-        switch self {
-        case .copilot: return ["--acp"]
-        case .kimi:    return ["acp"]
-        }
+        let fixed = [home + "/.local/bin/" + command,
+                     "/opt/homebrew/bin/" + command,
+                     "/usr/local/bin/" + command]
+        // nvm installs per Node version, so the path carries a version number
+        // that will change under us. The fixed locations are tried first and
+        // the nvm tree is searched only if none of them hit.
+        return isNode ? fixed + Self.nvmCandidates(for: command) : fixed
     }
 
     /// Every nvm-installed copy of a tool, newest version first.
@@ -64,19 +134,19 @@ enum ACPAgent: String, Equatable {
 
     /// Environment the child needs beyond the app's own.
     func environment(binary: URL) -> [String: String] {
-        var extra: [String: String] = [:]
-        // Both agents run shell commands on your behalf and would otherwise
-        // inherit this app's PATH, which launched from Finder is launchd's four
-        // directories — see `Shell.toolPath` for what that costs.
+        var extra = extraEnvironment
+        // Every agent here runs shell commands on your behalf and would
+        // otherwise inherit this app's PATH, which launched from Finder is
+        // launchd's four directories — see `Shell.toolPath` for what that costs.
         extra["PATH"] = Shell.toolPath
-        guard self == .kimi else { return extra }
+        guard isNode else { return extra }
 
         // Two problems, both peculiar to a Node CLI launched from a GUI app.
         //
-        // First, `kimi` is a shim with `#!/usr/bin/env node` at the top, so
-        // `node` itself has to be findable — and the only copy on this machine
-        // lives beside the shim in an nvm version directory that isn't on
-        // launchd's PATH.
+        // First, the tool is usually a shim with `#!/usr/bin/env node` at the
+        // top, so `node` itself has to be findable — and on a machine using nvm
+        // the only copy lives beside the shim in a version directory that isn't
+        // on launchd's PATH.
         let nodeDirectory = binary.deletingLastPathComponent().path
         extra["PATH"] = nodeDirectory + ":" + Shell.toolPath
 
@@ -88,8 +158,9 @@ enum ACPAgent: String, Equatable {
         // it simply had nothing to say.
         //
         // Only ever *adds* roots the operating system already trusts, and never
-        // overrides a value you've set yourself.
-        if ProcessInfo.processInfo.environment["NODE_EXTRA_CA_CERTS"] == nil,
+        // overrides a value set here or inherited.
+        if extra["NODE_EXTRA_CA_CERTS"] == nil,
+           ProcessInfo.processInfo.environment["NODE_EXTRA_CA_CERTS"] == nil,
            let bundle = SystemTrust.caBundle() {
             extra["NODE_EXTRA_CA_CERTS"] = bundle.path
         }
@@ -100,16 +171,17 @@ enum ACPAgent: String, Equatable {
 
     /// Pull the available models out of a `session/new` reply.
     ///
-    /// The two agents put them in different places. Copilot uses ACP's own
-    /// `models.availableModels`; Kimi uses the `configOptions` array, where the
-    /// model is one select among several (`thinking`, `mode`).
-    func models(fromSessionReply result: [String: Any]) -> [AgentModel] {
-        switch self {
-        case .copilot:
+    /// The account comes in because the answer is worth remembering and only
+    /// the caller knows whose list this is — it used to be written against
+    /// `.kimi` by name, which was true of the only agent that took this branch
+    /// and would have been silently wrong for the next one.
+    func models(fromSessionReply result: [String: Any], for account: Account) -> [AgentModel] {
+        switch dialect {
+        case .standard:
             guard let models = result["models"] as? [String: Any],
                   let list = models["availableModels"] as? [[String: Any]] else { return [] }
             return ModelCatalog.copilotModels(list)
-        case .kimi:
+        case .configOptions:
             guard let option = Self.configOption("model", in: result),
                   let list = option["options"] as? [[String: Any]] else { return [] }
             let models = list.compactMap { entry -> AgentModel? in
@@ -117,19 +189,19 @@ enum ACPAgent: String, Equatable {
                 return AgentModel(id: value,
                                   title: entry["name"] as? String ?? value,
                                   blurb: "",
-                                  family: "Moonshot")
+                                  family: displayName.capitalized)
             }
-            ModelCatalog.remember(models, for: .kimi)
+            ModelCatalog.remember(models, for: account)
             return models
         }
     }
 
     /// Which model the agent is currently on, if it says.
     func currentModel(fromSessionReply result: [String: Any]) -> String? {
-        switch self {
-        case .copilot:
+        switch dialect {
+        case .standard:
             return (result["models"] as? [String: Any])?["currentModelId"] as? String
-        case .kimi:
+        case .configOptions:
             return Self.configOption("model", in: result)?["currentValue"] as? String
         }
     }
@@ -140,37 +212,18 @@ enum ACPAgent: String, Equatable {
             .first { $0["id"] as? String == id }
     }
 
-    // MARK: Bookkeeping
-
-    /// Whether `/context` exists. It doesn't on Kimi, whose command list is
-    /// `compact, help, mcp, status, usage, tasks…` and nothing else — and a
-    /// slash command an agent doesn't know is not an error, it's a prompt. It
-    /// would go to the model as the literal text "/context", cost a request, and
-    /// come back as a puzzled paragraph.
-    var hasContextCommand: Bool { self == .copilot }
-
-    /// What `/usage` actually reports, which is different on each.
-    ///
-    /// Copilot answers with credits — "Requests: 1.33 AI Units". Kimi answers
-    /// with the context window — "Session usage: - Context: 0 / 262,144 (0.0%)".
-    /// Same command, different meaning, so the reply is routed by agent rather
-    /// than guessed at from its shape.
-    var usageReports: UsageKind { self == .copilot ? .credits : .context }
-
-    enum UsageKind { case credits, context }
-
     /// The request that changes the model, which is not the same call on both.
     ///
-    /// Copilot has ACP's dedicated `session/set_model`. Kimi treats the model as
-    /// one config option among several and takes `session/set_config_option`
+    /// Standard ACP has a dedicated `session/set_model`. Kimi treats the model
+    /// as one config option among several and takes `session/set_config_option`
     /// with a `configId` — spelled that way, not `configOptionId`, which fails
     /// with a bare "Invalid params".
     func setModelRequest(sessionID: String, modelID: String)
     -> (method: String, params: [String: Any]) {
-        switch self {
-        case .copilot:
+        switch dialect {
+        case .standard:
             return ("session/set_model", ["sessionId": sessionID, "modelId": modelID])
-        case .kimi:
+        case .configOptions:
             return ("session/set_config_option",
                     ["sessionId": sessionID, "configId": "model", "value": modelID])
         }

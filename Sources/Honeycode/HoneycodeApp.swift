@@ -131,9 +131,16 @@ struct HoneycodeApp: App {
 
                 Divider()
 
+                // Still every account, and a key only for the ones that have
+                // one — an added account belongs in this menu whether or not it
+                // can be reached from the keyboard.
                 ForEach(Account.allCases) { account in
-                    Button(account.title) { workspace.focus(account) }
-                        .keyboardShortcut(account.shortcut, modifiers: .command)
+                    let item = Button(account.title) { workspace.focus(account) }
+                    if let key = account.shortcut {
+                        item.keyboardShortcut(key, modifiers: .command)
+                    } else {
+                        item
+                    }
                 }
 
                 Divider()

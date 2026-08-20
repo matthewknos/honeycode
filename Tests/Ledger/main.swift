@@ -26,6 +26,40 @@ MainActor.assumeIsolated {
     let idle = Crew.work(of: s, from: 0)
     check("prose alone is not work", idle.isEmpty)
     check("and no files are claimed", idle.files.isEmpty)
+    check("nothing was built", idle.wroteNothing)
+
+    // The case the first version of this missed. `@kimi#2` said it would start
+    // by reading the shared config and types files, did exactly that, and was
+    // not retried — reads are tool calls, so "wrote nothing AND ran nothing"
+    // was false, so a whole module stayed missing. Reading is not building.
+    let reader = Session(account: .kimi, directory: URL(fileURLWithPath: "/tmp"), name: "r")
+    reader.items = [
+        .assistant(id: UUID(), text: "I'll start by reading the shared config and types files."),
+        .tool(id: UUID(), toolUseID: "1", name: "Read", target: "src/config/tuning.ts",
+              detail: "", state: .applied),
+        .tool(id: UUID(), toolUseID: "2", name: "Read", target: "src/core/types.ts",
+              detail: "", state: .applied),
+    ]
+    let read = Crew.work(of: reader, from: 0)
+    check("reading is running something", !read.isEmpty)
+    check("but reading is not building", read.wroteNothing)
+
+    // A file written by shell redirection leaves no diff to count, so it must
+    // not be mistaken for idleness — paying twice for work already on disk is
+    // the one mistake this must not make on its own.
+    let redirect = Session(account: .kimi, directory: URL(fileURLWithPath: "/tmp"), name: "w")
+    redirect.items = [.tool(id: UUID(), toolUseID: "3", name: "Bash",
+                            target: "cat > src/character/poses.ts <<EOF",
+                            detail: "", state: .applied)]
+    check("a redirect counts as possibly having written",
+          !Crew.work(of: redirect, from: 0).wroteNothing)
+
+    // An ordinary command is not a write, or nothing would ever be retried.
+    let checked = Session(account: .kimi, directory: URL(fileURLWithPath: "/tmp"), name: "c")
+    checked.items = [.tool(id: UUID(), toolUseID: "4", name: "Bash",
+                           target: "npx tsc --noEmit", detail: "", state: .applied)]
+    check("running the typechecker is not writing",
+          Crew.work(of: checked, from: 0).wroteNothing)
 
     // A turn that wrote.
     let mark = s.items.count

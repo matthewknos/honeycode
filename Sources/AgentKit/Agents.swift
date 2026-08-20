@@ -564,7 +564,7 @@ extension AgentStore {
         var agent = AgentDefinition(
             id: fallback?.id ?? UUID(),
             name: wire.name ?? fallback?.name ?? "New agent",
-            account: wire.account.flatMap(Account.init(rawValue:))
+            account: wire.account.flatMap(Account.known)
                 ?? fallback?.account ?? .personal,
             path: path,
             prompt: wire.prompt ?? fallback?.prompt ?? "",
@@ -584,7 +584,7 @@ extension AgentStore {
     private func briefing(for workspace: Workspace) -> String {
         let known = Account.allCases.flatMap { account in
             workspace.sessions(in: account).map { session in
-                "- \(session.name) — \(account.rawValue) — \(session.directory.path)"
+                "- \(session.name) — \(account.id) — \(session.directory.path)"
             }
         }.joined(separator: "\n")
 

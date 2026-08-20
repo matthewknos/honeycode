@@ -201,9 +201,33 @@ final class Crew {
     struct Work {
         var files: [String] = []
         var tools = 0
-        /// Nothing was written and nothing was run. Not "did badly" — did not
-        /// happen — which is the only claim this is strong enough to make.
+        /// A command that looks like it wrote a file without going through the
+        /// editor — `cat > x <<EOF`, `tee`, a redirect. See `wroteNothing`.
+        var redirected = false
+
+        /// Nothing was written and nothing was run.
         var isEmpty: Bool { files.isEmpty && tools == 0 }
+
+        /// Nothing was built, as far as anything here can see.
+        ///
+        /// **Not** `isEmpty`, and the difference is the whole of why this exists
+        /// twice. The first version of the retry fired on "wrote nothing *and*
+        /// ran nothing", which sounded careful and was too narrow to catch the
+        /// case it was written for: the delegate that failed said "I'll start by
+        /// reading the shared config and types files" and then did exactly
+        /// that — reads are tool calls, so it had run something, so it did not
+        /// count as empty, so nothing was re-issued and the module was still
+        /// missing. Running it is the only reason that was ever found out.
+        ///
+        /// Reading is not building. A delegate in a crew is given files it owns
+        /// — the briefing requires the lead to name them — so writing none of
+        /// them is the signal, whatever else it did.
+        ///
+        /// Except when it may have written by redirection, which leaves no diff
+        /// to count. That case is reported and not retried: paying for a second
+        /// attempt at work that is already on disk is the one mistake this
+        /// feature must not make on its own.
+        var wroteNothing: Bool { files.isEmpty && !redirected }
     }
 
     /// Everything a session recorded doing since `mark`.
@@ -214,13 +238,31 @@ final class Crew {
             switch item {
             case .diff(_, _, let file, _, _):
                 if seen.insert(file).inserted { work.files.append(file) }
-            case .tool, .search:
+            case .tool(_, _, let name, let target, _, _):
+                work.tools += 1
+                if Self.looksLikeAWrite(name: name, target: target) { work.redirected = true }
+            case .search:
                 work.tools += 1
             default:
                 continue
             }
         }
         return work
+    }
+
+    /// Whether a command plausibly created a file without the editor seeing it.
+    ///
+    /// Deliberately generous — it decides only whether to *withhold* a retry,
+    /// so a false positive costs a warning the lead still gets and a false
+    /// negative costs a wasted turn. Erring towards "it might have written"
+    /// keeps this from spending money to redo work that exists.
+    private static func looksLikeAWrite(name: String, target: String) -> Bool {
+        let shell = name.lowercased()
+        guard shell.contains("bash") || shell.contains("shell")
+                || shell.contains("execute") || shell.contains("run") else { return false }
+        return target.contains(">") || target.contains("tee ")
+            || target.contains("cp ") || target.contains("mv ")
+            || target.contains("touch ") || target.contains("install ")
     }
     /// What was last said out loud about each seat's model, and therefore also
     /// which seats have been settled at all.
@@ -1074,16 +1116,20 @@ final class Crew {
         if let session = inFlight(seat) {
             let did = Self.work(of: session, from: launchMark[seat] ?? 0)
             evidence[seat] = did
-            if did.isEmpty {
-                reporter.problem("\(seat.mention) finished without writing or "
-                                 + "running anything — its piece has not been done")
+            if did.wroteNothing {
+                reporter.problem(did.isEmpty
+                    ? "\(seat.mention) finished without writing or running anything — "
+                      + "its piece has not been done"
+                    : "\(seat.mention) ran \(did.tools) command"
+                      + (did.tools == 1 ? "" : "s") + " but wrote no files — "
+                      + "reading is not building, and its piece has not been done")
             }
             reporter.worked(seat, files: did.files.count)
             // Before `proceed`, which is what decides whether the run is over:
             // a re-issued piece puts a seat back into `running`, and assembly
             // has to wait for it rather than closing around the hole it was
             // sent to fill.
-            if did.isEmpty { reissue(seat, for: leader) }
+            if did.wroteNothing { reissue(seat, for: leader) }
         }
         if let reply, !reply.isEmpty { record(reply, from: seat) }
         // Routed before the wait is evaluated: a question puts its addressee
@@ -1589,14 +1635,14 @@ final class Crew {
         // work that exists, which is the failure this whole ledger is for,
         // pointing the other way.
         let rescued = Set(secondAttempt.compactMap { second, original in
-            evidence[second]?.isEmpty == false ? original : nil
+            evidence[second]?.wroteNothing == false ? original : nil
         })
-        let empty = reported.filter { $0.1.isEmpty && !rescued.contains($0.0) }.map(\.0)
+        let empty = reported.filter { $0.1.wroteNothing && !rescued.contains($0.0) }.map(\.0)
         guard !empty.isEmpty else { return out }
 
         let one = empty.count == 1
         out += "\n\n[ai: **" + Self.list(empty.map(\.mention))
-            + " wrote nothing and ran nothing.**"
+            + " wrote no files.**"
             + " Whatever \(one ? "it" : "they") said above, "
             + "\(one ? "that piece of" : "those pieces of") the plan "
             + "has not been done and nobody is working on "

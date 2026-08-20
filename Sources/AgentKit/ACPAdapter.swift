@@ -594,6 +594,11 @@ final class ACPAdapter: AgentAdapter {
     /// Ask the agent about itself, while the session is idle.
     private func ask(_ kind: Probe) {
         guard let sessionID else { return }
+        // An agent that doesn't know the command must not be sent it. A slash
+        // command a CLI doesn't recognise is not an error, it's a prompt — it
+        // reaches the model as literal text, costs a request, and comes back as
+        // a puzzled paragraph. See `ACPAgent.UsageKind.none`.
+        guard agent.usageReports != .none else { return }
         probeText = ""
         let command = kind == .usage ? "/usage" : "/context"
         probe = (request("session/prompt", params: [
@@ -619,6 +624,8 @@ final class ACPAdapter: AgentAdapter {
                 }
             case .context:
                 adopt(Self.context(in: text))
+            case .none:
+                break
             }
             // Chained rather than sent together: two prompts in flight at once
             // on one ACP session would interleave their chunks, and there'd be
@@ -698,7 +705,7 @@ final class ACPAdapter: AgentAdapter {
     /// for what a Copilot seat can run, so the picker takes it over whatever
     /// was assumed beforehand.
     private func adoptModels(from result: [String: Any]) {
-        let parsed = agent.models(fromSessionReply: result)
+        let parsed = agent.models(fromSessionReply: result, for: session.account)
         guard !parsed.isEmpty else { return }
         DispatchQueue.main.async { self.session.adoptAvailableModels(parsed) }
     }

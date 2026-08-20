@@ -142,5 +142,28 @@ check("the lead's own seat counts as taken",
 check("nothing running means the first instance",
       spare([]) == Seat(.kimi))
 
+// --- the files a task names ---
+//
+// The lead is required to name the exact files each delegate owns, so the task
+// text says what the piece is in a form that can be checked against a disk.
+// This is what tells "nothing to do" from "did nothing" — a distinction a live
+// run cost real money to discover.
+let task = """
+Build the camera for SKYLINE at /Users/x/skyline. You own ONLY these files:
+src/camera/springArm.ts, src/camera/index.ts and src/input/keyboard.ts.
+Import from src/config/tuning.ts, never edit it. Verify with npx tsc --noEmit.
+"""
+let named = MainActor.assumeIsolated { Crew.namedFiles(in: task) }
+check("the files it owns are found", named.contains("src/camera/springArm.ts"))
+check("and the ones it must import from", named.contains("src/config/tuning.ts"))
+check("a bare command is not a file", !named.contains { $0.contains("tsc") })
+check("nothing without a slash is taken for a path",
+      named.allSatisfy { $0.contains("/") })
+check("a plain sentence names no files",
+      MainActor.assumeIsolated { Crew.namedFiles(in: "Write the animator, please.") }.isEmpty)
+check("duplicates collapse", MainActor.assumeIsolated {
+    Crew.namedFiles(in: "edit a/b.ts then a/b.ts again")
+} == ["a/b.ts"])
+
 print(failures == 0 ? "\nall passed" : "\n\(failures) failed")
 exit(failures == 0 ? 0 : 1)

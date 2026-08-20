@@ -172,6 +172,12 @@ final class Crew {
     /// that keeps paying to find that out is a loop that spends your money on
     /// its own optimism.
     private var reissued: Set<Seat> = []
+    /// Seats that wrote nothing because there was nothing left to write.
+    ///
+    /// Not the same as having failed, and telling them apart is the whole of
+    /// the difference between a useful retry and one that pays twice for work
+    /// already on disk. See `alreadyDone`.
+    private var satisfied: Set<Seat> = []
     private var secondAttempt: [Seat: Seat] = [:]
     private var reissues = 0
     /// A ceiling on the whole run as well as on each piece. Four delegates
@@ -248,6 +254,55 @@ final class Crew {
             }
         }
         return work
+    }
+
+    /// The files an assignment names, as written.
+    ///
+    /// The lead's briefing requires it to name the exact files each delegate
+    /// owns — that rule exists so two agents never get the same file — which
+    /// means the task text says what the piece *is*, in a form that can be
+    /// checked against a disk. A path is one with a slash in it: leads write
+    /// `src/character/animator.ts`, and requiring the slash keeps `tsc` and
+    /// `README` and every bare word out of it.
+    static func namedFiles(in task: String) -> [String] {
+        guard let regex = try? NSRegularExpression(
+            pattern: "[A-Za-z0-9_.\\-]*/[A-Za-z0-9_./\\-]*\\.[A-Za-z]{1,6}") else { return [] }
+        let range = NSRange(task.startIndex..., in: task)
+        var out: [String] = []
+        for match in regex.matches(in: task, range: range) {
+            guard let found = Range(match.range, in: task) else { continue }
+            let path = String(task[found])
+            if !out.contains(path) { out.append(path) }
+        }
+        return out
+    }
+
+    /// Whether the piece is on disk already, whoever put it there.
+    ///
+    /// This is the question the retry actually wants answered, and it took a
+    /// live run to see that. A delegate handed a piece another agent had
+    /// finished while it was queued read the files, found them complete,
+    /// declined to clobber concurrent work and said so — "Files touched:
+    /// none" — which is the correct thing to do and was reported as having
+    /// produced nothing. It cost a re-issue to an agent that then found the
+    /// same thing.
+    ///
+    /// So "did this agent write" is the wrong test and "does the work exist" is
+    /// the right one. Only a task that names its files can be checked this way;
+    /// where none are named there is nothing to look for, and the old test
+    /// stands.
+    private func alreadyDone(_ assignment: CrewAssignment, in root: URL) -> Bool {
+        let named = Self.namedFiles(in: assignment.task)
+        guard !named.isEmpty else { return false }
+        return named.allSatisfy { path in
+            let url = path.hasPrefix("/") ? URL(fileURLWithPath: path)
+                                          : root.appendingPathComponent(path)
+            guard let size = try? FileManager.default
+                .attributesOfItem(atPath: url.path)[.size] as? Int else { return false }
+            // An empty file is a placeholder somebody touched, not a piece of
+            // work — treating it as done is how a hole gets signed off.
+            return size > 0
+        }
     }
 
     /// Whether a command plausibly created a file without the editor seeing it.
@@ -370,6 +425,7 @@ final class Crew {
             self.evidence = [:]
             self.given = [:]
             self.reissued = []
+            self.satisfied = []
             self.secondAttempt = [:]
             self.reissues = 0
             self.answering = []
@@ -1116,20 +1172,29 @@ final class Crew {
         if let session = inFlight(seat) {
             let did = Self.work(of: session, from: launchMark[seat] ?? 0)
             evidence[seat] = did
-            if did.wroteNothing {
+            // Asked before anything is said about it: an agent that wrote
+            // nothing because the files were already there has not failed, and
+            // saying it has is both wrong and expensive.
+            let done = given[seat].map { alreadyDone($0, in: session.directory) } ?? false
+            if done { satisfied.insert(seat) }
+
+            if did.wroteNothing && !done {
                 reporter.problem(did.isEmpty
                     ? "\(seat.mention) finished without writing or running anything — "
                       + "its piece has not been done"
                     : "\(seat.mention) ran \(did.tools) command"
                       + (did.tools == 1 ? "" : "s") + " but wrote no files — "
                       + "reading is not building, and its piece has not been done")
+            } else if did.wroteNothing {
+                reporter.status("\(seat.mention) wrote nothing — the files it was "
+                                + "given are already on disk")
             }
             reporter.worked(seat, files: did.files.count)
             // Before `proceed`, which is what decides whether the run is over:
             // a re-issued piece puts a seat back into `running`, and assembly
             // has to wait for it rather than closing around the hole it was
             // sent to fill.
-            if did.wroteNothing { reissue(seat, for: leader) }
+            if did.wroteNothing && !done { reissue(seat, for: leader) }
         }
         if let reply, !reply.isEmpty { record(reply, from: seat) }
         // Routed before the wait is evaluated: a question puts its addressee
@@ -1621,10 +1686,13 @@ final class Crew {
                   + ": " + work.files.map { URL(fileURLWithPath: $0).lastPathComponent }
                       .prefix(8).joined(separator: ", ")
                   + (work.files.count > 8 ? ", …" : "")
-            let because = secondAttempt[seat].map {
+            var because = secondAttempt[seat].map {
                 $0 == seat ? " (second attempt)"
                            : " (second attempt at \($0.mention)'s piece)"
             } ?? ""
+            // Worth stating rather than leaving as a bare zero, which reads as
+            // failure — and the lead is about to decide whether to redo it.
+            if satisfied.contains(seat) { because += " — its files were already written" }
             out += "\n- \(seat.mention) — \(files)\(because)"
         }
         out += "]"
@@ -1637,7 +1705,9 @@ final class Crew {
         let rescued = Set(secondAttempt.compactMap { second, original in
             evidence[second]?.wroteNothing == false ? original : nil
         })
-        let empty = reported.filter { $0.1.wroteNothing && !rescued.contains($0.0) }.map(\.0)
+        let empty = reported.filter {
+            $0.1.wroteNothing && !rescued.contains($0.0) && !satisfied.contains($0.0)
+        }.map(\.0)
         guard !empty.isEmpty else { return out }
 
         let one = empty.count == 1

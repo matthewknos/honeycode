@@ -73,6 +73,7 @@ kit() {
 kit Tenancy
 kit Confinement
 kit Turns
+kit Messages
 
 # The sandbox suite drives a real WKWebView against a real local server, which
 # is the only way to learn anything about a content rule list: every interesting

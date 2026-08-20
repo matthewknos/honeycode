@@ -83,6 +83,19 @@ final class ConsoleReporter: CrewReporter {
         progress.begin(delegates.map { ($0.account, $0.session) })
     }
 
+    /// Indented under the live block, and truncated hard. The point is that you
+    /// can see a conversation happening and who is in it; the substance is in
+    /// the transcript each of them keeps.
+    func message(from: Account, to: Account, _ text: String, answering: Bool) {
+        progress.clear()
+        let arrow = answering ? " ↩ " : " → "
+        let heads = Console.paint("@" + AgentMention.handle(from), Console.tint(from))
+            + Console.dim(arrow)
+            + Console.paint("@" + AgentMention.handle(to), Console.tint(to))
+        let flat = text.replacingOccurrences(of: "\n", with: " ")
+        Console.line("  " + heads + " " + Console.dim(String(flat.prefix(90))))
+    }
+
     func landed(_ account: Account) {
         progress.finish(account)
     }

@@ -94,6 +94,14 @@ protocol CrewReporter: AnyObject {
     /// how a live progress display is told to take itself down.
     func working(_ delegates: [(account: Account, session: Session)])
 
+    /// One agent asking another something, or answering.
+    ///
+    /// Shown rather than logged. A crew where the members talk is a crew whose
+    /// behaviour you cannot predict from the plan, and the plan is the only
+    /// thing on screen — so the traffic has to be visible or the run becomes a
+    /// black box that occasionally costs four times what you expected.
+    func message(from: Account, to: Account, _ text: String, answering: Bool)
+
     /// One delegate has landed. Separate from `working` because the two answer
     /// different questions: this one is "mark it finished", that one is "here
     /// is the current set".

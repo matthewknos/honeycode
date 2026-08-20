@@ -88,6 +88,18 @@ final class TranscriptReporter: CrewReporter {
         }
     }
 
+    /// A notice rather than a block of its own.
+    ///
+    /// The two agents involved are both already on screen, streaming into their
+    /// own mirrored blocks — what's missing is the fact that one of them
+    /// stopped to ask the other something, which is a one-line event and reads
+    /// as one.
+    func message(from: Account, to: Account, _ text: String, answering: Bool) {
+        let arrow = answering ? "↩" : "→"
+        host?.note("@\(AgentMention.handle(from)) \(arrow) @\(AgentMention.handle(to)) — "
+                   + Self.summarise(text, limit: 150))
+    }
+
     /// Deliberately not the place a block is closed.
     ///
     /// `landed` says a turn finished; the block should stay open until the run

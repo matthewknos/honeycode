@@ -772,6 +772,32 @@ final class Session: ObservableObject, Identifiable {
     /// See `leadCrew`. Nil until this conversation is asked to lead one.
     private var crew: Crew?
 
+    /// The crew run this conversation is leading, while one is in flight.
+    ///
+    /// Published so the window can draw it. Written by `TranscriptReporter`
+    /// from the events `Crew` already reports, which is what keeps `Crew`
+    /// ignorant of the fact that anything is watching. See `CrewRun`.
+    @Published var crewRun: CrewRun?
+
+    /// The agents this conversation sends to, and what each should run.
+    ///
+    /// Set by the composer's team control and prepended to the next message as
+    /// mentions, which is the only grammar `Crew` reads. Kept on the session
+    /// rather than in the view so a crew survives switching away and back — you
+    /// assemble a team once and then talk to it.
+    @Published var team: [AgentMention.Pick] = []
+
+    /// Stop a crew run, from a button rather than by asking an agent to.
+    ///
+    /// Worth having for a reason the transcripts make plain: stopping used to
+    /// be typed as prose — "stop all for now" — to a lead that then had to find
+    /// the process and kill it. The run knows how to stop itself.
+    @MainActor
+    func stopCrew() {
+        crew?.interrupt()
+        crewRun?.end()
+    }
+
     private lazy var adapter: AgentAdapter = {
         switch account.protocolKind {
         case .claudeStreamJSON:  return ClaudeAdapter(session: self)
@@ -964,6 +990,12 @@ final class Session: ObservableObject, Identifiable {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         if Self.isClear(trimmed) { clear(); return }
+
+        // A finished run stays on screen until you say something else, so the
+        // last thing it did is still readable — and goes when you do, because
+        // a summary of a run you have moved on from is clutter with a number
+        // in it.
+        MainActor.assumeIsolated { if crewRun?.finished == true { crewRun = nil } }
 
         // A message naming other agents is a crew run, not a turn: this
         // conversation leads and the ones named help. Checked before anything

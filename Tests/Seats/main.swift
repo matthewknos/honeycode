@@ -133,5 +133,35 @@ for text in ["kimi", "kimi#1", "kimi#4", "claude-w#2", "copilot"] {
 check("a handle round-trips through its own spelling",
       AgentMention.seat(forHandle: Seat(.kimi, 3).handle) == Seat(.kimi, 3))
 
+// --- what the team control composes is what the parser reads ---
+//
+// The control exists so nobody has to know the grammar; the cost of that is a
+// second writer of it. If these two ever disagree the control silently
+// addresses nobody — it would compose a line, the parser would find no crew,
+// and the message would go to one agent with no sign anything was dropped.
+let team = [
+    AgentMention.Pick(seat: Seat(.kimi, 1), model: "k3"),
+    AgentMention.Pick(seat: Seat(.kimi, 2), model: "k3"),
+    AgentMention.Pick(seat: Seat(.kimi, 3), model: nil),
+    AgentMention.Pick(seat: Seat(.work), model: "opus", effort: .max),
+]
+let line = team.map(\.mention).joined(separator: " ")
+check("the composed line is the grammar it looks like",
+      line == "@kimi:k3 @kimi#2:k3 @kimi#3 @claude-w:opus:max")
+
+let readBack = AgentMention.parse(line + "\n\nbuild it").crew
+check("every agent the control named is read back",
+      readBack.map(\.seat) == team.map(\.seat))
+check("and so is every model",
+      readBack.map(\.model) == team.map(\.model))
+check("and the effort with it", readBack.last?.effort == .max)
+check("the prompt survives", AgentMention.parse(line + "\n\nbuild it").prompt == "build it")
+
+// Typing a handle yourself while it is already on the team is one agent, not
+// two — the composer prepends rather than checking, and this is what makes
+// that safe.
+let doubled = AgentMention.parse("@kimi:k3\n\nlook at @kimi again").crew
+check("a handle named twice by two routes is still one agent", doubled.count == 1)
+
 print(failures == 0 ? "\nall passed" : "\n\(failures) failed")
 exit(failures == 0 ? 0 : 1)

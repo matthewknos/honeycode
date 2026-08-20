@@ -53,6 +53,23 @@ enum AgentMention {
         init(account: Account, model: String?, effort: EffortChoice? = nil) {
             self.init(seat: Seat(account), model: model, effort: effort)
         }
+
+        /// `@kimi#2:k3` — this pick, written as the grammar `parse` reads.
+        ///
+        /// Deliberately here rather than in the view that needs it. The team
+        /// control exists so nobody has to know this spelling, and the price of
+        /// that is a second writer of it — so the writer lives beside the
+        /// reader, where a change to one is in front of whoever changes the
+        /// other, and the suite round-trips this string back through `parse`.
+        /// The two disagreeing would not break anything loudly: the control
+        /// would compose a line, the parser would find no crew in it, and the
+        /// message would go to one agent with nothing to say it had been.
+        var mention: String {
+            var out = seat.mention
+            if let model { out += ":" + model }
+            if let effort { out += ":" + effort.rawValue }
+            return out
+        }
     }
 
     /// What a mention's `:`-separated tail means for this account.

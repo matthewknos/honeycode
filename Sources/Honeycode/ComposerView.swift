@@ -335,6 +335,16 @@ struct ComposerView: View {
         VStack(alignment: .leading, spacing: Theme.s4) {
             if let pending = session.relayPending { relayNotice(pending) }
             if !session.attachments.isEmpty { attachmentRow }
+            // With the chips rather than in the rail: both answer "what goes
+            // with this message besides what I typed".
+            //
+            // Coding mode shows it only once there is a team. A terminal
+            // doesn't caption its prompt — the same rule that keeps the rail
+            // and the hint line out — but a crew you have assembled is state
+            // rather than chrome, and a terminal has always shown state.
+            if !terminal || !session.team.isEmpty {
+                TeamBar(session: session, leader: session.account)
+            }
 
             HStack(alignment: .firstTextBaseline, spacing: Theme.s3) {
                 if terminal {
@@ -748,7 +758,14 @@ struct ComposerView: View {
         let paths = session.attachments.map { "@\($0.path)" }.joined(separator: "\n")
         let body = paths.isEmpty ? draft : draft + "\n" + paths
         session.attachments.removeAll()
-        onSend(body)
+        // The team, as the grammar `Crew` reads. Prepended at send rather than
+        // typed into the field — a mention living in the draft is one you can
+        // half-delete, and a crew that changes when you fix a typo is worse
+        // than no control at all. Duplicates are harmless: `AgentMention.parse`
+        // collapses by seat, so typing `@kimi` yourself while `@kimi` is on the
+        // team is still one agent.
+        let mentions = session.team.map(\.mention).joined(separator: " ")
+        onSend(mentions.isEmpty ? body : mentions + "\n\n" + body)
     }
 }
 

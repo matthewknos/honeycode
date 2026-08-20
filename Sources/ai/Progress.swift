@@ -77,37 +77,8 @@ final class Progress {
     private func update(_ seat: Seat, from session: Session) {
         guard let index = rows.firstIndex(where: { $0.seat == seat }),
               !rows[index].done else { return }
-        rows[index].state = Self.state(of: session)
+        rows[index].state = session.activity()
         draw()
-    }
-
-    /// What the agent is doing *now* — the last thing it started, not a summary
-    /// of everything it has done.
-    private static func state(of session: Session) -> String {
-        for item in session.items.reversed() {
-            switch item {
-            case .tool(_, _, let name, let target, _, _):
-                return trim("\(name) \(target)")
-            case .diff(_, _, let file, let rows, _):
-                return trim("editing \(URL(fileURLWithPath: file).lastPathComponent) (\(rows.count) lines)")
-            case .search(_, _, let query, _, _):
-                return trim("searching \(query)")
-            case .assistant(_, let text) where !text.isEmpty:
-                let line = text.components(separatedBy: .newlines)
-                    .last { !$0.trimmingCharacters(in: .whitespaces).isEmpty } ?? ""
-                return trim(line.isEmpty ? "writing" : line)
-            case .thinking:
-                return "thinking"
-            default:
-                continue
-            }
-        }
-        return session.isRunning ? "thinking" : "starting"
-    }
-
-    private static func trim(_ text: String) -> String {
-        let flat = text.replacingOccurrences(of: "\n", with: " ")
-        return flat.count > 68 ? String(flat.prefix(67)) + "…" : flat
     }
 
     private func draw() {

@@ -1087,6 +1087,23 @@ struct SessionView: View {
     @AppStorage("transcript.terminal") private var terminal = false
     @AppStorage("transcript.textScale") private var textScale: Double = 1
     @AppStorage("transcript.width") private var readingWidth: Double = Double(Theme.readingWidth)
+    /// The live crew run, above the composer.
+    ///
+    /// Above rather than in the transcript, and only while there is one — see
+    /// `CrewRunPanel`. It shares the composer's measure so the two read as one
+    /// block at the foot of the pane rather than as a widget floating over it.
+    @ViewBuilder
+    private func runPanel() -> some View {
+        if let run = session.crewRun {
+            CrewRunPanel(run: run, session: session)
+                .frame(maxWidth: terminal ? .infinity : CGFloat(readingWidth))
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, terminal ? 0 : Theme.pane)
+                .padding(.top, Theme.s5)
+                .transition(.opacity)
+        }
+    }
+
     private func composer(prominent: Bool = false) -> some View {
         // Nothing to match any more: the transcript's scroller is off, so
         // neither side reserves width for one and both centre in the full pane.
@@ -1258,6 +1275,7 @@ struct SessionView: View {
                 TerminalHeader(session: session)
                 TerminalTranscript(session: session, mode: mode,
                                    scale: CGFloat(textScale))
+                runPanel()
                 composer()
             } else {
                 TranscriptView(session: session, onEdit: { text in
@@ -1288,6 +1306,7 @@ struct SessionView: View {
                             session.open(artifact)
                         }
                     }
+                runPanel()
                 composer()
             }
         }

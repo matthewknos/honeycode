@@ -643,8 +643,10 @@ extension TranscriptView {
                 UserTurn(text: text, accent: accent, scale: scale)
             case .assistant(_, let text):
                 // Agents emit markdown. Drawing it raw leaves literal asterisks
-                // and backticks all over the transcript.
-                MarkdownText(raw: text, caret: caret)
+                // and backticks all over the transcript — and, when the agent
+                // is leading a crew, its delegation block as a wall of JSON
+                // directly above the same plan rendered as a list.
+                MarkdownText(raw: CrewFence.hidden(from: text), caret: caret)
             case .thinking(_, let text, let started, let finished):
                 ThinkingView(text: text,
                              elapsed: finished.map { $0.timeIntervalSince(started) })
@@ -952,7 +954,10 @@ private struct OpinionCard: View {
                 .foregroundStyle(.tertiary)
 
                 if !text.isEmpty {
-                    MarkdownText(raw: text)
+                    // A mirrored delegate ends its turn with the questions it
+                    // wants asked. Those are already on screen as `@kimi#2 →
+                    // @claude-p — …`; see `CrewFence`.
+                    MarkdownText(raw: CrewFence.hidden(from: text))
                 }
             }
             .padding(.leading, Theme.s5)

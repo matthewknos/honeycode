@@ -231,13 +231,80 @@ final class Scrollback {
         let already = printed[id] ?? 0
         guard length > already else { return }
 
+        // The delta, with any crew transport taken out of it. Filtered here
+        // rather than over `text` so the work stays the size of the delta —
+        // scanning the whole reply every frame is the quadratic this file was
+        // written to avoid. `printed` still counts raw bytes, because it is a
+        // mark in the source text and not in what reached the screen.
+        let delta = filtered(tail(of: text, from: already), for: id)
+
+        // After filtering, and only if something survived. A turn whose first
+        // delta is entirely fence would otherwise print a speaker and a blank
+        // line for an agent that has not said anything yet.
+        guard !delta.isEmpty else { printed[id] = length; return }
+
         if started.insert(id).inserted {
             blank()
             header()
         }
         lastWasActivity = false
         printed[id] = length
-        write(tail(of: text, from: already), style)
+        write(delta, style)
+    }
+
+    /// One item's position in the crew transport it may be streaming.
+    private struct FenceState {
+        var suppressing = false
+        /// A line that has arrived only partly. Held rather than written,
+        /// because whether it is prose or the start of a block is not yet
+        /// decidable — see `CrewFence.mightOpen`.
+        var carry = ""
+    }
+    private var fences: [UUID: FenceState] = [:]
+
+    /// Drop whatever of this delta belongs to `ai-delegate` or `ai-message`.
+    ///
+    /// Line-oriented, with a carry, because a streamed reply is split wherever
+    /// the network split it and a fence marker has no reason to arrive whole.
+    /// The carry is bounded by the longest marker: anything that can no longer
+    /// become one is released the same frame it arrives, so ordinary prose and
+    /// ordinary code fences stream exactly as they did.
+    private func filtered(_ delta: String, for id: UUID) -> String {
+        var state = fences[id] ?? FenceState()
+        // Nothing to do, and nothing held: the overwhelmingly common case, and
+        // it costs one `contains` over the delta.
+        if !state.suppressing, state.carry.isEmpty, !delta.contains("`") {
+            return delta
+        }
+
+        let chunk = state.carry + delta
+        state.carry = ""
+        var out = ""
+        var rest = chunk[...]
+
+        while let stop = rest.firstIndex(of: "\n") {
+            let line = rest[rest.startIndex..<stop]
+            let whole = rest[rest.startIndex...stop]
+            rest = rest[rest.index(after: stop)...]
+            if state.suppressing {
+                if CrewFence.closes(line) { state.suppressing = false }
+                continue
+            }
+            if CrewFence.opens(line) { state.suppressing = true; continue }
+            out += whole
+        }
+
+        // Whatever is left has no newline yet. While inside a block it must be
+        // held whatever it looks like, or the closing fence arrives split and
+        // is never recognised — and the rest of the run stays hidden.
+        if state.suppressing || CrewFence.mightOpen(rest) {
+            state.carry = String(rest)
+        } else {
+            out += rest
+        }
+
+        fences[id] = state
+        return out
     }
 
     /// The bytes after `offset`, as a string.

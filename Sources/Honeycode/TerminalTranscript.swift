@@ -266,11 +266,20 @@ struct TerminalTranscript: NSViewRepresentable {
                                                 attributes: attributes(for: run.style)))
             }
 
+            // Where the redraw has to start. The append alone would only ever
+            // dirty the tail, but `styleCompletedLines` reaches backwards and
+            // rewrites lines that are already on screen — see `redraw`.
+            var dirty = storage.length
+
             storage.beginEditing()
             storage.append(batch)
-            styleCompletedLines(in: storage)
-            trim(storage)
+            if let restyled = styleCompletedLines(in: storage) {
+                dirty = min(dirty, restyled)
+            }
+            dirty -= trim(storage)
             storage.endEditing()
+
+            redraw(from: max(0, dirty), in: storage)
 
             if following { scrollToEnd() }
         }
@@ -293,8 +302,11 @@ struct TerminalTranscript: NSViewRepresentable {
         /// Cutting mid-line would leave a fragment at the top that reads as
         /// something the agent said, and cutting mid-attribute-run is how you
         /// get a stray red paragraph.
-        private func trim(_ storage: NSTextStorage) {
-            guard storage.length > Self.cap else { return }
+        /// Returns how many characters came off the front, since every offset
+        /// held above this call is measured from the old start.
+        @discardableResult
+        private func trim(_ storage: NSTextStorage) -> Int {
+            guard storage.length > Self.cap else { return 0 }
             let cut = storage.length - Self.trimTo
             let text = storage.string as NSString
             let searchable = NSRange(location: cut, length: min(4096, storage.length - cut))
@@ -303,6 +315,38 @@ struct TerminalTranscript: NSViewRepresentable {
             if newline.location != NSNotFound { boundary = newline.location + 1 }
             storage.deleteCharacters(in: NSRange(location: 0, length: boundary))
             styledUpTo = max(0, styledUpTo - boundary)
+            return boundary
+        }
+
+        /// Force the paragraph containing `location`, and everything after it,
+        /// to be drawn again.
+        ///
+        /// Needed because of `allowsNonContiguousLayout`, and only because of
+        /// it. That setting is what makes this renderer affordable — glyphs are
+        /// laid out for the viewport and never for the megabyte above it — but
+        /// it also means the layout manager is entitled to leave what it has
+        /// already drawn exactly where it is. An append is fine: nothing above
+        /// the insertion point moves. `styleCompletedLines` is not, because
+        /// spending a `**` pair makes the line four characters shorter and the
+        /// whole paragraph rewraps around it.
+        ///
+        /// What that looked like was two wrappings of one paragraph on screen
+        /// at once, a few characters out of step — "but wout wortrth insth
+        /// instrumenting" for "but worth instrumenting". The text was never
+        /// wrong; the previous frame's glyphs simply stayed.
+        ///
+        /// From the paragraph start rather than the edit: a rewrap moves glyphs
+        /// anywhere in the paragraph, including before the characters that
+        /// changed. One paragraph per frame is not a cost worth optimising.
+        private func redraw(from location: Int, in storage: NSTextStorage) {
+            guard let layout = textView?.layoutManager,
+                  location < storage.length else { return }
+            let text = storage.string as NSString
+            let paragraph = text.paragraphRange(
+                for: NSRange(location: min(location, text.length - 1), length: 0))
+            layout.invalidateDisplay(forCharacterRange:
+                NSRange(location: paragraph.location,
+                        length: storage.length - paragraph.location))
         }
 
         // MARK: Inline markdown
@@ -315,14 +359,18 @@ struct TerminalTranscript: NSViewRepresentable {
         /// resolve it the moment it ends. Per line rather than per delta is
         /// what makes it affordable — and what makes it correct, since you
         /// cannot know a `**` is emphasis until its partner arrives.
-        private func styleCompletedLines(in storage: NSTextStorage) {
+        /// Returns the earliest character it rewrote, or nil if it rewrote
+        /// nothing — which is what tells `pump` how far back the redraw has to
+        /// reach.
+        @discardableResult
+        private func styleCompletedLines(in storage: NSTextStorage) -> Int? {
             let text = storage.string as NSString
-            guard styledUpTo < text.length else { return }
+            guard styledUpTo < text.length else { return nil }
 
             // Whatever is still being typed waits for its newline.
             let region = NSRange(location: styledUpTo, length: text.length - styledUpTo)
             let lastBreak = text.range(of: "\n", options: .backwards, range: region)
-            guard lastBreak.location != NSNotFound else { return }
+            guard lastBreak.location != NSNotFound else { return nil }
             let end = lastBreak.location + 1
 
             var lines: [NSRange] = []
@@ -345,6 +393,7 @@ struct TerminalTranscript: NSViewRepresentable {
             }
 
             var shift = 0
+            var earliest: Int?
             for (offset, line) in zip(lines.indices, lines).reversed() {
                 guard !fenced[offset], line.length > 0,
                       storage.attribute(.honeycodeProse, at: line.location,
@@ -353,8 +402,10 @@ struct TerminalTranscript: NSViewRepresentable {
                 else { continue }
                 shift += styled.length - line.length
                 storage.replaceCharacters(in: line, with: styled)
+                earliest = line.location
             }
             styledUpTo = end + shift
+            return earliest
         }
 
         private static let bold = try? NSRegularExpression(pattern: "\\*\\*(.+?)\\*\\*")

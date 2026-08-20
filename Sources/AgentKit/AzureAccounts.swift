@@ -21,7 +21,7 @@ struct AzureSubscription: Equatable, Sendable {
 /// One signed-in identity, with the subscriptions it can reach.
 ///
 /// Grouped by the email rather than listed per subscription, because the
-/// question this answers is "am I Kainos or KainosWD right now" — and an
+/// question this answers is "which tenant am I in right now" — and an
 /// account with four subscriptions would otherwise take four rows to say one
 /// thing. `az` has no notion of a current *account*: it tracks a default
 /// subscription, and the account is whoever owns it.

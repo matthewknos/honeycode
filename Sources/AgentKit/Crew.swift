@@ -277,6 +277,104 @@ final class Crew {
         return out
     }
 
+    /// Two agents holding the same file.
+    ///
+    /// The briefing states exactly one hard rule about how work may be split —
+    /// *"Two agents must never be given the same file"* — and states the reason
+    /// beside it: nothing locks a file, so the second write wins and the first
+    /// agent's work is gone with no error anywhere. Nothing checked that the
+    /// rule held. A plan that breaks it produces a run where a piece is
+    /// silently missing and a lead that assembles believing both landed, which
+    /// is the failure `ledger` was written to catch arriving by another road.
+    ///
+    /// Found twice, because the two answers are different questions. The plan
+    /// can be read before anyone starts, which is the only moment where knowing
+    /// is free. What was *written* can only be counted afterwards, and catches
+    /// the overlap nobody declared — a delegate that wandered into a file it
+    /// was never given.
+    ///
+    /// **They are not equally sure of themselves, and the wording says so.** A
+    /// task names a file for two reasons — "write this" and "read this" — and
+    /// nothing here can tell them apart. The first live run made the point
+    /// immediately: the lead kept the shared types file for itself and told all
+    /// three delegates to *ask it* about that file, so all three tasks named it
+    /// and none of them was going to touch it. So the plan-time finding is
+    /// phrased as what is actually known — this file is named in more than one
+    /// piece — and reported as a note rather than a fault. The measured one is
+    /// a fact and is stated as one.
+    struct Overlap {
+        let file: String
+        /// In roster order, so the sentence reads the way the plan does.
+        let seats: [Seat]
+    }
+
+    /// A path reduced to something two of them can be compared by.
+    ///
+    /// Deliberately almost nothing: strip the punctuation prose puts around a
+    /// path, a leading `./`, a trailing slash. In particular it does **not**
+    /// expand `~`. Both adapters record an edited file the same way — the
+    /// absolute path with `$HOME` written back as `~` — so measured paths
+    /// already agree with each other across agents running on different CLIs,
+    /// and expanding would only make them longer to read in a report. Planned
+    /// paths are whatever the lead wrote, which is project-relative. The two
+    /// sets are never compared against each other, only like with like.
+    static func comparable(_ path: String) -> String {
+        var text = path.trimmingCharacters(
+            in: CharacterSet(charactersIn: " \t\n`'\",;:()[]<>"))
+        while text.hasPrefix("./") { text = String(text.dropFirst(2)) }
+        while text.hasSuffix("/") { text = String(text.dropLast()) }
+        return text
+    }
+
+    /// Files more than one assignment claims, read from the plan alone.
+    static func overlaps(in assignments: [CrewAssignment]) -> [Overlap] {
+        var claims: [String: [Seat]] = [:]
+        var seen: [String] = []
+        for assignment in assignments {
+            for file in namedFiles(in: assignment.task).map(comparable) {
+                if claims[file] == nil { seen.append(file) }
+                // One task naming the same file twice is one claim, not a
+                // collision with itself.
+                if claims[file]?.contains(assignment.to) != true {
+                    claims[file, default: []].append(assignment.to)
+                }
+            }
+        }
+        return seen.compactMap { file in
+            guard let seats = claims[file], seats.count > 1 else { return nil }
+            return Overlap(file: file, seats: seats)
+        }
+    }
+
+    /// Files more than one agent actually wrote.
+    ///
+    /// The ledger's kind of fact: counted from what each session recorded
+    /// doing, not from what anyone said or planned.
+    ///
+    /// Confined seats are excluded rather than compared. Each has a scratch
+    /// directory of its own, so two of them writing `notes.md` are writing two
+    /// different files. Their recorded paths, being absolute, would already say
+    /// so — excluding them states it once here rather than depending on that
+    /// staying true of every adapter.
+    static func overlaps(inWork evidence: [Seat: Work], over order: [Seat],
+                         excluding confined: Set<Seat> = []) -> [Overlap] {
+        var claims: [String: [Seat]] = [:]
+        var seen: [String] = []
+        for seat in order where !confined.contains(seat) {
+            guard let work = evidence[seat] else { continue }
+            for file in work.files.map(comparable) {
+                if claims[file] == nil { seen.append(file) }
+                if claims[file]?.contains(seat) != true {
+                    claims[file, default: []].append(seat)
+                }
+            }
+        }
+        return seen.compactMap { file in
+            guard let seats = claims[file], seats.count > 1 else { return nil }
+            return Overlap(file: file, seats: seats)
+        }
+    }
+
     /// Whether the piece is on disk already, whoever put it there.
     ///
     /// This is the question the retry actually wants answered, and it took a
@@ -333,6 +431,32 @@ final class Crew {
     /// The line itself is kept, not just the fact of it, so the same line is
     /// never said twice — see `announce`.
     private var announced: [Seat: String] = [:]
+
+    /// Files this seat was given that somebody else was given too.
+    ///
+    /// Written at dispatch and read by `instruction`, so each of them learns
+    /// about the other *before* it starts writing rather than after one of them
+    /// has been overwritten. Cleared each time a plan is dispatched, so a
+    /// re-issued piece doesn't inherit a collision from the plan before it.
+    private var contested: [Seat: [(file: String, with: [Seat])]] = [:]
+
+    /// Who has already been told they produced nothing.
+    ///
+    /// `judge` runs every time the crew falls idle, which is more than once in
+    /// a run that re-issues a piece — and a delegate that came back empty is
+    /// still empty on the second pass. Without this it is named again each
+    /// time, which reads as it having failed twice.
+    private var complained: Set<Seat> = []
+
+    /// The project's own check, and what it said before and after.
+    ///
+    /// `baseline` is taken at dispatch, concurrently with the delegates, which
+    /// is what makes it affordable: the delegates run for minutes and this runs
+    /// once inside that. Without it a failing check reports the state of the
+    /// repository rather than the work of the crew — see `Verification`.
+    private var check: Verification.Check?
+    private var baseline: Verification.Outcome?
+    private var verdict: (check: Verification.Check, outcome: Verification.Outcome)?
 
     /// Called when the whole run has settled and it's safe to ask for input.
     var onIdle: (() -> Void)?
@@ -415,6 +539,10 @@ final class Crew {
             self.runID = UUID()
             self.held = []
             self.refusals = []
+            self.complained = []
+            self.check = nil
+            self.baseline = nil
+            self.verdict = nil
             self.silence = [:]
             self.postage = [:]
             self.pieces = [:]
@@ -917,6 +1045,17 @@ final class Crew {
         }
         reporter.plan(assignments)
 
+        // The plan's one hard rule, checked while checking is still free.
+        //
+        // Not a refusal, and not an accusation. A file named in two pieces is
+        // often a file one of them writes and the other reads, which is fine
+        // and common — the lead frequently keeps a shared interface and points
+        // everyone at it. What cannot be told apart from here is that case and
+        // the dangerous one, where each writes believing it is alone. So both
+        // are told, in terms that fit either, and pointed at the channel they
+        // already have for settling it between themselves.
+        contest(Self.overlaps(in: assignments))
+
         // Anything staying inside the tenancy goes now; anything leaving it
         // waits for the check. Splitting them rather than checking all four is
         // most of why the gate is affordable — in the common crew, where the
@@ -1011,6 +1150,25 @@ final class Crew {
                  + "adding one spends a subscription nobody asked for"
         }
         return nil
+    }
+
+    /// Record who shares a file with whom, and say so out loud.
+    ///
+    /// Said to the person as a problem rather than a status, because it is one:
+    /// nothing downstream prevents the overwrite, and if the two agents don't
+    /// sort it out between themselves the run will quietly lose a piece.
+    private func contest(_ overlaps: [Overlap]) {
+        contested = [:]
+        for overlap in overlaps {
+            reporter.status("\(overlap.file) is named in "
+                            + "\(Self.list(overlap.seats.map(\.mention)))'s pieces — "
+                            + "they have been told about each other in case more than "
+                            + "one of them writes it")
+            for seat in overlap.seats {
+                contested[seat, default: []].append(
+                    (file: overlap.file, with: overlap.seats.filter { $0 != seat }))
+            }
+        }
     }
 
     /// A piece that isn't going to run, said to the person now and to the lead
@@ -1115,6 +1273,60 @@ final class Crew {
         }
 
         reporter.working(sending.map { (seat: $0.assignment.to, session: $0.session) })
+        beginBaseline()
+    }
+
+    /// Ask the project what it thinks of itself *before* the crew changes it.
+    ///
+    /// Started here rather than before dispatch so it costs no wall clock: the
+    /// delegates have just been handed minutes of work, and this finishes
+    /// inside that. The cost of getting it wrong in the other direction is what
+    /// justifies it at all — a check that only ever runs at the end reports
+    /// every problem the repository already had as though this run caused it,
+    /// and a warning that cries wolf twice is one nobody reads a third time.
+    ///
+    /// Failure to get a reading is not an error. `baseline` stays nil, and
+    /// `verification` says it has no reading rather than guessing.
+    private func beginBaseline() {
+        guard check == nil, let found = Verification.check(for: directory) else { return }
+        check = found
+        let root = directory
+        DispatchQueue.global(qos: .utility).async {
+            let outcome = Verification.outcome(of: Verification.run(found, in: root))
+            Task { @MainActor [weak self] in self?.baseline = outcome }
+        }
+    }
+
+    /// Run the check again now the work is done, then assemble.
+    ///
+    /// Between the delegates and the assembly, because the point of it is to be
+    /// in the lead's hands while the lead still has a turn left to fix
+    /// something. Reported afterwards it would be a verdict on a finished
+    /// answer, which is a thing to read rather than a thing to act on.
+    private func verify(for leader: Seat) {
+        guard let check else { assemble(for: leader); return }
+        reporter.speaker(leader, note: "checking the work")
+        reporter.status("running `\(check.display)`…")
+        let root = directory
+        DispatchQueue.global(qos: .userInitiated).async {
+            let outcome = Verification.outcome(of: Verification.run(check, in: root))
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.verdict = (check: check, outcome: outcome)
+                switch outcome {
+                case .passed:
+                    self.reporter.status("`\(check.display)` passed")
+                case .failed:
+                    self.reporter.problem("`\(check.display)` failed — "
+                                          + "the output has gone to \(leader.mention)")
+                case .unavailable:
+                    self.reporter.status("`\(check.display)` couldn't run — nothing checked")
+                case .timedOut:
+                    self.reporter.problem("`\(check.display)` didn't finish — nothing checked")
+                }
+                self.assemble(for: leader)
+            }
+        }
     }
 
     /// Give one delegate one piece and start watching for it.
@@ -1169,32 +1381,12 @@ final class Crew {
         // nothing is the one thing the person would want to know while there
         // is still time to do something about it — and the lead will otherwise
         // be told, in prose, that the piece is in hand.
+        // Counted, not judged. Whether this delegate produced anything is
+        // decided in `judge`, once it has genuinely stopped — see there.
         if let session = inFlight(seat) {
             let did = Self.work(of: session, from: launchMark[seat] ?? 0)
             evidence[seat] = did
-            // Asked before anything is said about it: an agent that wrote
-            // nothing because the files were already there has not failed, and
-            // saying it has is both wrong and expensive.
-            let done = given[seat].map { alreadyDone($0, in: session.directory) } ?? false
-            if done { satisfied.insert(seat) }
-
-            if did.wroteNothing && !done {
-                reporter.problem(did.isEmpty
-                    ? "\(seat.mention) finished without writing or running anything — "
-                      + "its piece has not been done"
-                    : "\(seat.mention) ran \(did.tools) command"
-                      + (did.tools == 1 ? "" : "s") + " but wrote no files — "
-                      + "reading is not building, and its piece has not been done")
-            } else if did.wroteNothing {
-                reporter.status("\(seat.mention) wrote nothing — the files it was "
-                                + "given are already on disk")
-            }
             reporter.worked(seat, files: did.files.count)
-            // Before `proceed`, which is what decides whether the run is over:
-            // a re-issued piece puts a seat back into `running`, and assembly
-            // has to wait for it rather than closing around the hole it was
-            // sent to fill.
-            if did.wroteNothing && !done { reissue(seat, for: leader) }
         }
         if let reply, !reply.isEmpty { record(reply, from: seat) }
         // Routed before the wait is evaluated: a question puts its addressee
@@ -1289,6 +1481,74 @@ final class Crew {
     /// now answering somebody's question has not finished — assembling around it
     /// would hand the lead a report that contradicts a conversation still going
     /// on underneath.
+    /// Who was given a piece and, now the crew has genuinely stopped, has
+    /// nothing to show for it.
+    ///
+    /// **Not** asked when a turn ends, and that was the bug. A delegate that
+    /// ends its turn with a question has not finished — it is waiting, and its
+    /// work happens on the turn after the answer arrives. The roster text
+    /// explicitly invites exactly that: *"if you are blocked on it, do
+    /// everything you can without it first, ask, and finish the rest when the
+    /// answer comes back."*
+    ///
+    /// Judging at `finished` counted asking as producing nothing. In the run
+    /// this was found in, `@copilot` asked the lead what the interface was and
+    /// was immediately declared empty-handed and re-issued; `@copilot#2` asked
+    /// the same question and was re-issued; `@copilot#3` asked it again and
+    /// exhausted the cap. Three instances, three questions nobody was waiting
+    /// for an answer to, and the piece went undone — while the two delegates
+    /// that guessed rather than asked both finished.
+    ///
+    /// There is a second reason it cannot live in `finished`: an agent that
+    /// resumes after an answer completes through `handOver`'s handler, not
+    /// `hand`'s, so `finished` never runs again for it. The only moment that
+    /// sees a delegate's whole contribution is the one where the crew is idle,
+    /// which is here.
+    ///
+    /// Returns whether anything was handed out again, so `proceed` waits for it
+    /// rather than assembling around the hole it was sent to fill.
+    private func judge(_ leader: Seat) -> Bool {
+        var again = false
+        for seat in order {
+            guard let assignment = given[seat], let session = inFlight(seat) else { continue }
+
+            // Recounted from the launch mark rather than trusted from
+            // `finished`: a delegate that asked, waited and then worked did
+            // that work on a later turn, and the count taken when it paused
+            // knows nothing about it.
+            let did = Self.work(of: session, from: launchMark[seat] ?? 0)
+            evidence[seat] = did
+            reporter.worked(seat, files: did.files.count)
+            guard did.wroteNothing else { continue }
+
+            // Asked before anything is said about it: an agent that wrote
+            // nothing because the files were already there has not failed, and
+            // saying it has is both wrong and expensive.
+            if satisfied.contains(seat) { continue }
+            if alreadyDone(assignment, in: session.directory) {
+                satisfied.insert(seat)
+                if complained.insert(seat).inserted {
+                    reporter.status("\(seat.mention) wrote nothing — the files it was "
+                                    + "given are already on disk")
+                }
+                continue
+            }
+
+            if complained.insert(seat).inserted {
+                reporter.problem(did.isEmpty
+                    ? "\(seat.mention) finished without writing or running anything — "
+                      + "its piece has not been done"
+                    : "\(seat.mention) ran \(did.tools) command"
+                      + (did.tools == 1 ? "" : "s") + " but wrote no files — "
+                      + "reading is not building, and its piece has not been done")
+            }
+            let before = running.count
+            reissue(seat, for: leader)
+            if running.count > before { again = true }
+        }
+        return again
+    }
+
     private func proceed(_ leader: Seat) {
         guard running.isEmpty, answering.isEmpty else {
             // Others still going: put the block back under what was just printed.
@@ -1297,6 +1557,10 @@ final class Crew {
             })
             return
         }
+        // Everyone has stopped, which is the first moment it is fair to ask
+        // what they produced. A piece handed out again puts a seat back into
+        // `running`, and this returns rather than assembling without it.
+        if judge(leader) { return }
         reporter.working([])
 
         // Nothing came back at all — assembling would ask the lead to combine
@@ -1308,7 +1572,10 @@ final class Crew {
             reporter.problem("no delegate reported back — nothing to assemble")
             settle()
         } else {
-            assemble(for: leader)
+            // Through the check rather than straight to assembly. `assemble` is
+            // still called directly from the two paths where nothing ran at
+            // all — there is nothing to check when nothing was dispatched.
+            verify(for: leader)
         }
     }
 
@@ -1533,6 +1800,28 @@ final class Crew {
               + "as you, in this same directory — it is a separate agent, not "
               + "another turn of yours, and its files are not yours to change."
             : ""
+        // Said only to the agents it is true of, and said before they start.
+        // A delegate that learns this by finding its own file rewritten has
+        // learned it too late — the other's turn is already over.
+        let shared = contested[delegate].map { claims -> String in
+            let lines = claims.map { claim in
+                "- \(claim.file) — also given to \(Self.list(claim.with.map(\.mention)))"
+            }.joined(separator: "\n")
+            return """
+
+            [ai: these files are named in somebody else's piece as well as yours:
+            \(lines)
+            That may be nothing — one of you writes it and the other only reads \
+            it, which is the usual reason. But **if you are going to change one \
+            of these, say so to whoever else has it before you do.** Nothing \
+            locks a file: whoever writes last wins, the other's work is gone, and \
+            there is no error and nothing in either transcript to say it \
+            happened. Agreeing who owns which part costs one message, which is \
+            what the channel below is for. If the file already holds what your \
+            piece needs, read it and leave it alone.]
+
+            """
+        } ?? ""
         return """
         \(again)[ai: \(leader.mention) is leading this job and has given you \
         one piece of it. Other agents are working in the same directory at the \
@@ -1540,7 +1829,7 @@ final class Crew {
         beside it, and do not tidy, rename or rewrite files you weren't asked \
         for.\(sibling) When you're done, say briefly what you did and which \
         files you touched.]
-        \(roster(leader: leader, excluding: delegate))
+        \(shared)\(roster(leader: leader, excluding: delegate))
         \(task)
         """
     }
@@ -1697,6 +1986,27 @@ final class Crew {
         }
         out += "]"
 
+        // Placed before the empty-handed paragraph and its early return, so a
+        // run where everyone wrote something still reports a collision.
+        //
+        // This is the measured half of the pair — the plan-time check in
+        // `contest` warned about files two agents were *given*, and this one
+        // counts files two agents actually *wrote*, which includes the ones
+        // nobody declared.
+        let collided = Self.overlaps(inWork: evidence, over: order, excluding: offTenant)
+        if !collided.isEmpty {
+            out += "\n\n[ai: **more than one of them wrote the same file.** Nothing "
+                + "locks a file, so the last write won and whatever the other one had "
+                + "put there is gone — not merged, and with no error anywhere. Do not "
+                + "describe both pieces as done until you have opened these and seen "
+                + "which survived:"
+            for overlap in collided {
+                out += "\n- \(overlap.file) — written by "
+                    + Self.list(overlap.seats.map(\.mention))
+            }
+            out += "]"
+        }
+
         // A piece that came back empty and was then done by somebody else is
         // not outstanding, so it doesn't belong in the paragraph that says so.
         // Getting this wrong in the safe direction would have the lead redo
@@ -1724,6 +2034,65 @@ final class Crew {
         return out
     }
 
+    /// What the project said about the work, for the lead.
+    ///
+    /// Outside the delegates' quoting but under the same nonce, and both halves
+    /// of that are deliberate. It is not an agent's account of anything — this
+    /// app ran a command and read its exit status, which is the one claim in
+    /// the report nobody in the run could have written. But the *output* is not
+    /// this app's words either: a compiler echoes the source lines it is
+    /// complaining about, so a file in the project can put text in front of the
+    /// lead through it. Quoted, therefore, exactly like everything else that
+    /// came from outside.
+    ///
+    /// The baseline is what turns this from an alarm into information. Failing
+    /// now and passing before is the crew's doing; failing both times is the
+    /// repository's, and saying so is the difference between a lead that fixes
+    /// the right thing and one that rewrites working code.
+    private func verification(_ tag: String) -> String {
+        guard let verdict else { return "" }
+        let name = verdict.check.display
+
+        switch verdict.outcome {
+        case .passed:
+            return "\n\n[ai: this project's own check — `\(name)` — passed after the "
+                + "work. Counted by this app, not reported by anyone in the run.]"
+
+        case .unavailable(let why):
+            return "\n\n[ai: this project's check — `\(name)` — could not run at all, so "
+                + "nothing here says whether the work holds together. This is a missing "
+                + "tool, not a fault in the work: don't go and fix it, and don't describe "
+                + "the work as verified.\n\n\(why)]"
+
+        case .timedOut:
+            return "\n\n[ai: this project's check — `\(name)` — was still running after "
+                + "\(Int(Verification.patience))s and was stopped, so nothing here says "
+                + "whether the work holds together. Don't describe it as verified.]"
+
+        case .failed(let output):
+            var out = "\n\n[ai: **this project's check failed.** `\(name)`, "
+                + "\(verdict.check.source.blurb), "
+            switch baseline {
+            case .passed:
+                out += "passed before this run started and fails now — so something this "
+                    + "team wrote has broken it. Fix it as part of assembling, and do not "
+                    + "describe the work as finished while it is failing."
+            case .failed:
+                out += "**was already failing before this run started.** Some of what "
+                    + "follows is therefore not your team's doing. Work out which of it "
+                    + "is: fix what this run caused, and say plainly to the person what "
+                    + "was already broken rather than quietly taking it on or quietly "
+                    + "leaving it."
+            default:
+                out += "gave no usable reading before the work started, so this output may "
+                    + "include problems that were already there. Check which is which "
+                    + "before you rewrite anything."
+            }
+            out += "\n\n--- \(name) [\(tag)] ---\n\(output)\n--- end [\(tag)] ---]"
+            return out
+        }
+    }
+
     private func report() -> String {
         let tag = Handoff.mark()
         var out = """
@@ -1740,6 +2109,7 @@ final class Crew {
         out += "\n--- end [\(tag)] ---"
         out += conversation(tag)
         out += ledger()
+        out += verification(tag)
 
         if !held.isEmpty {
             out += "\n\n[ai: these pieces were not sent. Each would have carried "

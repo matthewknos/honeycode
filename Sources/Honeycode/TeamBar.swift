@@ -23,6 +23,14 @@ struct TeamBar: View {
     var leader: Account
 
     @State private var picking = false
+    /// Loaded when the popover opens rather than observed. Teams change only
+    /// when this control changes them, and a store that published would be
+    /// machinery for an event that has one source.
+    @State private var teams: [SavedTeam] = []
+    @State private var naming = false
+    @State private var draftName = ""
+    /// What was lost restoring a team, if anything. See `apply`.
+    @State private var note: String?
 
     var body: some View {
         HStack(spacing: Theme.s3) {
@@ -123,7 +131,19 @@ struct TeamBar: View {
                 accountRow(account)
             }
 
+            saved
+
+            checking
+
             Divider()
+
+            if let note {
+                Text(note)
+                    .font(Theme.label)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(width: 260, alignment: .leading)
+            }
 
             // Said once, here, where the decision is made. A person adding a
             // fourth agent is committing to four times the spend, and finding
@@ -137,6 +157,191 @@ struct TeamBar: View {
                 .frame(width: 260, alignment: .leading)
         }
         .padding(Theme.s5)
+        .onAppear { teams = TeamStore.all; note = nil; naming = false }
+    }
+
+    // MARK: Teams that outlive the session
+
+    /// The saved list, and the way into it.
+    ///
+    /// Below the account rows rather than above them: assembling a team is what
+    /// this popover is for, and reusing one is what you do once you have. A
+    /// list at the top would put the less common action in the more prominent
+    /// place — and on a machine with no saved teams, an empty heading.
+    @ViewBuilder
+    private var saved: some View {
+        if !teams.isEmpty || !session.team.isEmpty {
+            Divider()
+            HStack {
+                Text("Saved teams")
+                    .font(Theme.label)
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: Theme.s6)
+                if !session.team.isEmpty && !naming {
+                    Button("Save this one") {
+                        draftName = ""
+                        naming = true
+                    }
+                    .buttonStyle(.plain)
+                    .font(Theme.label)
+                    .foregroundStyle(Color.accentColor)
+                }
+            }
+
+            if naming { nameField }
+
+            ForEach(teams) { team in
+                savedRow(team)
+            }
+        }
+    }
+
+    private var nameField: some View {
+        // Submitting on Enter and nowhere else. A team is named in one word and
+        // a Save button beside a one-word field is a button nobody reaches for.
+        TextField("Name this team", text: $draftName)
+            .textFieldStyle(.plain)
+            .font(Theme.label)
+            .padding(.horizontal, Theme.s4)
+            .padding(.vertical, Theme.s3)
+            .modifier(FormField())
+            .frame(width: 260)
+            .onSubmit {
+                TeamStore.save(draftName, session.team)
+                teams = TeamStore.all
+                naming = false
+                draftName = ""
+            }
+    }
+
+    private func savedRow(_ team: SavedTeam) -> some View {
+        Button {
+            apply(team)
+        } label: {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(team.name)
+                    .font(Theme.body)
+                // What it will actually put on the team, in the grammar the
+                // chips will show — so choosing between two saved teams is
+                // reading, not remembering.
+                Text(TeamStore.summary(of: team))
+                    .font(Theme.monoSmall)
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+            }
+            .frame(width: 260, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .contextMenu {
+            Button("Replace with the current team") {
+                TeamStore.save(team.name, session.team)
+                teams = TeamStore.all
+            }
+            .disabled(session.team.isEmpty)
+            Divider()
+            Button("Delete", role: .destructive) {
+                TeamStore.remove(team.id)
+                teams = TeamStore.all
+            }
+        }
+    }
+
+    // MARK: What gets checked before the lead assembles
+
+    /// The project's own check, shown where the crew is configured.
+    ///
+    /// Here rather than in Settings because a check is a fact about *this*
+    /// directory, and the Settings window has no idea which one you are looking
+    /// at. This popover already knows: it belongs to a session, and a session
+    /// is a conversation about a folder.
+    ///
+    /// Shown resolved rather than blank — whatever is in the field is what will
+    /// actually run, whether somebody typed it, the project declared it in
+    /// `.honeycode-check`, or it was inferred from a manifest. A field that
+    /// shows nothing while a check runs anyway is the control lying about the
+    /// thing it controls.
+    @ViewBuilder
+    private var checking: some View {
+        Divider()
+        VStack(alignment: .leading, spacing: Theme.s2) {
+            Text("Before assembling")
+                .font(Theme.label)
+                .foregroundStyle(.secondary)
+
+            TextField("", text: checkCommand, prompt: Text("Nothing is checked"))
+                .textFieldStyle(.plain)
+                .font(Theme.monoSmall)
+                .padding(.horizontal, Theme.s4)
+                .padding(.vertical, Theme.s3)
+                .modifier(FormField())
+                .frame(width: 260)
+
+            HStack(spacing: Theme.s3) {
+                Text(checkBlurb)
+                    .font(Theme.label)
+                    .foregroundStyle(.tertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+                if Verification.configured(for: session.directory) != nil {
+                    Button("Reset") {
+                        Verification.setCommand(nil, for: session.directory)
+                        note = nil
+                    }
+                    .buttonStyle(.plain)
+                    .font(Theme.label)
+                    .foregroundStyle(Color.accentColor)
+                    .help("Go back to what this project declares or implies")
+                }
+            }
+            .frame(width: 260, alignment: .leading)
+        }
+    }
+
+    /// Bound straight to the store, not to `@State`. The check is read at the
+    /// end of a run by code that has never seen this view, so what is on screen
+    /// has to be what is on disk.
+    private var checkCommand: Binding<String> {
+        Binding(get: { Verification.check(for: session.directory)?.command ?? "" },
+                set: { Verification.setCommand($0, for: session.directory) })
+    }
+
+    private var checkBlurb: String {
+        guard let check = Verification.check(for: session.directory) else {
+            return "Nothing runs. Type a command to check the work before the lead assembles."
+        }
+        switch check.source {
+        case .configured: return "Set for this project."
+        case .declared:   return "From this project's .honeycode-check file."
+        case .detected:   return "Inferred from this project. Runs after the team finishes; "
+                               + "the lead sees the result before it assembles."
+        }
+    }
+
+    /// Put a saved team on this session, and say what didn't come with it.
+    ///
+    /// Two things can go missing between saving and restoring, and both are the
+    /// kind of quiet subtraction that ends with somebody wondering why a piece
+    /// never got done: an account whose definition has since been deleted, and
+    /// the account that happens to lead *this* session — which is on the team
+    /// by being the conversation you are in, not by being a delegate of itself.
+    private func apply(_ team: SavedTeam) {
+        let restored = TeamStore.picks(of: team)
+        let usable = restored.picks.filter { $0.account != leader }
+        session.team = usable
+
+        var why: [String] = []
+        if restored.dropped > 0 {
+            why.append(restored.dropped == 1 ? "one account no longer exists"
+                                             : "\(restored.dropped) accounts no longer exist")
+        }
+        if restored.picks.count > usable.count {
+            why.append("\(leader.shortTitle) leads this session")
+        }
+        note = why.isEmpty
+            ? nil
+            : "Restored \(usable.count) of \(team.members.count) — " + why.joined(separator: ", ")
+        picking = why.isEmpty ? false : true
     }
 
     private func accountRow(_ account: Account) -> some View {

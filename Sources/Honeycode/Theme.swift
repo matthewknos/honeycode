@@ -243,3 +243,21 @@ extension CustomAccount.Tint {
         }
     }
 }
+
+
+/// What a text field looks like in this app.
+///
+/// Lived inside `PullRequestSheet` as a private type, which is where it was
+/// first needed and not where it belongs: it is the app's field, not that
+/// sheet's. The cost of it being private showed up the moment a second surface
+/// wanted one — the team popover reached for `.roundedBorder`, which is AppKit's
+/// field rather than this app's, and read as a control borrowed from another
+/// program.
+struct FormField: ViewModifier {
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: Theme.cornerField)
+        return content
+            .background(Theme.surface, in: shape)
+            .overlay(shape.strokeBorder(Theme.rule, lineWidth: 1))
+    }
+}

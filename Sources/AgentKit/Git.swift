@@ -11,6 +11,12 @@ enum Shell {
         let status: Int32
         let out: String
         let err: String
+        /// Killed at the deadline rather than having finished and failed.
+        ///
+        /// The difference matters to anything deciding what to *say*: a command
+        /// that failed has an opinion about your code, and one that ran out of
+        /// time has none. Defaulted, so nothing that predates timeouts changes.
+        var timedOut: Bool = false
 
         var ok: Bool { status == 0 }
 
@@ -137,8 +143,23 @@ enum Shell {
         }
     }
 
+    private final class Flag: @unchecked Sendable {
+        private let lock = NSLock()
+        private var value = false
+        func raise() { lock.lock(); value = true; lock.unlock() }
+        var raised: Bool { lock.lock(); defer { lock.unlock() }; return value }
+    }
+
+    /// - Parameter timeout: how long to wait before killing it. Nil waits
+    ///   forever, which is right for `git` — every command this was written for
+    ///   returns in milliseconds, and one that doesn't has hung on something a
+    ///   deadline wouldn't fix. It is wrong for anything a *project* supplies:
+    ///   a check command is arbitrary code from a repository, and a crew run
+    ///   that never ends because someone's build script waits on a prompt is a
+    ///   run nobody can get an answer out of.
     static func run(_ binary: String, _ arguments: [String],
-                    in directory: URL? = nil, stdin: String? = nil) -> Result {
+                    in directory: URL? = nil, stdin: String? = nil,
+                    timeout: TimeInterval? = nil) -> Result {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: binary)
         process.arguments = arguments
@@ -171,6 +192,24 @@ enum Shell {
             return Result(status: 127, out: "", err: error.localizedDescription)
         }
 
+        // Terminating the process closes its pipes, which is what unblocks the
+        // reads below — so this needs no cooperation from the thing being
+        // killed. It reaches the *child*, not its descendants: `/bin/sh -c` with
+        // a single command execs it, so a check is killed directly, but a
+        // compound one can leave its current step running. See `Verification.run`.
+        let expired = Flag()
+        var deadline: DispatchWorkItem?
+        if let timeout {
+            let work = DispatchWorkItem {
+                guard process.isRunning else { return }
+                expired.raise()
+                process.terminate()
+            }
+            deadline = work
+            DispatchQueue.global(qos: .utility)
+                .asyncAfter(deadline: .now() + timeout, execute: work)
+        }
+
         if let stdin {
             // Small enough to fit the pipe buffer in one write, so this can't
             // block before anyone is draining the other end.
@@ -188,7 +227,13 @@ enum Shell {
                          as: UTF8.self)
         drained.wait()
         process.waitUntilExit()
+        deadline?.cancel()
 
+        if expired.raised {
+            let seconds = Int((timeout ?? 0).rounded())
+            return Result(status: process.terminationStatus, out: out,
+                          err: "gave up waiting after \(seconds)s", timedOut: true)
+        }
         return Result(status: process.terminationStatus, out: out, err: errors.text)
     }
 }

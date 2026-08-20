@@ -467,11 +467,6 @@ struct PullRequestSheet: View {
 /// anything else on screen here — it reads as a control dropped into a document.
 /// This is the same fill and hairline every other recessed surface in the app
 /// uses, at the corner radius the composer already established for fields.
-private struct FormField: ViewModifier {
-    func body(content: Content) -> some View {
-        let shape = RoundedRectangle(cornerRadius: Theme.cornerField)
-        return content
-            .background(Theme.surface, in: shape)
-            .overlay(shape.strokeBorder(Theme.rule, lineWidth: 1))
-    }
-}
+// `FormField` moved to Theme.swift. It was private here and is what a text
+// field looks like in this app, which made every other field either import a
+// sheet's private type or invent its own — and one of them did.

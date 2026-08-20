@@ -49,6 +49,29 @@ enum Mention {
 enum MentionCandidate: Hashable {
     case agent(Account)
     case file(String)
+    /// A model or an effort level for an agent already typed — the list you get
+    /// from `@kimi:`.
+    ///
+    /// The grammar existed before this did, and that was most of the problem
+    /// with it: `@copilot:free` is documented in one doc comment and one help
+    /// text, so the people who knew about it were the people who had read the
+    /// source. A crew ran Kimi on the wrong model for an hour because the lead
+    /// didn't know a suffix was allowed, and the person asking for K3 had no
+    /// way to see that asking in prose wasn't the same as asking in grammar.
+    case qualifier(Qualifier)
+}
+
+/// One row of the list under `@handle:`.
+struct Qualifier: Hashable {
+    enum Kind: Hashable { case model, effort }
+    let kind: Kind
+    /// Everything already typed, minus the segment being completed: `kimi`, or
+    /// `kimi:k3` when a model is already chosen and an effort is being added.
+    let base: String
+    /// What choosing this row appends.
+    let value: String
+    let title: String
+    let detail: String
 }
 
 extension Mention {
@@ -86,17 +109,108 @@ extension Mention {
     @MainActor
     static func candidates(_ query: String, files: FileIndex,
                            limit: Int = 7) -> [MentionCandidate] {
+        // A colon means the agent is already chosen and the question has moved
+        // on to how it should run. Files drop out entirely at that point:
+        // `@kimi:` cannot be a path, so offering one would be offering
+        // something that can't be meant.
+        if query.contains(":") {
+            return qualifiers(query, limit: limit)
+        }
         let agents = agents(query).prefix(query.isEmpty ? 4 : 3)
         let room = limit - agents.count
         return agents.map(MentionCandidate.agent)
             + files.matches(query, limit: max(0, room)).map(MentionCandidate.file)
     }
 
+    /// The models and effort levels available to the agent already typed.
+    ///
+    /// Intents lead — `free`, `cheap`, `best` — because they are the ones worth
+    /// knowing: they resolve against the quota multiplier the agent itself
+    /// reports, so they stay right as the line-up changes, and `free` is the
+    /// one that actually saves you something.
+    static func qualifiers(_ query: String, limit: Int) -> [MentionCandidate] {
+        let segments = query.split(separator: ":", omittingEmptySubsequences: false)
+            .map(String.init)
+        guard let handle = segments.first,
+              let account = AgentMention.account(forHandle: handle) else { return [] }
+        let typed = segments.dropFirst().dropLast().map { $0.lowercased() }
+        let partial = segments.last ?? ""
+        let base = ([AgentMention.handle(account)] + typed).joined(separator: ":")
+
+        // What's already been said doesn't get offered again. `@kimi:k3:` is
+        // asking about effort, and a second model would replace the first
+        // silently — `qualify` keeps the first of each kind.
+        let hasEffort = typed.contains { EffortChoice(rawValue: $0) != nil }
+        let hasModel = typed.contains { EffortChoice(rawValue: $0) == nil }
+
+        var rows: [Qualifier] = []
+        if !hasModel {
+            for intent in ModelPick.intents {
+                rows.append(Qualifier(kind: .model, base: base, value: intent,
+                                      title: intent,
+                                      detail: Self.intentBlurb(intent)))
+            }
+            for model in ModelCatalog.models(for: account) {
+                rows.append(Qualifier(kind: .model, base: base, value: model.id,
+                                      title: model.title,
+                                      detail: model.usage.map {
+                                          $0 == 0 ? "free" : "\($0)× usage"
+                                      } ?? model.family))
+            }
+        }
+        // Effort is a Claude launch flag; ACP has no notion of it, so offering
+        // it on Copilot would be offering a setting that doesn't exist there.
+        if account.hasEffort, !hasEffort {
+            for level in EffortChoice.allCases {
+                rows.append(Qualifier(kind: .effort, base: base, value: level.rawValue,
+                                      title: level.title, detail: "reasoning effort"))
+            }
+        }
+
+        guard !partial.isEmpty else { return rows.prefix(limit).map(MentionCandidate.qualifier) }
+        return rows
+            .compactMap { row -> (Qualifier, Int)? in
+                let scores = [Fuzzy.score(partial, in: row.value),
+                              Fuzzy.score(partial, in: row.title)].compactMap { $0 }
+                guard let best = scores.min() else { return nil }
+                return (row, best)
+            }
+            .sorted { $0.1 < $1.1 }
+            .prefix(limit)
+            .map { MentionCandidate.qualifier($0.0) }
+    }
+
+    /// Whether choosing this row finishes the mention.
+    ///
+    /// A model on a Claude account doesn't: effort is the natural next
+    /// question, the list is already open, and closing it with a space would
+    /// mean deleting that space to ask. Everything else does — a file, an
+    /// agent, an effort level, a model on an account with no effort — because
+    /// there is nothing left to say about it.
+    static func completes(_ candidate: MentionCandidate) -> Bool {
+        guard case .qualifier(let value) = candidate, value.kind == .model,
+              let handle = value.base.split(separator: ":").first.map(String.init),
+              let account = AgentMention.account(forHandle: handle),
+              account.hasEffort else { return true }
+        return false
+    }
+
+    private static func intentBlurb(_ intent: String) -> String {
+        switch intent {
+        case "free":  return "nothing off the quota, where there is one"
+        case "cheap", "fast": return "the least expensive on offer"
+        case "best":  return "the most capable on offer"
+        case "auto":  return "let the agent decide"
+        default:      return ""
+        }
+    }
+
     /// What gets written into the draft when a row is chosen.
     static func insertion(for candidate: MentionCandidate) -> String {
         switch candidate {
-        case .agent(let account): return AgentMention.handle(account)
-        case .file(let path):     return path
+        case .agent(let account):   return AgentMention.handle(account)
+        case .file(let path):       return path
+        case .qualifier(let value): return value.base + ":" + value.value
         }
     }
 }
@@ -261,8 +375,9 @@ struct MentionList: View {
             ForEach(Array(matches.enumerated()), id: \.element) { index, candidate in
                 Group {
                     switch candidate {
-                    case .agent(let account): agentRow(account, active: index == highlighted)
-                    case .file(let path):     row(path, active: index == highlighted)
+                    case .agent(let account):   agentRow(account, active: index == highlighted)
+                    case .file(let path):       row(path, active: index == highlighted)
+                    case .qualifier(let value): qualifierRow(value, active: index == highlighted)
                     }
                 }
                 .onTapGesture { onSelect(candidate) }
@@ -292,6 +407,36 @@ struct MentionList: View {
             Text("helps with this")
                 .font(.system(size: 10.5))
                 .foregroundStyle(.quaternary)
+        }
+        .padding(.horizontal, Theme.s4)
+        .padding(.vertical, Theme.s3 - 1)
+        .background(active ? AnyShapeStyle(.selection) : AnyShapeStyle(.clear),
+                    in: RoundedRectangle(cornerRadius: Theme.cornerCard - 2))
+        .contentShape(Rectangle())
+    }
+
+    /// Model and effort read as settings rather than as names: a symbol that
+    /// says which of the two this is, the label, and what it costs or means. The
+    /// value is shown as it will be written, because the point of the list is
+    /// that you stop having to know how to write it.
+    private func qualifierRow(_ value: Qualifier, active: Bool) -> some View {
+        HStack(spacing: Theme.s4) {
+            Image(systemName: value.kind == .model ? "cpu" : "brain")
+                .font(.system(size: 10))
+                .foregroundStyle(.tertiary)
+                .frame(width: 12)
+            Text(value.title)
+                .font(.system(size: 12.5))
+                .lineLimit(1)
+            Text(value.detail)
+                .font(.system(size: 11))
+                .foregroundStyle(.tertiary)
+                .lineLimit(1)
+            Spacer(minLength: Theme.s4)
+            Text(":" + value.value)
+                .font(Theme.monoSmall)
+                .foregroundStyle(.quaternary)
+                .lineLimit(1)
         }
         .padding(.horizontal, Theme.s4)
         .padding(.vertical, Theme.s3 - 1)

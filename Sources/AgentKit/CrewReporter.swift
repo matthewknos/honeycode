@@ -8,6 +8,36 @@ import Foundation
 struct CrewAssignment: Equatable {
     let to: Account
     let task: String
+    /// What the lead asked this delegate to run, if it asked. Same grammar as a
+    /// mention — `{"to": "kimi:k3"}` — because that is the grammar the lead
+    /// reads in its own briefing and will reasonably write back.
+    var model: String?
+    var effort: EffortChoice?
+
+    /// `@kimi:k3` — how the plan should read.
+    ///
+    /// Qualifiers included, because "which model is this running on" is the
+    /// question a plan gets asked most and the one it was least able to answer.
+    var label: String {
+        var out = "@" + AgentMention.handle(to)
+        if let model { out += ":" + model }
+        if let effort { out += ":" + effort.rawValue }
+        return out
+    }
+}
+
+/// A piece of a delegation block that isn't going to run, and why.
+///
+/// Refusals used to be a `continue`. That is how a lead dispatched four tasks
+/// to `@kimi`, watched one of them run, and told the person — twice, in a
+/// table — that four agents were working: nothing had told it otherwise, and an
+/// empty directory reads as a slow agent rather than an absent one. Silence
+/// about work that was thrown away is the worst thing this file can do, because
+/// the lead goes on to report it as done.
+struct CrewRefusal: Equatable {
+    /// As written, so a misspelling can be seen to be one.
+    let to: String
+    let why: String
 }
 
 /// Where a crew run says what it is doing.

@@ -799,7 +799,16 @@ final class Session: ObservableObject, Identifiable {
         // A saved model that's no longer offered — entitlement withdrawn, or a
         // roster carried over from before this existed — falls back rather than
         // being sent to a CLI that will reject it.
-        model = catalogue.first { $0.id == modelID } ?? catalogue.first ?? ModelCatalog.fallback
+        //
+        // And with nothing saved, what you last chose for this account rather
+        // than whatever the CLI lists first. The difference is the whole of the
+        // bug where a crew ran Kimi on K2.7 while the window had said K3 since
+        // Tuesday: `catalogue.first` is an ordering decision made by someone
+        // else's tool, and it was standing in for a preference nobody could
+        // express.
+        model = catalogue.first { $0.id == modelID }
+            ?? catalogue.first { $0.id == ModelCatalog.preferred(for: account) }
+            ?? catalogue.first ?? ModelCatalog.fallback
 
         conversationID = UUID().uuidString
         hasStarted = false
@@ -1594,6 +1603,13 @@ final class Session: ObservableObject, Identifiable {
     /// Copilot sends its real model list once the session opens. If the model
     /// in use isn't on it, move to the closest thing rather than leaving a
     /// picker showing something the agent won't accept.
+    /// Deliberately not `ModelCatalog.prefer`.
+    ///
+    /// This is reconciliation, not a choice: a placeholder id being replaced by
+    /// the real one the agent just announced, or a fallback to whatever is left
+    /// when the saved model is no longer offered. Recording either as a
+    /// preference would pin an account to `models[0]` the first time an
+    /// entitlement lapsed, and keep it there after it came back.
     func adoptAvailableModels(_ models: [AgentModel]) {
         guard !models.isEmpty else { return }
         availableModels = models

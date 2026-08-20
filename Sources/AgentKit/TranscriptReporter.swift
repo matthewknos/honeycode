@@ -54,9 +54,7 @@ final class TranscriptReporter: CrewReporter {
 
     func plan(_ assignments: [CrewAssignment]) {
         guard !assignments.isEmpty else { return }
-        let lines = assignments.map {
-            "@\(AgentMention.handle($0.to)) — \(Self.summarise($0.task))"
-        }
+        let lines = assignments.map { "\($0.label) — \(Self.summarise($0.task))" }
         host?.note(lines.joined(separator: "\n"))
     }
 

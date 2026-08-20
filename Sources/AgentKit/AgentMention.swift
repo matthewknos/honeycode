@@ -17,12 +17,42 @@ enum AgentMention {
         ("copilot", .copilot),
     ].sorted { $0.0.count > $1.0.count }
 
-    /// One agent, and optionally which model it should run.
+    /// One agent, and optionally how it should run.
+    ///
+    /// Both qualifiers come off the same `:`-separated tail and are told apart
+    /// by what they say rather than by position, so `@claude-p:opus:max` and
+    /// `@claude-p:max:opus` mean the same thing. Position would be the smaller
+    /// rule to implement and the worse one to use: nobody remembers which of
+    /// two colons is which, and getting it backwards would silently run an
+    /// effort level as a model hint.
     struct Pick: Equatable {
         let account: Account
-        /// Whatever followed the colon — `free`, `haiku`, `gpt-5-mini`.
-        /// Resolved later, against the list that account actually offers.
+        /// Whatever followed the colon and isn't an effort level — `free`,
+        /// `haiku`, `gpt-5-mini`. Resolved later, against the list that account
+        /// actually offers.
         let model: String?
+        /// `@claude-p:max`. Only Claude accounts have reasoning effort at all;
+        /// on one that doesn't, `max` is read as a model hint instead, because
+        /// on that account that is the only thing it could have meant.
+        var effort: EffortChoice?
+    }
+
+    /// What a mention's `:`-separated tail means for this account.
+    ///
+    /// First of each kind wins, matching the rule one level up: a mention is
+    /// one instruction, not a conversation with itself.
+    static func qualify(_ parts: [String], for account: Account) -> (model: String?, effort: EffortChoice?) {
+        var model: String?
+        var effort: EffortChoice?
+        for part in parts where !part.isEmpty {
+            if account.hasEffort, effort == nil,
+               let level = EffortChoice(rawValue: part.lowercased()) {
+                effort = level
+                continue
+            }
+            if model == nil { model = part }
+        }
+        return (model, effort)
     }
 
     /// The crew named in a message, in the order named, and the message with
@@ -35,10 +65,15 @@ enum AgentMention {
         var crew: [Pick] = []
         var out = text
 
-        // Word-boundary matching on `@name`, with an optional `:model` after
-        // it. A bare `@` followed by anything else — an email address, a file
-        // mention — is left exactly as typed.
-        let pattern = "(?<![\\w@])@([A-Za-z][A-Za-z0-9-]*)(?::([A-Za-z0-9._-]+))?"
+        // Word-boundary matching on `@name`, with any number of `:qualifier`
+        // segments after it. A bare `@` followed by anything else — an email
+        // address, a file mention — is left exactly as typed.
+        //
+        // The tail is captured whole rather than as repeated groups, because a
+        // repeated capture group in NSRegularExpression only ever hands back
+        // its last match — `@kimi:k3:max` would arrive as `max` with `k3`
+        // silently gone.
+        let pattern = "(?<![\\w@])@([A-Za-z][A-Za-z0-9-]*)((?::[A-Za-z0-9._-]+)*)"
         guard let regex = try? NSRegularExpression(pattern: pattern) else {
             return ([], text)
         }
@@ -50,12 +85,16 @@ enum AgentMention {
                   let wordRange = Range(match.range(at: 1), in: text) else { continue }
             let word = String(text[wordRange]).lowercased()
             guard let account = names.first(where: { $0.0 == word })?.1 else { continue }
-            let model = Range(match.range(at: 2), in: text).map { String(text[$0]) }
-            // First mention wins, and it's the one that carries the model — a
-            // second `@kimi` later in the same sentence is the same agent, not
-            // a chance to change its mind halfway through a request.
+            let tail = Range(match.range(at: 2), in: text).map { String(text[$0]) } ?? ""
+            let parts = tail.split(separator: ":").map(String.init)
+            let qualifiers = qualify(parts, for: account)
+            // First mention wins, and it's the one that carries the
+            // qualifiers — a second `@kimi` later in the same sentence is the
+            // same agent, not a chance to change its mind halfway through a
+            // request.
             if !crew.contains(where: { $0.account == account }) {
-                crew.append(Pick(account: account, model: model))
+                crew.append(Pick(account: account,
+                                 model: qualifiers.model, effort: qualifiers.effort))
             }
             cuts.append(whole)
         }

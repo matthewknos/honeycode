@@ -92,6 +92,31 @@ enum ModelCatalog {
         "models." + account.rawValue
     }
 
+    // MARK: What you last chose
+
+    /// The model this account should start on when nothing says otherwise.
+    ///
+    /// Without this, a session created with no explicit model took
+    /// `catalogue.first` — whatever the CLI happens to list first — and that is
+    /// how a crew announced "@kimi → K2.7 Coding" on a machine where Kimi had
+    /// been set to K3 in the window for days. The choice was real; it just
+    /// lived on one `Session` object and nothing else could see it.
+    ///
+    /// Per account rather than per session, because that is the grain the
+    /// choice is actually made at: nobody thinks "K3 for this conversation",
+    /// they think "Kimi runs K3".
+    static func preferred(for account: Account) -> String? {
+        Prefs.store.string(forKey: pickKey(account))
+    }
+
+    static func prefer(_ id: String, for account: Account) {
+        Prefs.store.set(id, forKey: pickKey(account))
+    }
+
+    private static func pickKey(_ account: Account) -> String {
+        "model.pick." + account.rawValue
+    }
+
     private static func builtInFallback(for account: Account) -> [AgentModel] {
         switch account {
         case .kimi:

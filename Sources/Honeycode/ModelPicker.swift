@@ -131,6 +131,10 @@ struct ModelPicker: View {
             // switching model doesn't make you restate a decision you hadn't
             // come here to change.
             session.model = choice
+            // Remembered for the account, not just for this conversation. This
+            // and a `:model` qualifier are the two places a person actually
+            // chooses a model, and they are the two that make it stick.
+            ModelCatalog.prefer(choice.id, for: session.account)
             showing = false
         }
         .popout(choice, hover: $hover, open: $effortFor, side: side,
@@ -161,6 +165,7 @@ struct ModelPicker: View {
                            // thing to show.
                            selected: session.effort == choice) {
                     if session.model.id != model.id { session.model = model }
+                    ModelCatalog.prefer(model.id, for: session.account)
                     session.effort = choice
                     effortFor = nil
                     showing = false

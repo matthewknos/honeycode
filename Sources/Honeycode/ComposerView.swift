@@ -306,7 +306,11 @@ struct ComposerView: View {
         // nothing to clear: replacing the fragment with a path and a space
         // ends the mention, and the next read of `mention` sees that.
         guard let range = Mention.range(in: draft) else { return }
-        draft.replaceSubrange(range, with: "@\(Mention.insertion(for: candidate)) ")
+        // No trailing space where the mention isn't finished — picking a model
+        // on a Claude account leaves the caret against the colon so the effort
+        // list stays up. See `Mention.completes`.
+        let tail = Mention.completes(candidate) ? " " : ""
+        draft.replaceSubrange(range, with: "@\(Mention.insertion(for: candidate))\(tail)")
         highlighted = 0
     }
 

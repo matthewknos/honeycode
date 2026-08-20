@@ -47,7 +47,7 @@ final class ConsoleReporter: CrewReporter {
         Console.breakLine()
         Console.line()
         for assignment in assignments {
-            let name = Console.paint("▸ @" + AgentMention.handle(assignment.to),
+            let name = Console.paint("▸ " + assignment.label,
                                      Console.tint(assignment.to), bold: true)
             Console.line(name + " " + Console.dim(String(assignment.task.prefix(110))))
         }

@@ -67,10 +67,31 @@ Tenancy.gates = was
 
 // --- assignment parsing still holds after the struct change ---
 let json = #"{"assignments":[{"to":"@kimi","task":"write the parser"},{"to":"kimi","task":"again"},{"to":"nobody","task":"x"},{"to":"copilot","task":"  "}]}"#
-let parsed = MainActor.assumeIsolated { Crew.assignments(json) } ?? []
-check("one assignment per account, unknown handles dropped", parsed.count == 1)
+let plan = MainActor.assumeIsolated { Crew.assignments(json) } ?? Crew.Plan()
+let parsed = plan.assignments
+check("one assignment per account", parsed.count == 1)
 check("handle resolved", parsed.first?.to == .kimi)
 check("task carried", parsed.first?.task == "write the parser")
+
+// Nothing is dropped in silence: a lead that isn't told a piece was refused
+// reports it as running, which is how a status table came to list four agents
+// working when one was.
+check("every dropped piece is accounted for", plan.refused.count == 3)
+check("the duplicate says why", plan.refused.contains { $0.to == "kimi" && $0.why.contains("already") })
+check("the unknown handle is named as written",
+      plan.refused.contains { $0.to == "nobody" && $0.why.contains("no agent") })
+check("an empty task is refused, not run",
+      plan.refused.contains { $0.to == "copilot" && $0.why == "no task" })
+
+// --- qualifiers on an assignment ---
+let qualified = MainActor.assumeIsolated {
+    Crew.assignments(#"{"assignments":[{"to":"kimi:k3","task":"build the city"},{"to":"@claude-w:opus:max","task":"review it"}]}"#)
+} ?? Crew.Plan()
+check("a model suffix no longer deletes the assignment", qualified.assignments.count == 2)
+check("the model survives", qualified.assignments.first?.model == "k3")
+check("effort is read on an account that has it", qualified.assignments.last?.effort == .max)
+check("and the model beside it", qualified.assignments.last?.model == "opus")
+check("the plan says what it will run", qualified.assignments.first?.label == "@kimi:k3")
 
 // --- mentions ---
 let (crew, prompt) = AgentMention.parse("a landing page @claude-w and @kimi:free please @kimi")
@@ -78,6 +99,19 @@ check("order preserved, duplicates collapsed", crew.map(\.account) == [.work, .k
 check("model hint captured", crew.last?.model == "free")
 check("mentions stripped", prompt == "a landing page and please")
 check("email left alone", AgentMention.parse("mail me@example.com").crew.isEmpty)
+
+// --- effort in a mention ---
+let effortful = AgentMention.parse("@claude-p:opus:max and @claude-p:max:opus").crew
+check("model and effort, either way round",
+      effortful.first?.model == "opus" && effortful.first?.effort == .max)
+let reversed = AgentMention.parse("@claude-w:max:sonnet").crew
+check("order between qualifiers doesn't matter",
+      reversed.first?.model == "sonnet" && reversed.first?.effort == .max)
+check("an account with no effort reads it as a model instead",
+      AgentMention.parse("@copilot:max").crew.first?.model == "max")
+check("and carries no effort", AgentMention.parse("@copilot:max").crew.first?.effort == nil)
+check("a bare handle still carries nothing",
+      AgentMention.parse("@kimi go").crew.first?.model == nil)
 
 print(failures == 0 ? "\nall passed" : "\n\(failures) failed")
 exit(failures == 0 ? 0 : 1)

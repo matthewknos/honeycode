@@ -58,6 +58,13 @@ final class Crew {
     /// the difference between a slow run and one that never gives you a prompt
     /// back.
     private var expiry: [Account: DispatchWorkItem] = [:]
+    /// How long each delegate has been producing nothing, and how much it had
+    /// produced when it last said anything. See `watch`.
+    private var silence: [Account: (seen: Int, seconds: TimeInterval)] = [:]
+    /// Pieces of the plan that never became assignments. Reported to the person
+    /// when they happen and to the lead at assembly, because the lead is the one
+    /// about to describe them as done.
+    private var refusals: [CrewRefusal] = []
     private var order: [Account] = []
     private var lead: Account?
     private var startedAt: Date?
@@ -66,6 +73,11 @@ final class Crew {
     /// mid-conversation restarts that agent and resumes the same conversation,
     /// which `Session.model` already handles.
     private var chosen: [Account: String] = [:]
+    /// And how hard each was asked to think, with the same stickiness. Kept
+    /// beside `chosen` rather than folded into it because they resolve
+    /// differently: a model hint is matched against a catalogue that only that
+    /// account can answer for, an effort level is one of five fixed words.
+    private var efforts: [Account: EffortChoice] = [:]
     /// Where each account's transcript stood when its current turn began. See
     /// `deliver` — this is what makes `lastTurn` exact rather than inferred.
     private var marks: [Account: Int] = [:]
@@ -119,12 +131,18 @@ final class Crew {
     func submit(_ text: String, ledBy leader: Account) {
         let (crew, prompt) = AgentMention.parse(text)
         let delegates = crew.filter { $0.account != leader }
+        // Dropped from the crew, but not thrown away. `@claude-p:opus:max` in a
+        // Claude Personal session isn't a delegation — it's this session saying
+        // how it wants to run this particular piece of work — and without this
+        // the only agent in a crew you couldn't choose a model for would be the
+        // one you're talking to.
+        let own = crew.first { $0.account == leader }
         guard !prompt.isEmpty else {
             reporter.problem("Named \(delegates.map { AgentMention.handle($0.account) }.joined(separator: ", ")) but didn't say what to do.")
             onIdle?()
             return
         }
-        start([AgentMention.Pick(account: leader, model: nil)] + delegates,
+        start([own ?? AgentMention.Pick(account: leader, model: nil)] + delegates,
               leader: leader, prompt: prompt, shownAs: text)
     }
 
@@ -139,6 +157,8 @@ final class Crew {
             self.startedAt = Date()
             self.runID = UUID()
             self.held = []
+            self.refusals = []
+            self.silence = [:]
             // Who this run has to keep at arm's length. Decided once, here,
             // and read everywhere afterwards — asking `Tenancy` again at each
             // use would let the answer change mid-run if the preference were
@@ -169,8 +189,16 @@ final class Crew {
     private func apply(_ pick: AgentMention.Pick) {
         let session = session(for: pick.account)
 
+        // Effort first, and unconditionally: it needs no catalogue to resolve
+        // against, so it can't fail the way a model hint can — and settling it
+        // before the announcement is what lets one line say both.
+        if let effort = pick.effort {
+            efforts[pick.account] = effort
+            if session.effort != effort { session.effort = effort }
+        }
+
         guard let hint = pick.model else {
-            announce(pick.account, session.model)
+            announce(pick.account, session.model, effort: session.effort)
             return
         }
 
@@ -180,20 +208,38 @@ final class Crew {
                 chosen[pick.account] = model.id
                 session.model = model
             }
-            announce(pick.account, model)
+            // A qualifier is a choice, so it outlives the run that made it. The
+            // lead in the transcript that prompted this said it plainly: "the
+            // switch applies per-run, not as a durable default. So the model has
+            // to be named in the dispatch itself." It doesn't any more.
+            ModelCatalog.prefer(model.id, for: pick.account)
+            announce(pick.account, model, effort: session.effort)
         case .unknown(_, let options):
             reporter.problem("@\(AgentMention.handle(pick.account)): no model matching \u{22}\(hint)\u{22}"
                             + (options.isEmpty ? "" : " — try /models"))
             // Say what it will actually run, having just said what it won't.
             // A refused hint is the moment you most want the fallback named.
-            announce(pick.account, session.model)
+            announce(pick.account, session.model, effort: session.effort)
         }
     }
 
     /// One line naming what an account is about to run, and what it costs.
-    private func announce(_ account: Account, _ model: AgentModel) {
+    private func announce(_ account: Account, _ model: AgentModel,
+                          effort: EffortChoice) {
         let price = model.usage.map { $0 == 0 ? " · free" : " · \($0)× usage" } ?? ""
-        reporter.status("@\(AgentMention.handle(account)) → \(model.title)\(price)")
+        // Only where it means something. ACP has no notion of reasoning effort,
+        // so printing "high" beside a Copilot model would be inventing a
+        // setting that doesn't exist on that account.
+        let thought = account.hasEffort ? " · \(effort.title.lowercased())" : ""
+        reporter.status("@\(AgentMention.handle(account)) → \(model.title)\(thought)\(price)")
+    }
+
+    /// What this account should think at: whatever the mention asked for, and
+    /// otherwise whatever its own session is already set to. Never `.high` by
+    /// default in practice — that fallback is only reached for an account with
+    /// no session yet, which is an account nothing has asked to run.
+    private func effort(for account: Account) -> EffortChoice {
+        efforts[account] ?? sessions[account]?.effort ?? .high
     }
 
     /// Every model an account offers, for `/models`.
@@ -331,18 +377,79 @@ final class Crew {
             let (prose, json) = Self.split(reply)
             if !prose.isEmpty { self.reporter.prose(prose) }
 
-            guard let json, let assignments = Self.assignments(json), !assignments.isEmpty else {
+            let plan = json.flatMap(Self.assignments)
+            // Before the guard, not after: a block whose every piece was
+            // refused would otherwise read as "answered directly", which is the
+            // exact sentence that let a dropped dispatch pass for a finished
+            // one.
+            self.refusals = plan?.refused ?? []
+            for refusal in self.refusals {
+                self.reporter.problem("@\(refusal.to) — not sent: \(refusal.why)")
+            }
+            guard let plan, !plan.assignments.isEmpty else {
                 // The lead chose to do it itself, or emitted nothing usable.
                 // Either way there is a finished answer above and no reason to
                 // manufacture work for the others.
-                self.reporter.status("no delegation — answered directly")
-                self.settle()
+                if self.refusals.isEmpty {
+                    self.reporter.status("no delegation — answered directly")
+                    self.settle()
+                } else {
+                    // There is real work here that nothing ran. It goes back to
+                    // the lead the same way a held piece does.
+                    self.assemble(for: leader)
+                }
                 return
             }
-            self.dispatch(assignments, for: leader)
+            self.dispatch(plan.assignments, for: leader)
         }
         deliver(briefing(leader: leader, others: others) + "\n\n" + prompt,
                 to: session, shownAs: shown)
+    }
+
+    /// Give up on a delegate that has gone quiet — and only on one that has.
+    ///
+    /// This was a flat deadline from dispatch, and on real work that is the
+    /// wrong measurement. A delegate building a subsystem wrote six files over
+    /// forty minutes, and was `interrupt`ed at fifteen and reported as never
+    /// having answered — four runs in a row, each one killing a working agent
+    /// and telling the lead it had produced nothing. The lead then told the
+    /// person the same thing, because it had nothing else to go on.
+    ///
+    /// What the deadline is actually for is a CLI that died without saying so —
+    /// the Zscaler failure mode, where a Node process whose TLS fails is silent
+    /// rather than loud. That is a delegate producing *nothing*, which is a
+    /// different thing from a delegate taking a long time, and it is what this
+    /// measures: fifteen minutes without a single new character.
+    private func watch(_ account: Account, session: Session, leader: Account) {
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, self.running.contains(account) else { return }
+            let now = Self.progress(of: session, from: self.marks[account] ?? 0)
+            var state = self.silence[account] ?? (seen: now, seconds: 0)
+            if now != state.seen {
+                state = (seen: now, seconds: 0)
+            } else {
+                state.seconds += Self.heartbeat
+            }
+            self.silence[account] = state
+
+            guard state.seconds >= Self.patience else {
+                self.watch(account, session: session, leader: leader)
+                return
+            }
+            self.reporter.speaker(account, note: "gave up")
+            self.reporter.problem("nothing from @\(AgentMention.handle(account)) for "
+                                  + "\(Int(Self.patience / 60)) minutes — carrying on without it")
+            session.interrupt()
+            self.finished(account, reply: nil, leader: leader)
+        }
+        expiry[account] = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.heartbeat, execute: work)
+    }
+
+    /// How much a delegate has said so far. Enough to tell "still working" from
+    /// "gone", which is all the watchdog needs.
+    private static func progress(of session: Session, from mark: Int) -> Int {
+        lastTurn(of: session, from: mark).count
     }
 
     /// Send a turn and remember where the transcript stood before it.
@@ -511,6 +618,16 @@ final class Crew {
 
     /// Send the assignments that survived, and start watching for them.
     private func launch(_ assignments: [CrewAssignment], for leader: Account) {
+        // Qualifiers first, and before anything is resolved. `apply` settles the
+        // model against that account's own catalogue and announces what it
+        // settled on, and both have to happen before `delegate(for:)` copies the
+        // choice onto a confined session — otherwise an off-tenant delegate runs
+        // the default while the plan says otherwise.
+        for assignment in assignments where assignment.model != nil || assignment.effort != nil {
+            apply(AgentMention.Pick(account: assignment.to,
+                                    model: assignment.model, effort: assignment.effort))
+        }
+
         // Resolve where each one will run before sending any of them. An
         // off-tenant delegate with nowhere private to stand is held here rather
         // than quietly given the project directory — see `delegate(for:)`.
@@ -547,15 +664,9 @@ final class Crew {
             // empties, assembly never fires, and the prompt never comes back.
             // The Zscaler failure mode lands exactly here: a Node CLI whose TLS
             // fails is silent rather than loud.
-            let timeout = DispatchWorkItem { [weak self] in
-                guard let self, self.running.contains(account) else { return }
-                self.reporter.speaker(account, note: "gave up")
-                self.reporter.problem("no reply in \(Int(Self.patience / 60)) minutes — carrying on without it")
-                session.interrupt()
-                self.finished(account, reply: nil, leader: leader)
-            }
-            expiry[account] = timeout
-            DispatchQueue.main.asyncAfter(deadline: .now() + Self.patience, execute: timeout)
+            silence[account] = (seen: Self.progress(of: session, from: marks[account] ?? 0),
+                                seconds: 0)
+            watch(account, session: session, leader: leader)
 
             session.onTurnComplete = { [weak self] done in
                 guard let self else { return }
@@ -575,6 +686,8 @@ final class Crew {
     /// How long a delegate gets. Generous: the pieces of a real job run for
     /// minutes, and killing live work is worse than waiting for dead work.
     private static let patience: TimeInterval = 900
+    /// How often silence is measured. Cheap — one string build per delegate.
+    private static let heartbeat: TimeInterval = 30
 
     /// Exactly once per delegate, from whichever of the two paths gets there
     /// first.
@@ -687,6 +800,17 @@ final class Crew {
             out += "\n\nDon't mention the check in your answer unless it changed "
                 + "what you built. Nobody needs the plumbing narrated back.]"
         }
+
+        if !refusals.isEmpty {
+            out += "\n\n[ai: these pieces of your plan were never dispatched, so "
+                + "nothing has been done about them and no agent is working on "
+                + "them now:"
+            for refusal in refusals {
+                out += "\n\n- \(refusal.to): \(refusal.why)"
+            }
+            out += "\n\nDo them yourself, or say plainly that they are outstanding. "
+                + "Do not describe them as done or in progress.]"
+        }
         return out
     }
 
@@ -742,12 +866,15 @@ final class Crew {
                let model = existing.availableModels.first(where: { $0.id == id }) {
                 existing.model = model
             }
+            let wanted = effort(for: account)
+            if existing.effort != wanted { existing.effort = wanted }
             return existing
         }
 
         guard let root = Tenancy.scratch(for: account, run: runID) else { return nil }
         let session = Session(account: account, directory: root, name: "ai",
-                              modelID: chosen[account], isolated: true)
+                              modelID: chosen[account], effort: effort(for: account),
+                              isolated: true)
         session.isEphemeral = true
         confined[account] = session
         return session
@@ -798,27 +925,62 @@ final class Crew {
         var assignments: [Item]?
     }
 
-    /// Forgiving on shape, strict on the handle.
+    /// What a delegation block asked for, and what of it can actually run.
+    struct Plan: Equatable {
+        var assignments: [CrewAssignment] = []
+        var refused: [CrewRefusal] = []
+    }
+
+    /// Forgiving on shape, strict on the handle, and silent about nothing.
     ///
-    /// A task with no recognisable agent is dropped rather than guessed at:
+    /// A task with no recognisable agent is refused rather than guessed at:
     /// sending enterprise-account work to a personal one because a model wrote
-    /// "claude" is not a mistake worth being relaxed about.
-    static func assignments(_ json: String) -> [CrewAssignment]? {
+    /// "claude" is not a mistake worth being relaxed about. But refused is not
+    /// the same as dropped — see `CrewRefusal` for what dropping cost.
+    static func assignments(_ json: String) -> Plan? {
         guard let data = json.data(using: .utf8),
               let wire = try? JSONDecoder().decode(Wire.self, from: data) else { return nil }
-        var out: [CrewAssignment] = []
+        var plan = Plan()
         var seen: Set<Account> = []
         for item in wire.assignments ?? [] {
-            guard let handle = item.to?
-                    .trimmingCharacters(in: CharacterSet(charactersIn: "@ ")).lowercased(),
-                  let account = AgentMention.account(forHandle: handle),
-                  let task = item.task?.trimmingCharacters(in: .whitespacesAndNewlines),
-                  !task.isEmpty else { continue }
+            let raw = (item.to ?? "")
+                .trimmingCharacters(in: CharacterSet(charactersIn: "@ "))
+            let task = (item.task ?? "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            // An entry with neither is noise, not a refusal.
+            guard !raw.isEmpty || !task.isEmpty else { continue }
+
+            // `kimi:k3`, `claude-w:opus:max` — the mention grammar, because the
+            // lead reads that grammar in its own briefing and will reasonably
+            // write it back here. This used to fail the handle lookup and take
+            // the whole assignment with it: a lead correcting four tasks to
+            // `kimi:k3` spawned nothing at all, was told nothing, and reported
+            // the correction as applied.
+            let parts = raw.lowercased().split(separator: ":").map(String.init)
+            guard let handle = parts.first,
+                  let account = AgentMention.account(forHandle: handle) else {
+                plan.refused.append(CrewRefusal(to: raw, why: "no agent goes by that name"))
+                continue
+            }
+            guard !task.isEmpty else {
+                plan.refused.append(CrewRefusal(to: raw, why: "no task"))
+                continue
+            }
             // One assignment per agent. Two tasks for the same account would run
             // as two turns on one conversation, which is not what parallel means.
-            guard seen.insert(account).inserted else { continue }
-            out.append(CrewAssignment(to: account, task: task))
+            guard seen.insert(account).inserted else {
+                plan.refused.append(CrewRefusal(
+                    to: raw,
+                    why: "already has a piece of this plan — one account is one "
+                        + "conversation, so a second task would queue behind the "
+                        + "first rather than run beside it"))
+                continue
+            }
+            let qualifiers = AgentMention.qualify(Array(parts.dropFirst()), for: account)
+            plan.assignments.append(CrewAssignment(to: account, task: task,
+                                                   model: qualifiers.model,
+                                                   effort: qualifiers.effort))
         }
-        return out
+        return plan
     }
 }

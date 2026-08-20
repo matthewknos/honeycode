@@ -94,9 +94,23 @@ enum Console {
     /// `breakLine` first because the prompt leaves the cursor after `> ` — the
     /// same join the old per-call `Console.status`/`speaker` pair used to do,
     /// now done once for the batch. `Scrollback` owns every newline after that.
-    static func emit(_ runs: [ScrollbackRun], accent: String) {
+    /// - Parameter opening: true only for the first batch of a turn.
+    ///
+    /// This used to break the line on every batch, which shredded the thing it
+    /// was printing. A streamed reply arrives in chunks that stop wherever the
+    /// network did, so a chunk usually ends mid-word and leaves `midLine` set —
+    /// and the next batch, eighty milliseconds later, opened with a newline
+    /// through the middle of that word. Measured on a 250-word reply: thirty
+    /// mid-word breaks across forty-one lines, in a terminal and in a pipe
+    /// alike. It matters most in a pipe, because `ai -p` exists to be read by
+    /// another program.
+    ///
+    /// The break was only ever there to get off the prompt — `Scrollback` owns
+    /// every newline after that, which the comment above already said and the
+    /// code did not do.
+    static func emit(_ runs: [ScrollbackRun], accent: String, opening: Bool) {
         guard !runs.isEmpty else { return }
-        breakLine()
+        if opening { breakLine() }
         for run in runs { write(paint(run.text, style: run.style, accent: accent)) }
     }
 

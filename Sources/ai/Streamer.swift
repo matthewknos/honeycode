@@ -45,8 +45,14 @@ final class Streamer {
         feed = nil
     }
 
+    /// Whether anything of this turn has reached the screen yet. Only the
+    /// first batch gets to break the line — see `Console.emit`.
+    private var opened = false
+
     private func render() {
-        Console.emit(scrollback.drain(items: session.items, todos: session.todos),
-                     accent: Console.tint(seat.account))
+        let runs = scrollback.drain(items: session.items, todos: session.todos)
+        guard !runs.isEmpty else { return }
+        Console.emit(runs, accent: Console.tint(seat.account), opening: !opened)
+        opened = true
     }
 }

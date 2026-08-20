@@ -409,6 +409,13 @@ final class ClaudeAdapter: AgentAdapter {
     Honeycode has a built-in browser panel for local dev servers. Never run
     `open`, `xdg-open` or similar on a URL — just print it. The panel picks it
     up automatically and previews it beside the conversation.
+
+    The panel is sandboxed the same way, and this catches people out: a page
+    previewed there reaches this machine and nothing else. It applies to files
+    served by a dev server exactly as it does to an `html` fence, so everything
+    a page needs — libraries, fonts, workers, decoders — must be in the project
+    beside it and referenced by a relative path. A CDN link renders as a blank
+    page with no error in the console, because the request never leaves.
     """
 
     private static func locateClaude() -> URL? {

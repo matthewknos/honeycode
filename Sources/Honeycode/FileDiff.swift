@@ -130,7 +130,7 @@ struct FileDiffView: View {
             } else {
             Divider().overlay(Theme.rule)
             if previewing(markup), let markup {
-                WebPreview(source: .html(markup), fitting: Self.previewCap) { measured = $0 }
+                SandboxedPreview(source: .html(markup), fitting: Self.previewCap) { measured = $0 }
                     .frame(height: min(max(measured ?? 300, 80), Self.previewCap))
             } else {
                 body(for: rows)

@@ -238,14 +238,21 @@ struct BrowserPanel: View {
             Divider().overlay(Theme.rule)
 
             VStack(alignment: .leading, spacing: Theme.s4) {
-                Text("Ask the agent to keep these files beside the page, or open it "
-                     + "in your browser, which has no sandbox.")
+                Text("The agent that wrote this page can fix it — or open it in your "
+                     + "browser, which has no sandbox.")
                     .font(.system(size: 11))
                     .foregroundStyle(.tertiary)
                     .fixedSize(horizontal: false, vertical: true)
-                Button("Open in Browser") {
-                    showingBlocked = false
-                    openExternally()
+                HStack(spacing: Theme.s4) {
+                    Button("Ask the Agent to Fix It") {
+                        showingBlocked = false
+                        askAgentToVendor()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    Button("Open in Browser") {
+                        showingBlocked = false
+                        openExternally()
+                    }
                 }
                 .controlSize(.small)
             }
@@ -253,6 +260,43 @@ struct BrowserPanel: View {
             .padding(.vertical, Theme.s4)
         }
         .frame(width: 300)
+    }
+
+    /// Hand the diagnosis back to whoever caused it.
+    ///
+    /// The badge made a silent failure visible, which is worth having and is
+    /// not the same as fixing it — the pages that hit this are written by an
+    /// agent that has no idea the sandbox exists, so left alone it writes the
+    /// same page again tomorrow. Twice in one hour, in the case that prompted
+    /// all of this, and both times the repair was done by hand.
+    ///
+    /// Sent rather than dropped in the composer because the composer's text is
+    /// owned by the transcript column and this panel can't reach it — and
+    /// because a button labelled with what it will do should do it. The hosts
+    /// are named, and so are the four places a page usually hides them, which
+    /// is the part an agent gets wrong: the import map and the decoder path
+    /// were separate discoveries in the run this came from.
+    private func askAgentToVendor() {
+        let hosts = web.blocked
+        guard !hosts.isEmpty else { return }
+        session.send("""
+        The browser panel blocked this page's requests to \(Self.list(hosts)) — the \
+        preview sandbox only reaches this machine, so those files never arrived and the \
+        page doesn't work in the panel.
+
+        Make it work with no external requests: fetch what it needs into the project \
+        beside the page and point it at the local copies. Check every place a URL can \
+        hide — import maps, `<script src>`, `<link rel="stylesheet">`, `@import` in CSS, \
+        `new Worker(...)`, and any loader that takes its own decoder or worker path. Then \
+        confirm nothing outside the project is referenced any more.
+        """)
+    }
+
+    /// "a", "a and b", "a, b and c".
+    private static func list(_ items: [String]) -> String {
+        guard let last = items.last else { return "" }
+        guard items.count > 1 else { return last }
+        return items.dropLast().joined(separator: ", ") + " and " + last
     }
 
     /// Whether there's anything in the panel at all — a page or a document.

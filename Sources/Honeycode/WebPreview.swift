@@ -697,3 +697,79 @@ final class WebController: ObservableObject {
     func reload() { view?.reload() }
     func load(_ url: URL) { view?.load(URLRequest(url: url)) }
 }
+
+/// A preview that says what the sandbox refused.
+///
+/// The panel has a toolbar to put a badge in; a transcript row does not, and
+/// for a while that meant the fix for a silently-black preview existed in the
+/// one place the problem was *least* common. Most previews in this app are
+/// inline — a code fence with a Preview toggle, a diff card, the sheet either
+/// of them expands into — and every one of them was still capable of rendering
+/// a page's background colour and nothing else with no explanation anywhere.
+///
+/// So the reporting moves to where the previews are. This owns the
+/// `WebController` the reporting needs, which is the only reason it exists as a
+/// wrapper rather than a modifier: `WebPreview` is an `NSViewRepresentable` and
+/// can't hold a `@StateObject` of its own.
+struct SandboxedPreview: View {
+    let source: WebPreview.Source
+    var scrolls = false
+    var fitting: CGFloat?
+    var zoom: CGFloat = 1
+    var onHeight: ((CGFloat) -> Void)?
+
+    @StateObject private var web = WebController()
+
+    var body: some View {
+        WebPreview(source: source, controller: web, scrolls: scrolls,
+                   fitting: fitting, zoom: zoom, onHeight: onHeight)
+            // Over the page rather than under it. A strip that takes space
+            // would resize every preview in the transcript the moment a page
+            // reached for a CDN, and the height a code fence reports is
+            // measured from the page — so the note has to sit outside that
+            // measurement or it feeds back into it.
+            .overlay(alignment: .bottom) {
+                if !web.blocked.isEmpty {
+                    BlockedNote(hosts: web.blocked)
+                        .padding(Theme.s4)
+                        .transition(.opacity)
+                }
+            }
+            .animation(Motion.reveal, value: web.blocked)
+    }
+}
+
+/// What the sandbox refused, small enough to sit on top of a page.
+///
+/// Names the first host rather than only counting them. "2 blocked" tells you
+/// there's a problem and leaves you to find out which; "unpkg.com + 1" is
+/// usually the whole diagnosis, because a page that reaches for one CDN has
+/// generally reached for one CDN.
+struct BlockedNote: View {
+    let hosts: [String]
+
+    var body: some View {
+        HStack(spacing: Theme.s2) {
+            Image(systemName: "shield.slash")
+                .font(.system(size: 9.5, weight: .medium))
+            Text(label)
+                .font(.system(size: 10.5, weight: .medium))
+        }
+        .foregroundStyle(.white)
+        .padding(.horizontal, Theme.s4)
+        .padding(.vertical, Theme.s2 + 1)
+        .background(Color.diffDelText.opacity(0.92), in: Capsule())
+        .help(help)
+    }
+
+    private var label: String {
+        guard let first = hosts.first else { return "" }
+        return hosts.count == 1 ? "\(first) blocked" : "\(first) + \(hosts.count - 1) blocked"
+    }
+
+    private var help: String {
+        "This page asked other servers for parts of itself and the preview only "
+            + "reaches this machine, so nothing was sent:\n"
+            + hosts.map { "• \($0)" }.joined(separator: "\n")
+    }
+}

@@ -44,8 +44,8 @@ struct ArtifactButtons: View {
                 }
                 .padding(Theme.s5)
                 Divider().overlay(Theme.rule)
-                WebPreview(source: .html(artifact.markup), scrolls: true,
-                           fitting: 700, zoom: zoom)
+                SandboxedPreview(source: .html(artifact.markup), scrolls: true,
+                                 fitting: 700, zoom: zoom)
             }
             .frame(width: 1000, height: 780)
         }
@@ -166,7 +166,7 @@ struct CodeBlock: View {
             header
             Divider().overlay(Theme.rule)
             if previewing {
-                WebPreview(source: .html(settled), fitting: Self.previewCap) { measured = $0 }
+                SandboxedPreview(source: .html(settled), fitting: Self.previewCap) { measured = $0 }
                     .frame(height: previewHeight)
             } else {
                 code
@@ -201,7 +201,7 @@ struct CodeBlock: View {
                 // scroll defeats the point — you expanded it to see the whole
                 // thing. Scrolling stays enabled as the fallback for a page so
                 // long it hits the zoom floor.
-                WebPreview(source: .html(source), scrolls: true, fitting: 700, zoom: zoom)
+                SandboxedPreview(source: .html(source), scrolls: true, fitting: 700, zoom: zoom)
             }
             .frame(width: 1000, height: 780)
         }

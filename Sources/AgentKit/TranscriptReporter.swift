@@ -25,7 +25,7 @@ final class TranscriptReporter: CrewReporter {
     /// The block each working delegate is being mirrored into, and the session
     /// it is being mirrored from — needed again at the end, because closing a
     /// block means reading one last time from the transcript behind it.
-    private var blocks: [Account: (id: UUID, session: Session)] = [:]
+    private var blocks: [Seat: (id: UUID, session: Session)] = [:]
 
     init(host: Session) {
         self.host = host
@@ -41,8 +41,10 @@ final class TranscriptReporter: CrewReporter {
     /// pause. A delegate's "done" is already visible — its block stops
     /// spinning — and saying it again in a notice underneath is the app
     /// narrating what the reader just watched happen.
-    func speaker(_ account: Account, note: String) {
-        guard let host, account == host.account else { return }
+    func speaker(_ seat: Seat, note: String) {
+        // The lead is always seat 1 of its account — a window's own session is
+        // the conversation you're in, and there is only ever one of those.
+        guard let host, seat == Seat(host.account) else { return }
         host.note(note)
     }
 
@@ -59,7 +61,7 @@ final class TranscriptReporter: CrewReporter {
     }
 
     func held(_ assignment: CrewAssignment, reason: String) {
-        host?.note("@\(AgentMention.handle(assignment.to)) — not sent: \(reason)")
+        host?.note("\(assignment.to.mention) — not sent: \(reason)")
     }
 
     // MARK: The delegates
@@ -67,24 +69,27 @@ final class TranscriptReporter: CrewReporter {
     /// Nothing here either. `stream` exists for the terminal, which has to be
     /// told which session to print; a delegate's output reaches this transcript
     /// through `working`, and the lead's reaches it by being the lead.
-    func stream(_ session: Session, as account: Account) {}
+    func stream(_ session: Session, as seat: Seat) {}
 
     func endStream() {}
 
-    func working(_ delegates: [(account: Account, session: Session)]) {
-        let now = Set(delegates.map(\.account))
+    func working(_ delegates: [(seat: Seat, session: Session)]) {
+        let now = Set(delegates.map(\.seat))
 
         // Anyone who has dropped out of the set has finished — including the
         // case where the set is empty, which is how a run ends.
-        for (account, block) in blocks where !now.contains(account) {
+        for (seat, block) in blocks where !now.contains(seat) {
             host?.stopMirroring(block.id, from: block.session)
-            blocks[account] = nil
+            blocks[seat] = nil
         }
 
-        for delegate in delegates where blocks[delegate.account] == nil {
-            let label = "\(delegate.account.title) · \(delegate.session.model.title)"
+        for delegate in delegates where blocks[delegate.seat] == nil {
+            // `Seat.title` carries the instance number, so three Kimis are
+            // three distinguishable blocks rather than three identical headers
+            // the reader has to tell apart by watching which one moves.
+            let label = "\(delegate.seat.title) · \(delegate.session.model.title)"
             guard let id = host?.mirror(delegate.session, labelled: label) else { continue }
-            blocks[delegate.account] = (id: id, session: delegate.session)
+            blocks[delegate.seat] = (id: id, session: delegate.session)
         }
     }
 
@@ -94,9 +99,9 @@ final class TranscriptReporter: CrewReporter {
     /// own mirrored blocks — what's missing is the fact that one of them
     /// stopped to ask the other something, which is a one-line event and reads
     /// as one.
-    func message(from: Account, to: Account, _ text: String, answering: Bool) {
+    func message(from: Seat, to: Seat, _ text: String, answering: Bool) {
         let arrow = answering ? "↩" : "→"
-        host?.note("@\(AgentMention.handle(from)) \(arrow) @\(AgentMention.handle(to)) — "
+        host?.note("\(from.mention) \(arrow) \(to.mention) — "
                    + Self.summarise(text, limit: 150))
     }
 
@@ -106,7 +111,7 @@ final class TranscriptReporter: CrewReporter {
     /// stops mirroring it, because a delegate's last streamed delta and its
     /// completion can share a tick. `working` closes it a moment later with a
     /// final read, which is the one that catches that delta.
-    func landed(_ account: Account) {}
+    func landed(_ seat: Seat) {}
 
     func finished(seconds: Int, spend: String) {
         // Worth saying here and not in the terminal's sense of "worth saying":

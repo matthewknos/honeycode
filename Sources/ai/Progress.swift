@@ -15,7 +15,7 @@ import Combine
 final class Progress {
 
     private struct Row {
-        let account: Account
+        let seat: Seat
         var state: String
         var done = false
     }
@@ -30,19 +30,19 @@ final class Progress {
     /// changed, so the elapsed clock ticks on its own.
     private var startedAt = Date()
 
-    func begin(_ sessions: [(Account, Session)]) {
+    func begin(_ sessions: [(Seat, Session)]) {
         // Only the first `begin` of a round starts the clock. One delegate
         // finishing puts the block back up for the rest, and resetting here
         // made the elapsed time jump back to zero each time somebody landed —
         // which is precisely when you're trying to judge how long the stragglers
         // have left.
         if rows.isEmpty { startedAt = Date() }
-        rows = sessions.map { Row(account: $0.0, state: "starting") }
+        rows = sessions.map { Row(seat: $0.0, state: "starting") }
 
-        feeds = sessions.map { account, session in
+        feeds = sessions.map { seat, session in
             session.objectWillChange
                 .throttle(for: .milliseconds(250), scheduler: RunLoop.main, latest: true)
-                .sink { [weak self] in self?.update(account, from: session) }
+                .sink { [weak self] in self?.update(seat, from: session) }
         }
         if live {
             ticker = Timer.publish(every: 1, on: .main, in: .common)
@@ -61,8 +61,8 @@ final class Progress {
         drawn = 0
     }
 
-    func finish(_ account: Account) {
-        guard let index = rows.firstIndex(where: { $0.account == account }) else { return }
+    func finish(_ seat: Seat) {
+        guard let index = rows.firstIndex(where: { $0.seat == seat }) else { return }
         rows[index].done = true
         rows[index].state = "done"
     }
@@ -74,8 +74,8 @@ final class Progress {
         rows = []
     }
 
-    private func update(_ account: Account, from session: Session) {
-        guard let index = rows.firstIndex(where: { $0.account == account }),
+    private func update(_ seat: Seat, from session: Session) {
+        guard let index = rows.firstIndex(where: { $0.seat == seat }),
               !rows[index].done else { return }
         rows[index].state = Self.state(of: session)
         draw()
@@ -119,8 +119,8 @@ final class Progress {
         for _ in 0..<drawn { out += "\u{1B}[1A\u{1B}[2K" }
         for row in rows {
             let mark = row.done ? "✓" : "·"
-            let name = Console.paint("\(mark) @\(AgentMention.handle(row.account))",
-                                     Console.tint(row.account))
+            let name = Console.paint("\(mark) \(row.seat.mention)",
+                                     Console.tint(row.seat.account))
             out += "  \(name)  \(Console.dim(row.state))\n"
         }
         out += "  " + Console.dim("\(elapsed)s") + "\n"

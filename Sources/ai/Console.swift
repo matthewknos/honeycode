@@ -56,10 +56,14 @@ enum Console {
         if midLine { write("\n") }
     }
 
-    /// `▸ claude-p` — who is about to speak.
-    static func speaker(_ account: Account, note: String? = nil) {
+    /// `▸ claude-p`, `▸ kimi#2` — who is about to speak.
+    ///
+    /// Tinted by account, named by seat: two instances of one subscription are
+    /// the same colour on purpose, because that is the fact worth seeing at a
+    /// glance — what they cost comes out of the same place.
+    static func speaker(_ seat: Seat, note: String? = nil) {
         breakLine()
-        let name = paint("▸ " + AgentMention.handle(account), tint(account), bold: true)
+        let name = paint("▸ " + seat.handle, tint(seat.account), bold: true)
         line("\n" + name + (note.map { " " + dim($0) } ?? ""))
     }
 

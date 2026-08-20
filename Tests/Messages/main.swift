@@ -25,12 +25,30 @@ let block = #"""
 """#
 let parsed = MainActor.assumeIsolated { Crew.messages(block) }
 check("addressed messages are read", parsed.count == 3)
-check("a bare handle resolves", parsed.first?.to == .kimi)
-check("an @ prefix resolves", parsed.dropFirst().first?.to == .personal)
+check("a bare handle resolves", parsed.first?.to == Seat(.kimi))
+check("an @ prefix resolves", parsed.dropFirst().first?.to == Seat(.personal))
 check("text is trimmed", parsed.dropFirst().first?.text == "is TUNING.city.SEED stable across reloads?")
-check("a model suffix on a question is ignored, not refused", parsed.last?.to == .kimi)
+check("a model suffix on a question is ignored, not refused", parsed.last?.to == Seat(.kimi))
 check("an unknown handle is dropped", !parsed.contains { $0.text == "hello" })
-check("an empty question is dropped", !parsed.contains { $0.to == .copilot })
+check("an empty question is dropped", !parsed.contains { $0.to == Seat(.copilot) })
+
+// --- a question reaches one instance, not whichever answers first ---
+//
+// The seat is not a qualifier. Two Kimis in a run hold two different pieces,
+// and a question about the collider type has a right answer only from the one
+// that wrote it.
+let addressed = MainActor.assumeIsolated {
+    Crew.messages(#"""
+    {"messages":[
+      {"to":"kimi#2","text":"which module owns the collider type?"},
+      {"to":"kimi#9","text":"and this one goes nowhere"}
+    ]}
+    """#)
+}
+check("a numbered instance is addressable", addressed.first?.to == Seat(.kimi, 2))
+check("and is not the same agent as the bare handle", addressed.first?.to != Seat(.kimi))
+check("an instance that can't exist is dropped rather than redirected",
+      addressed.count == 1)
 check("junk is not a message",
       MainActor.assumeIsolated { Crew.messages("not json at all") }.isEmpty)
 check("the wrong shape is not a message", MainActor.assumeIsolated {

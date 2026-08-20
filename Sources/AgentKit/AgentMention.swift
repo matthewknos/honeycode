@@ -26,7 +26,9 @@ enum AgentMention {
     /// two colons is which, and getting it backwards would silently run an
     /// effort level as a model hint.
     struct Pick: Equatable {
-        let account: Account
+        /// Which conversation, not merely which subscription. `@kimi` and
+        /// `@kimi#2` are two picks on one account — see `Seat`.
+        let seat: Seat
         /// Whatever followed the colon and isn't an effort level — `free`,
         /// `haiku`, `gpt-5-mini`. Resolved later, against the list that account
         /// actually offers.
@@ -35,6 +37,22 @@ enum AgentMention {
         /// on one that doesn't, `max` is read as a model hint instead, because
         /// on that account that is the only thing it could have meant.
         var effort: EffortChoice?
+
+        /// Which subscription pays, and whose model catalogue applies. Several
+        /// picks can share one.
+        var account: Account { seat.account }
+
+        init(seat: Seat, model: String?, effort: EffortChoice? = nil) {
+            self.seat = seat
+            self.model = model
+            self.effort = effort
+        }
+
+        /// The seat-1 spelling, for every caller that predates seats and means
+        /// "this account's own conversation".
+        init(account: Account, model: String?, effort: EffortChoice? = nil) {
+            self.init(seat: Seat(account), model: model, effort: effort)
+        }
     }
 
     /// What a mention's `:`-separated tail means for this account.
@@ -61,19 +79,29 @@ enum AgentMention {
     /// Order is the whole point: the first one named leads. Duplicates collapse
     /// to their first appearance, so `@kimi fix it, @kimi really` is one agent
     /// and not two copies racing each other in the same directory.
+    ///
+    /// **Duplicates collapse by seat, not by account.** `@kimi#1 @kimi#2` is
+    /// two agents on one subscription and always was meant to be sayable; it is
+    /// `@kimi @kimi` that is one agent said twice. The distinction is the whole
+    /// point of the `#` — an accidental repetition and a deliberate second
+    /// instance no longer look identical, so neither has to be guessed at.
     static func parse(_ text: String) -> (crew: [Pick], prompt: String) {
         var crew: [Pick] = []
         var out = text
 
-        // Word-boundary matching on `@name`, with any number of `:qualifier`
-        // segments after it. A bare `@` followed by anything else — an email
-        // address, a file mention — is left exactly as typed.
+        // Word-boundary matching on `@name`, an optional `#seat`, then any
+        // number of `:qualifier` segments. A bare `@` followed by anything
+        // else — an email address, a file mention — is left exactly as typed.
         //
         // The tail is captured whole rather than as repeated groups, because a
         // repeated capture group in NSRegularExpression only ever hands back
         // its last match — `@kimi:k3:max` would arrive as `max` with `k3`
         // silently gone.
-        let pattern = "(?<![\\w@])@([A-Za-z][A-Za-z0-9-]*)((?::[A-Za-z0-9._-]+)*)"
+        //
+        // The seat digits are bounded in the pattern as well as clamped in
+        // `Seat`. `@kimi#900` should fail to be a nine-hundredth agent at the
+        // grammar, not quietly become the fourth one.
+        let pattern = "(?<![\\w@])@([A-Za-z][A-Za-z0-9-]*)(?:#([0-9]{1,2}))?((?::[A-Za-z0-9._-]+)*)"
         guard let regex = try? NSRegularExpression(pattern: pattern) else {
             return ([], text)
         }
@@ -85,15 +113,23 @@ enum AgentMention {
                   let wordRange = Range(match.range(at: 1), in: text) else { continue }
             let word = String(text[wordRange]).lowercased()
             guard let account = names.first(where: { $0.0 == word })?.1 else { continue }
-            let tail = Range(match.range(at: 2), in: text).map { String(text[$0]) } ?? ""
+            let number = Range(match.range(at: 2), in: text)
+                .flatMap { Int(text[$0]) }
+            // Out of range is refused rather than clamped here, and left in the
+            // prose as typed. Silently turning `@kimi#7` into the fourth seat
+            // would spend a subscription the person didn't ask for; leaving it
+            // visible in the prompt is how they find out it meant nothing.
+            if let number, number < 1 || number > Seat.limit { continue }
+            let seat = Seat(account, number ?? 1)
+            let tail = Range(match.range(at: 3), in: text).map { String(text[$0]) } ?? ""
             let parts = tail.split(separator: ":").map(String.init)
             let qualifiers = qualify(parts, for: account)
             // First mention wins, and it's the one that carries the
             // qualifiers — a second `@kimi` later in the same sentence is the
             // same agent, not a chance to change its mind halfway through a
             // request.
-            if !crew.contains(where: { $0.account == account }) {
-                crew.append(Pick(account: account,
+            if !crew.contains(where: { $0.seat == seat }) {
+                crew.append(Pick(seat: seat,
                                  model: qualifiers.model, effort: qualifiers.effort))
             }
             cuts.append(whole)
@@ -122,5 +158,22 @@ enum AgentMention {
 
     static func account(forHandle handle: String) -> Account? {
         names.first { $0.0 == handle.lowercased() }?.1
+    }
+
+    /// `kimi#2` — the written form of a seat, back into one.
+    ///
+    /// `nil` for a name nobody goes by, and for a seat number outside the
+    /// range, which are different mistakes with the same answer: this doesn't
+    /// address anybody. The caller decides what to say about it — a plan
+    /// refuses the assignment and tells the lead, a message is dropped.
+    static func seat(forHandle handle: String) -> Seat? {
+        let text = handle.lowercased()
+            .trimmingCharacters(in: CharacterSet(charactersIn: "@ "))
+        let parts = text.split(separator: "#", maxSplits: 1, omittingEmptySubsequences: false)
+        guard let name = parts.first.map(String.init),
+              let account = account(forHandle: name) else { return nil }
+        guard parts.count == 2 else { return Seat(account) }
+        guard let number = Int(parts[1]), number >= 1, number <= Seat.limit else { return nil }
+        return Seat(account, number)
     }
 }

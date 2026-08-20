@@ -68,6 +68,13 @@ enum Describe {
     private struct Grammar: Encodable {
         let mention: String
         let model: String
+        /// How to ask for a second agent on one subscription. Its own field
+        /// rather than a line in `rules`, because it changes what a caller can
+        /// *ask for* rather than how a request is spelled — and the failure
+        /// this whole file exists to prevent was an agent concluding that
+        /// something possible was impossible.
+        let instance: String
+        let maxInstances: Int
         let intents: [String]
         let matching: [String]
         let rules: [String]
@@ -87,6 +94,8 @@ enum Describe {
         Grammar(
             mention: "@<handle>",
             model: "@<handle>:<model>",
+            instance: "@<handle>#<n>",
+            maxInstances: Seat.limit,
             intents: ModelPick.intents,
             matching: [
                 "exact id — @kimi:kimi-code/k3",
@@ -94,14 +103,23 @@ enum Describe {
                 "intent — @copilot:free, :cheap, :best, :fast, :auto",
                 "reasoning effort, Claude accounts only — @claude-p:max, @claude-w:low",
                 "both at once, in either order — @claude-p:opus:max, @claude-p:max:opus",
+                "an instance number comes before the colons — @kimi#2:k3",
             ],
             rules: [
                 "The first handle named leads: it plans, delegates to the rest, and assembles.",
-                "A handle named twice is one agent, not two — the first mention wins, and it carries the model.",
+                "One subscription can run several agents at once, numbered with #: @kimi#1 @kimi#2 @kimi#3. "
+                    + "Each is a separate conversation running at the same time, up to \(Seat.limit) per handle.",
+                "The bare handle is #1, so @kimi and @kimi#1 are the same agent.",
+                "A handle named twice is one agent, not two — the first mention wins, and it carries the model. "
+                    + "Number them to get two.",
+                "Each instance costs a full share of that subscription. Three Kimis is three times the spend.",
                 "A model set with a colon sticks for the rest of the session, until another colon changes it.",
-                "It also becomes that account's default for new sessions, so a model chosen once stays chosen.",
-                "The same grammar works in the `to` field of a delegation: {\"to\": \"kimi:k3\"}.",
-                "One task per account per plan. A second task for the same handle is refused and reported, not queued.",
+                "For the bare handle it also becomes that account's default for new sessions, so a model chosen "
+                    + "once stays chosen; a numbered instance's choice applies to that instance only.",
+                "The same grammar works in the `to` field of a delegation: {\"to\": \"kimi:k3\"}, {\"to\": \"kimi#2:k3\"}.",
+                "One task per instance per plan. A second task for the same handle *and number* is refused and "
+                    + "reported, not queued — number a new instance to run it beside the first.",
+                "A plan may number new instances of an agent it was given, but may not bring in a handle nobody named.",
                 "With no handle at all, the message goes to whoever led last.",
                 "An unresolvable model hint is refused rather than guessed at; the account keeps the model it had.",
                 "The model binding is not a file. It is this catalogue plus the colon syntax — do not look for it on disk.",

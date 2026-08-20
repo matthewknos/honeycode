@@ -214,13 +214,19 @@ enum Tenancy {
     /// somewhere to put it, and the person can go and look afterwards, which
     /// they cannot do with something unlinked out from under them.
     ///
-    /// One per account per run, so two crews going at once don't hand the same
-    /// folder to two agents.
-    static func scratch(for account: Account, run: UUID) -> URL? {
+    /// One per seat per run, so two crews going at once don't hand the same
+    /// folder to two agents — and neither do two instances of one subscription
+    /// in the same crew, which is the case that made this a seat rather than an
+    /// account. Two confined agents sharing a scratch directory would each read
+    /// the other's files and neither would be confined to its own work.
+    ///
+    /// Seat 1's folder is still just `kimi`, so nothing about a single-instance
+    /// run changed on disk.
+    static func scratch(for seat: Seat, run: UUID) -> URL? {
         let directory = Support.folder
             .appendingPathComponent("Crew", isDirectory: true)
             .appendingPathComponent(run.uuidString, isDirectory: true)
-            .appendingPathComponent(AgentMention.handle(account), isDirectory: true)
+            .appendingPathComponent(seat.folderName, isDirectory: true)
         do {
             try FileManager.default.createDirectory(
                 at: directory, withIntermediateDirectories: true,

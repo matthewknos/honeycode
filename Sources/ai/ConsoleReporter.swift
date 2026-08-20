@@ -26,12 +26,12 @@ final class ConsoleReporter: CrewReporter {
         Console.failure(text)
     }
 
-    func speaker(_ account: Account, note: String) {
+    func speaker(_ seat: Seat, note: String) {
         // Before anything permanent is written, because the progress block sits
         // at the bottom of the screen and is redrawn by cursor movement — text
         // printed under it would be overwritten by the next tick.
         progress.clear()
-        Console.speaker(account, note: note)
+        Console.speaker(seat, note: note)
     }
 
     func prose(_ text: String) {
@@ -48,7 +48,7 @@ final class ConsoleReporter: CrewReporter {
         Console.line()
         for assignment in assignments {
             let name = Console.paint("▸ " + assignment.label,
-                                     Console.tint(assignment.to), bold: true)
+                                     Console.tint(assignment.to.account), bold: true)
             Console.line(name + " " + Console.dim(String(assignment.task.prefix(110))))
         }
         Console.line()
@@ -62,15 +62,15 @@ final class ConsoleReporter: CrewReporter {
     func held(_ assignment: CrewAssignment, reason: String) {
         progress.clear()
         Console.breakLine()
-        Console.line(Console.paint("  ✗ @" + AgentMention.handle(assignment.to), "203")
+        Console.line(Console.paint("  ✗ " + assignment.to.mention, "203")
                      + " " + Console.dim("not sent — " + reason))
     }
 
     // MARK: Live output
 
-    func stream(_ session: Session, as account: Account) {
+    func stream(_ session: Session, as seat: Seat) {
         streamer?.finish()
-        streamer = Streamer(session, as: account)
+        streamer = Streamer(session, as: seat)
     }
 
     func endStream() {
@@ -78,26 +78,26 @@ final class ConsoleReporter: CrewReporter {
         streamer = nil
     }
 
-    func working(_ delegates: [(account: Account, session: Session)]) {
+    func working(_ delegates: [(seat: Seat, session: Session)]) {
         guard !delegates.isEmpty else { progress.end(); return }
-        progress.begin(delegates.map { ($0.account, $0.session) })
+        progress.begin(delegates.map { ($0.seat, $0.session) })
     }
 
     /// Indented under the live block, and truncated hard. The point is that you
     /// can see a conversation happening and who is in it; the substance is in
     /// the transcript each of them keeps.
-    func message(from: Account, to: Account, _ text: String, answering: Bool) {
+    func message(from: Seat, to: Seat, _ text: String, answering: Bool) {
         progress.clear()
         let arrow = answering ? " ↩ " : " → "
-        let heads = Console.paint("@" + AgentMention.handle(from), Console.tint(from))
+        let heads = Console.paint(from.mention, Console.tint(from.account))
             + Console.dim(arrow)
-            + Console.paint("@" + AgentMention.handle(to), Console.tint(to))
+            + Console.paint(to.mention, Console.tint(to.account))
         let flat = text.replacingOccurrences(of: "\n", with: " ")
         Console.line("  " + heads + " " + Console.dim(String(flat.prefix(90))))
     }
 
-    func landed(_ account: Account) {
-        progress.finish(account)
+    func landed(_ seat: Seat) {
+        progress.finish(seat)
     }
 
     func finished(seconds: Int, spend: String) {

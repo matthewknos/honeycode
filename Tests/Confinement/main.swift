@@ -15,7 +15,7 @@ func check(_ label: String, _ ok: Bool) {
 
 Support.prepare()
 let run = UUID()
-guard let scratch = Tenancy.scratch(for: .kimi, run: run) else {
+guard let scratch = Tenancy.scratch(for: Seat(.kimi), run: run) else {
     print("  FAIL scratch directory not created"); exit(1)
 }
 check("scratch exists", FileManager.default.fileExists(atPath: scratch.path))
@@ -37,11 +37,21 @@ check("its own directory is permitted",
       Isolation.permits(scratch.appendingPathComponent("notes.md").path, root: scratch))
 
 // Two runs never share a folder.
-let other = Tenancy.scratch(for: .kimi, run: UUID())
+let other = Tenancy.scratch(for: Seat(.kimi), run: UUID())
 check("a second run gets a different folder", other?.path != scratch.path)
 // Two agents in one run never share one either.
-let sibling = Tenancy.scratch(for: .copilot, run: run)
+let sibling = Tenancy.scratch(for: Seat(.copilot), run: run)
 check("two delegates in one run get different folders", sibling?.path != scratch.path)
+
+// Nor do two instances of one subscription — the case that made this a seat
+// rather than an account. Two confined Kimis sharing a folder would each be
+// reading the other's work, and neither would be confined to its own.
+let second = Tenancy.scratch(for: Seat(.kimi, 2), run: run)
+check("a second instance gets its own folder", second?.path != scratch.path)
+check("and the first instance's folder is unchanged by seats existing",
+      scratch.lastPathComponent == "kimi")
+check("while the second is named for its number",
+      second?.lastPathComponent == "kimi-2")
 
 try? FileManager.default.removeItem(at: Support.folder.appendingPathComponent("Crew"))
 print(failures == 0 ? "\nall passed" : "\n\(failures) failed")

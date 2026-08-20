@@ -10,17 +10,17 @@ import Combine
 final class Streamer {
 
     private let session: Session
-    private let account: Account
+    private let seat: Seat
     private let scrollback: Scrollback
     private var feed: AnyCancellable?
 
-    init(_ session: Session, as account: Account, verbose: Bool = true) {
+    init(_ session: Session, as seat: Seat, verbose: Bool = true) {
         self.session = session
-        self.account = account
+        self.seat = seat
 
         // Tool activity is off for delegates, whose work would interleave into
         // an unreadable braid when several run at once.
-        var options = ScrollbackOptions.cli(speaker: AgentMention.handle(account))
+        var options = ScrollbackOptions.cli(speaker: seat.handle)
         options.showsActivity = verbose
         self.scrollback = Scrollback(options)
 
@@ -47,6 +47,6 @@ final class Streamer {
 
     private func render() {
         Console.emit(scrollback.drain(items: session.items, todos: session.todos),
-                     accent: Console.tint(account))
+                     accent: Console.tint(seat.account))
     }
 }

@@ -69,8 +69,8 @@ Tenancy.gates = was
 let json = #"{"assignments":[{"to":"@kimi","task":"write the parser"},{"to":"kimi","task":"again"},{"to":"nobody","task":"x"},{"to":"copilot","task":"  "}]}"#
 let plan = MainActor.assumeIsolated { Crew.assignments(json) } ?? Crew.Plan()
 let parsed = plan.assignments
-check("one assignment per account", parsed.count == 1)
-check("handle resolved", parsed.first?.to == .kimi)
+check("one assignment per instance", parsed.count == 1)
+check("handle resolved", parsed.first?.to == Seat(.kimi))
 check("task carried", parsed.first?.task == "write the parser")
 
 // Nothing is dropped in silence: a lead that isn't told a piece was refused

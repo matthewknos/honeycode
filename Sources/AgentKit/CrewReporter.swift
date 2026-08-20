@@ -6,7 +6,10 @@ import Foundation
 /// crosses a protocol boundary, and `(to:task:)` in a protocol requirement is a
 /// signature nobody can read at the call site.
 struct CrewAssignment: Equatable {
-    let to: Account
+    /// Which agent, not merely which subscription — `@kimi#2` is a second Kimi
+    /// running beside the first, and the whole reason a plan can now say
+    /// "four ways" and mean it.
+    let to: Seat
     let task: String
     /// What the lead asked this delegate to run, if it asked. Same grammar as a
     /// mention — `{"to": "kimi:k3"}` — because that is the grammar the lead
@@ -14,12 +17,15 @@ struct CrewAssignment: Equatable {
     var model: String?
     var effort: EffortChoice?
 
-    /// `@kimi:k3` — how the plan should read.
+    /// `@kimi#2:k3` — how the plan should read.
     ///
     /// Qualifiers included, because "which model is this running on" is the
     /// question a plan gets asked most and the one it was least able to answer.
+    /// The instance number is in there for the same reason one step up: a plan
+    /// listing `@kimi` three times reads as a mistake, and `@kimi#1 @kimi#2
+    /// @kimi#3` reads as what it is.
     var label: String {
-        var out = "@" + AgentMention.handle(to)
+        var out = to.mention
         if let model { out += ":" + model }
         if let effort { out += ":" + effort.rawValue }
         return out
@@ -66,7 +72,7 @@ protocol CrewReporter: AnyObject {
 
     /// Who is about to speak, and what they are doing — "planning", "done",
     /// "assembling". The one place the run names an agent out loud.
-    func speaker(_ account: Account, note: String)
+    func speaker(_ seat: Seat, note: String)
 
     /// Text that belongs in the record as written: the lead's plan, a
     /// delegate's report.
@@ -82,9 +88,9 @@ protocol CrewReporter: AnyObject {
     /// person and carries no material.
     func held(_ assignment: CrewAssignment, reason: String)
 
-    /// Mirror this session's output as it arrives, under this account's name.
+    /// Mirror this session's output as it arrives, under this agent's name.
     /// At most one at a time; a second call replaces the first.
-    func stream(_ session: Session, as account: Account)
+    func stream(_ session: Session, as seat: Seat)
 
     /// Stop mirroring, flushing whatever arrived since the last tick.
     func endStream()
@@ -92,7 +98,7 @@ protocol CrewReporter: AnyObject {
     /// Who is working right now, and in which session. Called again each time
     /// the set changes, and with an empty array when nobody is — which is also
     /// how a live progress display is told to take itself down.
-    func working(_ delegates: [(account: Account, session: Session)])
+    func working(_ delegates: [(seat: Seat, session: Session)])
 
     /// One agent asking another something, or answering.
     ///
@@ -100,12 +106,12 @@ protocol CrewReporter: AnyObject {
     /// behaviour you cannot predict from the plan, and the plan is the only
     /// thing on screen — so the traffic has to be visible or the run becomes a
     /// black box that occasionally costs four times what you expected.
-    func message(from: Account, to: Account, _ text: String, answering: Bool)
+    func message(from: Seat, to: Seat, _ text: String, answering: Bool)
 
     /// One delegate has landed. Separate from `working` because the two answer
     /// different questions: this one is "mark it finished", that one is "here
     /// is the current set".
-    func landed(_ account: Account)
+    func landed(_ seat: Seat)
 
     /// The run is over and it is safe to ask for input again.
     func finished(seconds: Int, spend: String)

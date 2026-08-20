@@ -30,7 +30,7 @@ struct CrewRunPanel: View {
             .padding(.horizontal, Theme.s5)
             .padding(.vertical, Theme.s4 + Theme.s1)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .modifier(InsetSurface(radius: 10))
+            .modifier(InsetSurface(radius: Theme.cornerField))
         }
     }
 

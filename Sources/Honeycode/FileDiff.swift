@@ -208,7 +208,7 @@ struct FileDiffView: View {
     }
 
     private func header(_ markup: String?) -> some View {
-        HStack(spacing: 7) {
+        HStack(spacing: Theme.s4) {
             if superseded {
                 Image(systemName: unfolded ? "chevron.down" : "chevron.right")
                     .font(.system(size: 8, weight: .semibold))
@@ -287,8 +287,8 @@ struct FileDiffView: View {
                 .monospacedDigit()
             }
         }
-        .padding(.horizontal, 11)
-        .padding(.vertical, 7)
+        .padding(.horizontal, Theme.s5)
+        .padding(.vertical, Theme.s4)
         .contentShape(Rectangle())
         .onTapGesture { if superseded { unfolded.toggle() } }
         .help(superseded ? "An earlier edit to this file — click to see what changed" : "")
@@ -327,7 +327,7 @@ struct FileDiffView: View {
             }
             if limit < rows.count { more(rows.count - limit) }
         }
-        .padding(.vertical, 5)
+        .padding(.vertical, Theme.s3)
     }
 
     private func line(_ row: DiffRow, at index: Int) -> some View {
@@ -347,8 +347,11 @@ struct FileDiffView: View {
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.trailing, 10)
+                .padding(.trailing, Theme.s5)
         }
+        // Off the spacing scale on purpose: this is line density for code,
+        // not rhythm between elements. At Theme.s1 every diff row grows by a
+        // point and a screenful of a review holds noticeably less.
         .padding(.vertical, 1.5)
         .background(background(row.kind))
     }
@@ -365,7 +368,7 @@ struct FileDiffView: View {
             Text("Show \(hidden) more line\(hidden == 1 ? "" : "s")")
                 .font(.system(size: 10.5, weight: .medium))
                 .foregroundStyle(.tertiary)
-                .padding(.horizontal, 11)
+                .padding(.horizontal, Theme.s5)
                 .padding(.vertical, 6)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())

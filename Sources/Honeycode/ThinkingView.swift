@@ -25,7 +25,7 @@ struct ThinkingView: View {
     private static let fade: CGFloat = 18
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
+        VStack(alignment: .leading, spacing: Theme.s4) {
             header
             if isOpen && !text.isEmpty { reasoning }
         }
@@ -40,7 +40,7 @@ struct ThinkingView: View {
             ShimmerLabel(text: "Thinking…", enabled: !reduceMotion)
         } else {
             Button { withAnimation(Motion.disclose) { expanded.toggle() } } label: {
-                HStack(spacing: 5) {
+                HStack(spacing: Theme.s3) {
                     Text("Thought for \(Self.format(elapsed ?? 0))")
                         .font(Theme.label)
                     Image(systemName: "chevron.down")
@@ -86,7 +86,7 @@ struct ThinkingView: View {
         }
         .frame(height: min(max(contentHeight, 1), Self.maxHeight))
         .mask(mask)
-        .padding(.leading, 1)
+        .padding(.leading, Theme.s1)
     }
 
     @ViewBuilder

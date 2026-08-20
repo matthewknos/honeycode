@@ -822,7 +822,7 @@ private struct ToolRow: View {
                 guard !body_.isEmpty else { return }
                 withAnimation(Motion.disclose) { expanded.toggle() }
             } label: {
-                HStack(spacing: 7) {
+                HStack(spacing: Theme.s4) {
                     Image(systemName: symbol)
                         .font(.system(size: 10.5))
                         .frame(width: 13)
@@ -890,7 +890,7 @@ private struct ToolRow: View {
                 // measures the truncation in bytes and takes it in characters,
                 // which can only ever cut *less* than the cap.
                 let hidden = wholeBody ? 0 : detail.utf8.count - Self.detailCap
-                VStack(alignment: .leading, spacing: 7) {
+                VStack(alignment: .leading, spacing: Theme.s4) {
                     Text(hidden > 0 ? String(detail.prefix(Self.detailCap)) : detail)
                         .font(Theme.mono)
                         .lineSpacing(2)
@@ -909,9 +909,9 @@ private struct ToolRow: View {
                         .buttonStyle(.plain)
                     }
                 }
-                .padding(10)
+                .padding(Theme.s5)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .modifier(InsetSurface(radius: 7))
+                .modifier(InsetSurface(radius: Theme.cornerCard))
             }
         }
     }
@@ -965,7 +965,7 @@ private struct OpinionCard: View {
         .padding(.vertical, Theme.s4)
         .padding(.trailing, Theme.s5)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .modifier(InsetSurface(radius: 10))
+        .modifier(InsetSurface(radius: Theme.cornerField))
     }
 }
 
@@ -1015,10 +1015,10 @@ private struct Notice: View {
     let text: String
 
     var body: some View {
-        HStack(alignment: .top, spacing: 7) {
+        HStack(alignment: .top, spacing: Theme.s4) {
             Image(systemName: "info.circle")
                 .font(.system(size: 10.5))
-                .padding(.top, 1)
+                .padding(.top, Theme.s1)
             Text(text)
                 .font(.system(size: 12))
                 .lineSpacing(2)

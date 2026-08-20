@@ -218,7 +218,7 @@ struct TeamBar: View {
         Button {
             apply(team)
         } label: {
-            VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: Theme.s1) {
                 Text(team.name)
                     .font(Theme.body)
                 // What it will actually put on the team, in the grammar the

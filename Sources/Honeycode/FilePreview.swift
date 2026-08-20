@@ -122,7 +122,7 @@ struct FilePreview: View {
 
     private var header: some View {
         HStack(spacing: Theme.s4) {
-            VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: Theme.s1) {
                 Text(url.lastPathComponent)
                     .font(.system(size: 12.5, weight: .medium))
                     .lineLimit(1)

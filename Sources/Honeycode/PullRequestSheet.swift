@@ -58,7 +58,7 @@ struct PullRequestSheet: View {
 
     private var header: some View {
         HStack(spacing: Theme.s5) {
-            VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: Theme.s1) {
                 Text("Pull Request")
                     .font(.system(size: 15, weight: .semibold))
                 Text(subtitle)
@@ -294,7 +294,7 @@ struct PullRequestSheet: View {
         }
         .padding(.horizontal, Theme.s5)
         .padding(.vertical, Theme.s4)
-        .modifier(InsetSurface(radius: 8))
+        .modifier(InsetSurface(radius: Theme.cornerCard))
     }
 
     // MARK: Outcomes
@@ -354,7 +354,7 @@ struct PullRequestSheet: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(Theme.s5)
             }
-            .modifier(InsetSurface(radius: 8))
+            .modifier(InsetSurface(radius: Theme.cornerCard))
 
             Text("Nothing was pushed past the step that failed. Your working tree is "
                  + "where the last successful step left it.")

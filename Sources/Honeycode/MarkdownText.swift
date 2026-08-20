@@ -727,6 +727,10 @@ private struct TableBlock: View {
             .textSelection(.enabled)
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: frameAlignment(align))
+            // Table cells run on their own tuned geometry — 9/10 vertical, 13
+            // horizontal, all multiplied by the prose scale — rather than the
+            // app's spacing scale. A header row sits a point tighter than a
+            // body row, and none of these is a fixed gap the scale could name.
             .padding(.vertical, (header ? 9 : 10) * scale)
             .padding(.leading, column == 0 ? 0 : 13 * scale)
             .padding(.trailing, 13 * scale)

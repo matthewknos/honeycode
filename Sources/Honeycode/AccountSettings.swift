@@ -40,7 +40,7 @@ struct AccountSettings: View {
                 ForEach([Account.personal, Account.work], id: \.self) { account in
                     HStack(spacing: Theme.s4) {
                         Circle().fill(account.accent).frame(width: 7, height: 7)
-                        VStack(alignment: .leading, spacing: 1) {
+                        VStack(alignment: .leading, spacing: Theme.s1) {
                             Text(account.title)
                             Text(account.agentName)
                                 .font(Theme.label)
@@ -88,7 +88,7 @@ struct AccountSettings: View {
                 ForEach(accounts) { account in
                     HStack(spacing: Theme.s4) {
                         Circle().fill(account.tint.colour).frame(width: 7, height: 7)
-                        VStack(alignment: .leading, spacing: 1) {
+                        VStack(alignment: .leading, spacing: Theme.s1) {
                             Text(account.title)
                             Text("@\(account.handle) · \(account.command)")
                                 .font(Theme.label)

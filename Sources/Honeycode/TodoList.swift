@@ -26,7 +26,7 @@ struct TodoListView: View {
 
     private var header: some View {
         Button { withAnimation(Motion.disclose) { collapsed.toggle() } } label: {
-            HStack(spacing: 7) {
+            HStack(spacing: Theme.s4) {
                 headerIcon
                     .frame(width: 14, height: 14)
                 Text("To-dos")
@@ -76,7 +76,7 @@ struct TodoListView: View {
     }
 
     private var list: some View {
-        VStack(alignment: .leading, spacing: 5) {
+        VStack(alignment: .leading, spacing: Theme.s3) {
             ForEach(visible) { todo in
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Image(systemName: symbol(todo.status))
@@ -96,7 +96,7 @@ struct TodoListView: View {
                 }
             }
         }
-        .padding(.top, 7)
+        .padding(.top, Theme.s4)
         .padding(.leading, 2)
     }
 

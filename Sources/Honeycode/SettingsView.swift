@@ -113,7 +113,7 @@ private struct SkillSettings: View {
                                      set: { store.setEnabled(skill, $0) }))
                 .labelsHidden()
 
-            VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: Theme.s1) {
                 Text(skill.name).font(.system(size: 12.5))
                 Text(skill.summary.isEmpty ? "/\(skill.slug)" : skill.summary)
                     .font(.system(size: 11))
@@ -130,7 +130,7 @@ private struct SkillSettings: View {
             }
             .help("Delete this skill")
         }
-        .padding(.vertical, 1)
+        .padding(.vertical, Theme.s1)
     }
 
     private func importSkill() {
@@ -371,13 +371,27 @@ private struct ReadingSettings: View {
 // MARK: - Shortcuts
 
 private struct ShortcutSettings: View {
+
+    /// Key combinations, in the app's own voice.
+    ///
+    /// These were SF Rounded, which Theme forbids in the first line of its own
+    /// rules — rounded is a watchOS/Home voice. It reads as a key cap, which is
+    /// presumably why it got in, but macOS's own Keyboard Shortcuts pane sets
+    /// combinations in plain system type and the glyphs that carry most of the
+    /// meaning here (⌘ ⌥ ⇧ ⌃) are identical in both faces anyway. So the
+    /// affectation cost the app a second typeface and bought nothing.
+    ///
+    /// Stated once rather than five times, which is how it came to be five
+    /// identical literals in one view.
+    private static let keyCap = Font.system(size: 12, weight: .medium)
+
     var body: some View {
         Form {
             Section {
                 ForEach(Shortcuts.sessions) { shortcut in
                     LabeledContent(shortcut.title) {
                         Text(shortcut.display)
-                            .font(.system(size: 12, weight: .medium, design: .rounded))
+                            .font(Self.keyCap)
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -389,7 +403,7 @@ private struct ShortcutSettings: View {
                 ForEach(Shortcuts.columns) { shortcut in
                     LabeledContent(shortcut.title) {
                         Text(shortcut.display)
-                            .font(.system(size: 12, weight: .medium, design: .rounded))
+                            .font(Self.keyCap)
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -404,7 +418,7 @@ private struct ShortcutSettings: View {
                 ForEach(Shortcuts.view) { shortcut in
                     LabeledContent(shortcut.title) {
                         Text(shortcut.display)
-                            .font(.system(size: 12, weight: .medium, design: .rounded))
+                            .font(Self.keyCap)
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -421,7 +435,7 @@ private struct ShortcutSettings: View {
                 ForEach(TranscriptMode.allCases) { mode in
                     LabeledContent(mode.title) {
                         Text("⌥⌘\(mode.shortcut.character.description)")
-                            .font(.system(size: 12, weight: .medium, design: .rounded))
+                            .font(Self.keyCap)
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -433,7 +447,7 @@ private struct ShortcutSettings: View {
                 ForEach(Shortcuts.composer, id: \.0) { title, keys in
                     LabeledContent(title) {
                         Text(keys)
-                            .font(.system(size: 12, weight: .medium, design: .rounded))
+                            .font(Self.keyCap)
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -544,7 +558,7 @@ private struct BackgroundSettings: View {
     private var library: some View {
         VStack(alignment: .leading, spacing: Theme.s5) {
             HStack {
-                VStack(alignment: .leading, spacing: 1) {
+                VStack(alignment: .leading, spacing: Theme.s1) {
                     Text("Library")
                         .font(.system(size: 13, weight: .semibold))
                     Text(store.items.isEmpty
@@ -568,7 +582,7 @@ private struct BackgroundSettings: View {
                         Text(category)
                             .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(.secondary)
-                        LazyVGrid(columns: columns, spacing: 14) {
+                        LazyVGrid(columns: columns, spacing: Theme.gapBlock) {
                             ForEach(store.items(in: category)) { item in
                                 Thumbnail(item: item,
                                           image: store.thumbnails[item.file],
@@ -643,7 +657,7 @@ private struct Thumbnail: View {
                         Image(systemName: "checkmark.circle.fill")
                             .font(.system(size: 15))
                             .foregroundStyle(.white, Color.accentColor)
-                            .padding(5)
+                            .padding(Theme.s3)
                     }
                 }
             }

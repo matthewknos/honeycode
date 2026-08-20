@@ -156,8 +156,8 @@ struct CodeBlock: View {
                 .monospacedDigit()
         }
         .foregroundStyle(.tertiary)
-        .padding(.horizontal, 9)
-        .padding(.vertical, 5)
+        .padding(.horizontal, Theme.s4)
+        .padding(.vertical, Theme.s2)
         .overlay(Capsule().strokeBorder(Theme.rule, lineWidth: 1))
     }
 
@@ -297,7 +297,7 @@ struct CodeBlock: View {
             .buttonStyle(.plain)
             .animation(Motion.reveal, value: copied)
         }
-        .padding(.horizontal, 11)
+        .padding(.horizontal, Theme.s5)
         .padding(.vertical, 6)
     }
 
@@ -318,12 +318,12 @@ struct CodeBlock: View {
                         .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.trailing, 10)
+                        .padding(.trailing, Theme.s5)
                 }
-                .padding(.vertical, 1)
+                .padding(.vertical, Theme.s1)
             }
         }
-        .padding(.vertical, 7)
+        .padding(.vertical, Theme.s4)
     }
 
     /// Highlighted per line, for the lines the highlight still matches.

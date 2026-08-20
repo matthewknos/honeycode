@@ -61,19 +61,19 @@ struct WebSearchView: View {
     private var list: some View {
         // A hairline rail rather than a box: these are subordinate to the
         // search above them, and a bordered card would give them equal weight.
-        HStack(alignment: .top, spacing: 10) {
+        HStack(alignment: .top, spacing: Theme.s5) {
             RoundedRectangle(cornerRadius: 0.5)
                 .fill(Theme.rule)
                 .frame(width: 1)
                 .padding(.leading, 6)
 
-            VStack(alignment: .leading, spacing: 5) {
+            VStack(alignment: .leading, spacing: Theme.s3) {
                 ForEach(results) { result in
                     SourceRow(result: result)
                 }
             }
         }
-        .padding(.top, 7)
+        .padding(.top, Theme.s4)
     }
 }
 

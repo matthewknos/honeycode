@@ -596,7 +596,7 @@ struct ZoomControl: View {
                         .monospacedDigit()
                         .foregroundStyle(.secondary)
                         .padding(.horizontal, Theme.s3)
-                        .padding(.vertical, 1)
+                        .padding(.vertical, Theme.s1)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(HoverCapsule())

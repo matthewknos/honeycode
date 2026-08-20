@@ -387,15 +387,21 @@ struct TranscriptView: View {
     private var tail: Int {
         let items = session.items
         var signature = items.count
+        // Bytes, not Characters. `String.count` walks every grapheme and this
+        // runs on the growing reply on every body evaluation — 78ms per 600
+        // evaluations of a 200KB answer, against nothing measurable for
+        // `utf8.count`, which is stored. `Scrollback` documents this same trap
+        // and avoids it; the transcript walked into it. Any monotonic measure
+        // works here: this is a change signature, not a length anybody reads.
         if let last = items.last {
             signature = signature &* 31 &+ last.id.hashValue
             switch last {
             case .assistant(_, let text), .notice(_, let text), .user(_, let text):
-                signature = signature &* 31 &+ text.count
+                signature = signature &* 31 &+ text.utf8.count
             case .thinking(_, let text, _, _):
-                signature = signature &* 31 &+ text.count
+                signature = signature &* 31 &+ text.utf8.count
             case .opinion(_, _, let text, _):
-                signature = signature &* 31 &+ text.count
+                signature = signature &* 31 &+ text.utf8.count
             default:
                 // Everything else — tool cards, diffs, charts, web results —
                 // moves the bottom by changing height rather than text, and is

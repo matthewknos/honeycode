@@ -75,18 +75,59 @@ struct FilePreview: View {
     static func link(for text: String) -> URL? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.hasPrefix("/") || trimmed.hasPrefix("~/"),
-              !trimmed.contains("\n"), trimmed.count < 4096 else { return nil }
+              !trimmed.contains("\n"), trimmed.utf8.count < 4096 else { return nil }
 
         let path = NSString(string: trimmed).expandingTildeInPath
-        var isDirectory: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory),
-              !isDirectory.boolValue else { return nil }
+        guard isReadableFile(path) else { return nil }
 
         var components = URLComponents()
         components.scheme = scheme
         components.host = "file"
         components.queryItems = [URLQueryItem(name: "path", value: path)]
         return components.url
+    }
+
+    /// Whether that path is a file, answered from a short-lived memo.
+    ///
+    /// The stat itself is cheap; doing it on the main thread sixty times a
+    /// second for the same path is not. An agent announcing its work — "Done —
+    /// `/Users/you/Desktop/Deck.pptx`" — puts a path-shaped code span in the
+    /// block that is still streaming, and every tick re-renders that block and
+    /// re-stats every span in it. On a network or sleeping volume a single stat
+    /// can block a frame outright.
+    ///
+    /// Memoised with a deadline rather than permanently, and the deadline is
+    /// the whole design. A path the agent is *about to* write answers false
+    /// now and true in a moment, and the transcript is supposed to turn it into
+    /// a link when that happens — a permanent negative would mean a file the
+    /// agent just made never becomes clickable for the life of the window. Two
+    /// seconds collapses a streaming burst into one syscall while keeping that
+    /// promise on a human timescale.
+    private nonisolated(unsafe) static var known: [String: (exists: Bool, at: Double)] = [:]
+    private static let knownLock = NSLock()
+    private static let memo: Double = 2
+
+    private static func isReadableFile(_ path: String) -> Bool {
+        let now = Date.timeIntervalSinceReferenceDate
+        knownLock.lock()
+        if let seen = known[path], now - seen.at < memo {
+            knownLock.unlock()
+            return seen.exists
+        }
+        knownLock.unlock()
+
+        var isDirectory: ObjCBool = false
+        let there = FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory)
+            && !isDirectory.boolValue
+
+        knownLock.lock()
+        // A transcript names a bounded set of files; this is a guard against a
+        // pathological reply rather than a working eviction policy, so it drops
+        // everything stale rather than keeping an order alongside.
+        if known.count > 512 { known = known.filter { now - $0.value.at < memo } }
+        known[path] = (there, now)
+        knownLock.unlock()
+        return there
     }
 
     /// The file behind one of those links.

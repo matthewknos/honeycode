@@ -56,6 +56,46 @@ enum CrewFence {
         return openers.contains { $0.hasPrefix(trimmed) }
     }
 
+    /// Whether `` ```ai- `` appears anywhere — the common prefix of both openers.
+    ///
+    /// This is the guard on `hidden`, which runs on the block still streaming on
+    /// every redraw. The guard used to be `text.contains("```")`, which is true
+    /// of most replies a coding agent writes, so nearly every answer fell
+    /// through to a full split and rejoin of the whole text per tick — to
+    /// rebuild a string identical to the one it was handed.
+    ///
+    /// Narrowing it to the openers is right and the obvious way to do it is
+    /// wrong. `String.contains` is grapheme-aware and has no early exit on a
+    /// miss, so asking it for a needle that isn't there costs *more* than the
+    /// work it was meant to skip. Over a 130KB reply, per tick: doing nothing
+    /// and just splitting cost 1854ms, one `contains("```ai-")` cost 2467ms,
+    /// and checking both openers separately cost 5094ms. The first attempt at
+    /// this made the app three times slower and only measuring caught it.
+    ///
+    /// Scanning the UTF-8 bytes costs 58ms. A needle this short and this
+    /// unusual doesn't need a real substring algorithm.
+    private static func mentionsOpener(_ text: String) -> Bool {
+        var found = false
+        let scanned: Void? = text.utf8.withContiguousStorageIfAvailable { buf in
+            let n = buf.count
+            guard n >= 6 else { return }
+            var i = 0
+            while i <= n - 6 {
+                // "```ai-"
+                if buf[i] == 0x60, buf[i + 1] == 0x60, buf[i + 2] == 0x60,
+                   buf[i + 3] == 0x61, buf[i + 4] == 0x69, buf[i + 5] == 0x2D {
+                    found = true
+                    return
+                }
+                i += 1
+            }
+        }
+        // No contiguous storage — a bridged NSString. Do the work rather than
+        // skip it: being slow is a cost, wrongly hiding nothing is a bug.
+        guard scanned != nil else { return true }
+        return found
+    }
+
     /// The whole text with every transport block taken out.
     ///
     /// For a renderer that redraws an item from scratch each time — the card
@@ -63,7 +103,7 @@ enum CrewFence {
     /// answer is simply to filter the string. An unclosed block runs to the
     /// end: a turn that stopped mid-fence has no prose after it to lose.
     static func hidden(from text: String) -> String {
-        guard text.contains("```") else { return text }
+        guard mentionsOpener(text) else { return text }
         var out: [Substring] = []
         var suppressing = false
         for line in text.split(separator: "\n", omittingEmptySubsequences: false) {

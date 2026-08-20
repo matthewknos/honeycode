@@ -84,7 +84,9 @@ struct MarkdownText: View {
     var caret: Bool = false
 
     var body: some View {
-        BlockStack(blocks: Self.blocks(raw), caret: caret)
+        // `caret` is set only while text is still arriving, which makes it the
+        // signal for "don't cache this one" — see `blocks`.
+        BlockStack(blocks: Self.blocks(raw, caching: !caret), caret: caret)
     }
 
     /// Block-pair spacing. Typeset expresses this as `margin-block-start`
@@ -254,7 +256,27 @@ struct MarkdownText: View {
     nonisolated(unsafe) private static var cacheOrder: [String] = []
     private static let cacheLock = NSLock()
 
-    static func blocks(_ raw: String) -> [Block] {
+    /// - Parameter caching: false while this block is still streaming.
+    ///
+    /// The cache was built for *settled* blocks — a batch of deltas used to
+    /// re-parse every other reply in the transcript — and for those it does
+    /// exactly what it says. For the one block still arriving it was three
+    /// separate costs and no benefit, because the key is the block's own text
+    /// and every tick mints a new one:
+    ///
+    /// - the lookup hashes the whole reply, and always misses;
+    /// - the miss stores a key, so the cache retains that generation of the
+    ///   string — which is what silently defeated `Session.appendAssistant`.
+    ///   That function blanks the array slot so `+=` can extend the buffer in
+    ///   place, and it works right up until something else holds a reference.
+    ///   Measured over a 120KB reply: 0.2ms when the buffer is unique against
+    ///   282ms when a cache holds the previous generation;
+    /// - and the 400 retained keys are 400 progressively longer copies of one
+    ///   reply, which is where the memory went.
+    ///
+    /// So a streaming block parses and returns, touching neither.
+    static func blocks(_ raw: String, caching: Bool = true) -> [Block] {
+        guard caching else { return parse(raw) }
         cacheLock.lock()
         let hit = cache[raw]
         cacheLock.unlock()

@@ -22,6 +22,27 @@ struct ThinkingView: View {
     private var isActive: Bool { elapsed == nil }
     private var isOpen: Bool { isActive || expanded }
     private static let maxHeight: CGFloat = 168
+
+    /// How much of a live block is worth laying out.
+    ///
+    /// While reasoning is still arriving the view is scroll-locked and anchored
+    /// to the bottom, so `maxHeight` — about ten lines — is the entirety of what
+    /// anybody can see. `Text` with `fixedSize` lays out everything it is given,
+    /// which meant a full CoreText pass over the whole accumulated block on
+    /// every delta: the cost grows with the thought, so a long one gets steadily
+    /// jankier right up until it ends. Rendering the tail bounds that.
+    ///
+    /// Generous by a wide margin — ten lines is on the order of a thousand
+    /// characters even in a narrow column — because being wrong here would clip
+    /// something a reader can see, and the whole text goes back the moment the
+    /// block settles and becomes scrollable.
+    private static let window = 4000
+
+    /// The whole thought once it has finished, the tail while it is arriving.
+    private var visible: String {
+        guard isActive, text.utf8.count > Self.window else { return text }
+        return String(text.suffix(Self.window))
+    }
     private static let fade: CGFloat = 18
 
     var body: some View {
@@ -59,7 +80,7 @@ struct ThinkingView: View {
 
     private var reasoning: some View {
         ScrollView(.vertical) {
-            Text(text)
+            Text(visible)
                 .font(.system(size: 12.5))
                 .lineSpacing(3.5)
                 .foregroundStyle(.secondary)

@@ -155,5 +155,47 @@ check("a second block is hidden as readily as the first",
         && streamed(twice, chunk: 5).contains("Second.")
         && !streamed(twice, chunk: 5).contains("messages"))
 
+// --- the fast path ---
+//
+// `hidden` is guarded by a scan for "```ai-" so that a reply full of ordinary
+// code fences — which is most of what a coding agent writes — doesn't split and
+// rejoin its whole text on every redraw to rebuild the string it was given.
+// What matters is that narrowing the guard didn't narrow the behaviour.
+let ordinary = """
+Here is the fix.
+
+```swift
+let x = 1
+```
+
+And an indented one:
+
+    ```ai-delegate-lookalike
+"""
+check("a reply with only ordinary code fences comes back unchanged",
+      CrewFence.hidden(from: ordinary) == ordinary)
+check("text with no fence at all comes back unchanged",
+      CrewFence.hidden(from: "just prose, no fences") == "just prose, no fences")
+check("an empty string survives", CrewFence.hidden(from: "") == "")
+check("text shorter than the opener survives", CrewFence.hidden(from: "``") == "``")
+
+// And the guard must not let a real transport block through.
+let transport = """
+Splitting it three ways.
+
+```ai-delegate
+{"assignments":[{"to":"kimi","task":"the city"}]}
+```
+"""
+check("a transport block is still taken out",
+      !CrewFence.hidden(from: transport).contains("assignments"))
+check("while the prose above it stays",
+      CrewFence.hidden(from: transport).hasPrefix("Splitting it three ways."))
+// The opener has to be a line of its own, which is what `opens` requires — the
+// byte scan only decides whether it is worth looking.
+check("an opener mentioned mid-sentence hides nothing",
+      CrewFence.hidden(from: "I would write ```ai-delegate here") ==
+      "I would write ```ai-delegate here")
+
 print(failures == 0 ? "\nall passed" : "\n\(failures) failed")
 exit(failures == 0 ? 0 : 1)

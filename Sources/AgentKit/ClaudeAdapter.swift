@@ -356,8 +356,13 @@ final class ClaudeAdapter: AgentAdapter {
                     return
                 }
                 if proc.terminationStatus != 0 {
+                    // See `Diagnostic`, and the ACP adapter's twin of this: the
+                    // sentence is the message, stderr is at most a clause on
+                    // the end of it.
+                    let detail = Diagnostic.summarise(text)
                     self.session.items.append(.notice(id: UUID(), text:
-                        text.isEmpty ? "claude exited unexpectedly." : text))
+                        "claude exited unexpectedly."
+                        + (detail.isEmpty ? "" : " " + detail)))
                 }
             }
         }

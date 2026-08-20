@@ -1337,15 +1337,25 @@ final class Session: ObservableObject, Identifiable {
         }
         // A notice — a crashed process, a refused resume — is the only thing
         // that will ever come back, so surface it rather than sitting blank.
+        //
+        // Framed as a failure, never as the answer. This block used to hand the
+        // notice straight through as `text`, so a delegate that died printed its
+        // CLI's stderr into the transcript under its own name, in the place its
+        // report should have been — and a lead reading that block had no way to
+        // tell "the agent said this" from "the agent said nothing". The two
+        // sentences are the two separate facts: it didn't answer, and here is
+        // what was going on when it didn't.
+        var failure: String?
         if reply.isEmpty, done {
             for item in reviewer.items.reversed() {
-                if case .notice(_, let text) = item { reply = text; break }
+                if case .notice(_, let text) = item { failure = text; break }
             }
         }
         guard reply != existing || done else { return }
-        items[index] = .opinion(id: id, agent: agent,
-                                text: reply.isEmpty && done ? "No answer came back." : reply,
-                                done: done)
+        let shown = reply.isEmpty && done
+            ? failure.map { "No answer came back — \($0)" } ?? "No answer came back."
+            : reply
+        items[index] = .opinion(id: id, agent: agent, text: shown, done: done)
     }
 
     /// Called when the session comes on screen.

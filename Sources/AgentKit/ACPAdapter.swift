@@ -92,7 +92,28 @@ final class ACPAdapter: AgentAdapter {
     /// Reset with the process, not with the turn — see `preface`.
     private var sentSkills = false
     /// Prompts typed before the handshake finished, replayed once it has.
+    /// At most one, now that `send` holds anything arriving mid-turn.
     private var queued: [String] = []
+    /// Whether a `session/prompt` is outstanding, and anything waiting for it.
+    ///
+    /// The Claude adapter has had this since a message could be written into a
+    /// window where writes go nowhere; this one never did, and the cost was
+    /// worse than a lost message. **Two `session/prompt` requests in flight on
+    /// one ACP session make the agent emit its answer twice.** Measured against
+    /// Kimi Code: two prompts sent back to back, the first asking for ten
+    /// characters, produced twenty — one reply, streamed once per outstanding
+    /// prompt, both requests answered `end_turn`. Both copies land in the same
+    /// `.assistant` item with independent chunk boundaries, so what reaches the
+    /// transcript is the reply shuffled into itself:
+    ///
+    ///     AnsAnswweringering @ @kimikimi#3 from#3 from what what I've I've
+    ///
+    /// `Session.deliver` is supposed to prevent this and cannot: it guards on
+    /// `isRunning`, which is set a hop later on the main queue, so two delivers
+    /// in one runloop turn both see an idle session. The adapter is the only
+    /// thing that knows for certain whether a turn is open.
+    private var turnInFlight = false
+    private var held: [String] = []
     /// The id of the in-flight `session/prompt`, so its result ends the turn.
     private var promptID: Int?
     /// A bookkeeping prompt we sent ourselves. Both are answered by the CLI
@@ -179,8 +200,14 @@ final class ACPAdapter: AgentAdapter {
                 // adapter had, with the same two consequences.
                 self.teardown()
                 if proc.terminationStatus != 0 {
+                    // Always the sentence first, and the diagnostic after it if
+                    // there is one worth having. Emitting bare stderr meant a
+                    // Node object dump stood in the transcript as the agent's
+                    // own words — see `Diagnostic`.
+                    let detail = Diagnostic.summarise(text)
                     self.session.items.append(.notice(id: UUID(), text:
-                        text.isEmpty ? "\(self.agent.displayName) exited unexpectedly." : text))
+                        "\(self.agent.displayName) exited unexpectedly."
+                        + (detail.isEmpty ? "" : " " + detail)))
                 }
             }
         }
@@ -232,6 +259,12 @@ final class ACPAdapter: AgentAdapter {
         // restart is exactly how a skill you just switched on takes effect.
         sentSkills = false
         queued = []
+        // A `turnInFlight` left set would hold every later message for a turn
+        // that can no longer end, so the session would go mute permanently
+        // rather than once. Held messages go with it — they were waiting on the
+        // turn this just killed.
+        turnInFlight = false
+        held.removeAll()
         // Tool ids belong to the process that issued them, and a write's
         // content is a whole file — holding either past the process that named
         // them is a leak with nothing to spend it on.
@@ -258,9 +291,31 @@ final class ACPAdapter: AgentAdapter {
     func prepare() { _ = startIfNeeded() }
 
     func send(_ text: String) {
-        guard startIfNeeded() else { return }
+        guard !turnInFlight else {
+            held.append(text)
+            return
+        }
+        turnInFlight = true
+        write(text)
+    }
+
+    /// The next held message, if the turn that just ended left one waiting.
+    private func flushHeld() {
+        guard !held.isEmpty else { return }
+        let next = held.removeFirst()
+        turnInFlight = true
+        write(next)
+    }
+
+    private func write(_ text: String) {
+        guard startIfNeeded() else {
+            turnInFlight = false
+            return
+        }
         DispatchQueue.main.async { self.session.isRunning = true }
 
+        // Still shaking hands. `queued` can only ever hold this one, because
+        // `send` won't write another until this turn ends.
         guard let sessionID else { queued.append(text); return }
         prompt(text, in: sessionID)
     }
@@ -321,6 +376,11 @@ final class ACPAdapter: AgentAdapter {
         if started, let sessionID {
             notify("session/cancel", params: ["sessionId": sessionID])
         }
+        promptID = nil
+        turnInFlight = false
+        // Held messages go with the turn they were queued behind. Sending them
+        // now would answer, on a cancelled run, questions nobody is waiting for.
+        held.removeAll()
         DispatchQueue.main.async { self.session.isRunning = false }
     }
 
@@ -435,7 +495,20 @@ final class ACPAdapter: AgentAdapter {
             }
             let message = error["message"] as? String
                 ?? "\(agent.displayName) returned an error."
-            DispatchQueue.main.async { self.session.isRunning = false }
+            // An error ends the turn as firmly as a result does. Without this,
+            // one refused prompt leaves `turnInFlight` set and every later
+            // message is held for a turn that can never end — the session goes
+            // mute permanently rather than once, which is strictly worse than
+            // the overlap the flag exists to prevent.
+            let wasOurs = id == promptID
+            if wasOurs { promptID = nil }
+            DispatchQueue.main.async {
+                self.session.isRunning = false
+                if wasOurs {
+                    self.turnInFlight = false
+                    self.flushHeld()
+                }
+            }
             emit(.notice(id: UUID(), text: message))
             return
         }
@@ -502,7 +575,16 @@ final class ACPAdapter: AgentAdapter {
             // filled with a guess. What the agent will tell us instead is
             // credits and context, which the probes below go and ask for.
             DispatchQueue.main.async { self.deltas.flush() }
-            DispatchQueue.main.async { self.session.endTurn() }
+            DispatchQueue.main.async {
+                // On the main queue, so every touch of `turnInFlight` and
+                // `held` happens there and neither needs a lock — the same
+                // arrangement the Claude adapter uses, for the same reason.
+                self.turnInFlight = false
+                self.session.endTurn()
+                // After `endTurn`, so anything held goes out against a session
+                // already marked idle.
+                self.flushHeld()
+            }
             ask(.usage)
         }
     }
@@ -625,9 +707,16 @@ final class ACPAdapter: AgentAdapter {
     private func ready(_ id: String) {
         sessionID = id
         setModel(in: id)
-        let pending = queued
+        // One, and the rest wait for its turn to end. `send` already keeps this
+        // to a single entry; sending a whole queue at once is what this used to
+        // do, and it is the same overlap `turnInFlight` exists to prevent —
+        // two prompts in flight, one answer, emitted twice.
+        guard !queued.isEmpty else { return }
+        let next = queued.removeFirst()
+        held.insert(contentsOf: queued, at: 0)
         queued = []
-        for text in pending { prompt(text, in: id) }
+        turnInFlight = true
+        prompt(next, in: id)
     }
 
     // MARK: session/update

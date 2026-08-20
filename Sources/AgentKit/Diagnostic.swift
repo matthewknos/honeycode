@@ -1,0 +1,75 @@
+import Foundation
+
+/// A dying CLI's last words, as something a person can read.
+///
+/// When an agent process exits non-zero, whatever it wrote to stderr is the
+/// only account of why — so it has to be kept. What it must not do is arrive
+/// looking like the agent's answer, and before this it did exactly that. A Kimi
+/// delegate whose ACP session was closed mid-run printed a Node object dump:
+///
+///     Error handling request {
+///       method: 'session/prompt',
+///       id: 10,
+///       params: { prompt: [ [Object] ], sessionId: 'session_8fdb10e2…' },
+///       jsonrpc: '2.0'
+///     } {
+///       code: -32603,
+///       message: 'Internal error',
+///       data: { details: 'Session is closed' }
+///     }
+///
+/// Twelve lines went into the transcript verbatim and were then shown as the
+/// delegate's report, under its name, where its work should have been. Two
+/// facts were lost in that: that the agent had said nothing at all, and — buried
+/// in the middle of the dump — the four words that actually explain it.
+///
+/// Every agent CLI here is a Node program, so `util.inspect` is the format
+/// their crashes come in. That is what this reads: the quoted `message` and
+/// `details` fields, which are the two a JSON-RPC error puts the sentence in.
+/// Anything it doesn't recognise falls back to the first line, which is where
+/// a program that isn't doing this puts its complaint.
+enum Diagnostic {
+
+    /// Deliberately lossy, and only ever used beside a sentence naming the
+    /// process. This is the *gist* of a crash; the whole of it belongs in a log,
+    /// not in a conversation.
+    static func summarise(_ stderr: String) -> String {
+        let text = stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return "" }
+
+        // `message: 'Internal error'` and `details: 'Session is closed'` — in
+        // that order, because the first names the class of failure and the
+        // second says which one, and read together they are a sentence.
+        var found: [String] = []
+        for key in ["message", "details"] {
+            guard let value = field(key, in: text), !value.isEmpty,
+                  !found.contains(value) else { continue }
+            found.append(value)
+        }
+        if !found.isEmpty { return cap(found.joined(separator: " — ")) }
+
+        // Nothing recognisable. The first non-empty line is where a program
+        // that isn't dumping an object puts its complaint — and the last line
+        // of an object dump is `}`, which is why this isn't the last one.
+        let first = text.components(separatedBy: .newlines)
+            .first { !$0.trimmingCharacters(in: .whitespaces).isEmpty } ?? text
+        return cap(first.trimmingCharacters(in: .whitespaces))
+    }
+
+    /// `key: 'value'`, `key: "value"`, `"key": "value"` — the three spellings
+    /// that turn up between `util.inspect` and raw JSON.
+    private static func field(_ key: String, in text: String) -> String? {
+        let pattern = "[\"']?\(key)[\"']?\\s*:\\s*[\"']([^\"']*)[\"']"
+        guard let regex = try? NSRegularExpression(pattern: pattern),
+              let match = regex.firstMatch(in: text,
+                                           range: NSRange(text.startIndex..., in: text)),
+              let range = Range(match.range(at: 1), in: text) else { return nil }
+        return String(text[range]).trimmingCharacters(in: .whitespaces)
+    }
+
+    /// Long enough for a real error message, short enough that a crash can't
+    /// take over a transcript.
+    private static func cap(_ text: String, limit: Int = 200) -> String {
+        text.count > limit ? String(text.prefix(limit - 1)) + "…" : text
+    }
+}

@@ -168,6 +168,15 @@ private struct RowChrome: View {
                 .truncationMode(.tail)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
+            // What it changed, beside what it says. A delegate that wrote
+            // nothing and one that wrote nine both used to read "done".
+            if let files = member.files, !member.state.isLive {
+                Text(files == 0 ? "no files" : "\(files) file\(files == 1 ? "" : "s")")
+                    .font(Theme.monoSmall)
+                    .foregroundStyle(files == 0 ? AnyShapeStyle(Color.red.opacity(0.8))
+                                                : AnyShapeStyle(.tertiary))
+            }
+
             Text(badge)
                 .font(Theme.label)
                 .foregroundStyle(badgeTint)
@@ -198,6 +207,13 @@ private struct RowChrome: View {
         case .working, .answering: return false
         default: return true
         }
+    }
+}
+
+extension CrewRun.State {
+    /// Still going, so "what it changed" is not yet a finished number.
+    var isLive: Bool {
+        self == .working || self == .answering || self == .waiting
     }
 }
 

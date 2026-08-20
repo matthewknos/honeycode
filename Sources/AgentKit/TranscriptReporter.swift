@@ -157,6 +157,13 @@ final class TranscriptReporter: CrewReporter {
     /// stops mirroring it, because a delegate's last streamed delta and its
     /// completion can share a tick. `working` closes it a moment later with a
     /// final read, which is the one that catches that delta.
+    /// Shown on the row rather than said in a notice. "6 files" beside an
+    /// agent is a fact you read in passing; a line of prose about it is one
+    /// more thing between you and the conversation.
+    func worked(_ seat: Seat, files: Int) {
+        host?.crewRun?.worked(seat, files: files)
+    }
+
     func landed(_ seat: Seat) {
         answering.remove(seat)
         host?.crewRun?.landed(seat)

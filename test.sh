@@ -76,6 +76,7 @@ kit Turns
 kit Messages
 kit Seats
 kit Fences
+kit Ledger
 
 # The sandbox suite drives a real WKWebView against a real local server, which
 # is the only way to learn anything about a content rule list: every interesting

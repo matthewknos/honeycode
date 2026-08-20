@@ -120,7 +120,20 @@ final class Crew {
     /// Questions started this run, across everyone. A per-agent budget bounds
     /// each conversation; this bounds the run.
     private var initiations = 0
-    private static let mailCap = 8
+    /// Pairs that have spoken at least once, either way round.
+    ///
+    /// The first thing one agent says to another is nearly always the one that
+    /// pays for itself — it is where a shared interface gets settled, which is
+    /// the whole reason the channel exists. Measured on the run this came from:
+    /// every one of `@kimi#3`'s three questions was an introduction, all three
+    /// landed something concrete ("scoring API is published in src/scoring",
+    /// "UI layer is ready for your togglePerf actions"), and it then spent the
+    /// rest of the run being told it was out of questions — four times, more
+    /// refusals than anyone else had allowance. A flat count cannot tell a
+    /// useful message from a chatty one, but it can tell a first one from a
+    /// fifth.
+    private var introduced: Set<Introduction> = []
+    private struct Introduction: Hashable { let from: Seat; let to: Seat }
     private var order: [Seat] = []
     private var lead: Seat?
     private var startedAt: Date?
@@ -142,6 +155,58 @@ final class Crew {
     /// Where each seat's transcript stood when its current turn began. See
     /// `deliver` — this is what makes `lastTurn` exact rather than inferred.
     private var marks: [Seat: Int] = [:]
+    /// And where it stood when the seat was given its piece.
+    ///
+    /// `marks` moves with every turn, including the ones spent answering
+    /// somebody's question. This one doesn't, so "what has this agent done
+    /// since it was handed the job" has an answer at assembly. See `evidence`.
+    private var launchMark: [Seat: Int] = [:]
+    /// What each delegate actually did, as against what it said it did.
+    private var evidence: [Seat: Work] = [:]
+
+    /// The record of a delegate's turn that isn't its own account of it.
+    ///
+    /// A crew used to report entirely on claims: `report` handed the lead each
+    /// delegate's prose, so an agent that wrote sixteen hundred lines and one
+    /// that wrote nothing produced the same *kind* of evidence — a paragraph.
+    /// In the run this came from, `@kimi#2` was given the character and
+    /// animation system, said "I'll start by reading the shared config and
+    /// types files", wrote no files at all, and the lead assembled around it
+    /// and never mentioned the subsystem again. A quarter of its own plan did
+    /// not exist and nothing in the run could tell it.
+    ///
+    /// Taken from the delegate's own transcript rather than from `git`, which
+    /// is the obvious idea and the wrong one: every on-tenant delegate works in
+    /// the *same directory*, so `git status` can say what changed and never who
+    /// changed it. A session's own `.diff` items are attribution by
+    /// construction. What that misses is a file written by shell redirection,
+    /// which is why a bare tool count is kept too — "ran commands, recorded no
+    /// edits" is a different thing to report than "did nothing at all", and
+    /// only the second is worth a warning.
+    struct Work {
+        var files: [String] = []
+        var tools = 0
+        /// Nothing was written and nothing was run. Not "did badly" — did not
+        /// happen — which is the only claim this is strong enough to make.
+        var isEmpty: Bool { files.isEmpty && tools == 0 }
+    }
+
+    /// Everything a session recorded doing since `mark`.
+    static func work(of session: Session, from mark: Int) -> Work {
+        var work = Work()
+        var seen: Set<String> = []
+        for item in session.items.dropFirst(max(0, mark)) {
+            switch item {
+            case .diff(_, _, let file, _, _):
+                if seen.insert(file).inserted { work.files.append(file) }
+            case .tool, .search:
+                work.tools += 1
+            default:
+                continue
+            }
+        }
+        return work
+    }
     /// What was last said out loud about each seat's model, and therefore also
     /// which seats have been settled at all.
     ///
@@ -243,6 +308,9 @@ final class Crew {
             self.pieces = [:]
             self.mailbox = [:]
             self.initiations = 0
+            self.introduced = []
+            self.launchMark = [:]
+            self.evidence = [:]
             self.answering = []
             self.owes = [:]
             self.traffic = []
@@ -947,6 +1015,7 @@ final class Crew {
                 self.reporter.prose(reply)
                 self.finished(seat, reply: reply, leader: leader)
             }
+            launchMark[seat] = session.items.count
             deliver(instruction(assignment.task, from: leader, to: seat),
                     to: session, as: seat, shownAs: nil)
         }
@@ -966,6 +1035,20 @@ final class Crew {
         guard running.remove(seat) != nil else { return }
         expiry[seat]?.cancel()
         expiry[seat] = nil
+
+        // Said now rather than only at assembly. A delegate that produced
+        // nothing is the one thing the person would want to know while there
+        // is still time to do something about it — and the lead will otherwise
+        // be told, in prose, that the piece is in hand.
+        if let session = inFlight(seat) {
+            let did = Self.work(of: session, from: launchMark[seat] ?? 0)
+            evidence[seat] = did
+            if did.isEmpty {
+                reporter.problem("\(seat.mention) finished without writing or "
+                                 + "running anything — its piece has not been done")
+            }
+            reporter.worked(seat, files: did.files.count)
+        }
         if let reply, !reply.isEmpty { record(reply, from: seat) }
         // Routed before the wait is evaluated: a question puts its addressee
         // back to work, and assembly has to see that rather than the moment
@@ -1037,8 +1120,17 @@ final class Crew {
         guard let reply, let json = Self.split(reply, at: Self.messageFence).1 else { return }
         for message in Self.messages(json) {
             guard message.to != sender else { continue }
-            guard let why = refusal(for: message, from: sender, leader: leader) else {
-                postage[sender, default: Self.allowance] -= 1
+            let opening = Introduction(from: sender, to: message.to)
+            let first = !introduced.contains(opening)
+                && !introduced.contains(Introduction(from: message.to, to: sender))
+            guard let why = refusal(for: message, from: sender, leader: leader,
+                                    free: first) else {
+                introduced.insert(opening)
+                // A first word costs nothing. Everything after it comes out of
+                // the allowance, which is what stops two agents that find each
+                // other interesting from turning the run into a conversation
+                // with a job attached.
+                if !first { postage[sender, default: Self.allowance] -= 1 }
                 initiations += 1
                 post(message, from: sender, leader: leader, answering: false)
                 continue
@@ -1049,7 +1141,7 @@ final class Crew {
 
     /// Why this message can't be sent, or nil if it can.
     private func refusal(for message: CrewMessage, from sender: Seat,
-                         leader: Seat) -> String? {
+                         leader: Seat, free: Bool) -> String? {
         // The tenancy fence has no gate on this channel, and deliberately none.
         //
         // A confined delegate is confined so that this organisation's material
@@ -1065,13 +1157,31 @@ final class Crew {
         guard message.to == leader || order.contains(message.to) else {
             return "not on this job"
         }
-        guard postage[sender, default: Self.allowance] > 0 else {
-            return "out of questions for this run"
+        guard free || postage[sender, default: Self.allowance] > 0 else {
+            return "out of questions for this run — you have already spoken to "
+                 + "everyone on the job, and the first word to each was free"
         }
-        guard initiations < Self.mailCap else {
+        guard initiations < mailCap else {
             return "this run has used up its questions"
         }
         return nil
+    }
+
+    private var mailCap: Int { Self.mailCap(for: order.count) }
+
+    /// How many questions a run of this size may spend.
+    ///
+    /// Was a flat eight, which for a crew of four is two each — fewer than the
+    /// per-agent allowance, so the run cap bound first and the allowance was
+    /// decoration nobody could reach. It scales now, because a bigger crew has
+    /// more interfaces between its members and not fewer: five agents meeting
+    /// pairwise is ten places a contract can be got wrong, and the run that
+    /// prompted this spent its whole budget settling four of them.
+    ///
+    /// The lead counts, because it is on the other end of as many of these as
+    /// anyone.
+    static func mailCap(for delegates: Int) -> Int {
+        max(8, (delegates + 1) * allowance)
     }
 
     /// Send a message, or hold it until its addressee is free.
@@ -1230,13 +1340,23 @@ final class Crew {
 
         Their answer arrives as your next turn and you carry on from there — so \
         if you are blocked on it, do everything you can without it first, ask, \
-        and finish the rest when the answer comes back. You \
-        can ask \(Self.allowance) times in this run, so ask when the answer \
-        changes what you write and not otherwise. Answer anything they ask you \
-        briefly and from what you already know — don't take on their work.]
+        and finish the rest when the answer comes back. **Your first message to \
+        each of them is free**, and after that you have \(Self.allowance) \
+        between all of them — so introduce yourself to anyone whose work meets \
+        yours, say what you own and what you are giving them, and spend the \
+        rest only where an answer changes what you write. Answer anything they \
+        ask you briefly and from what you already know — don't take on their \
+        work.]
 
         """
         return out
+    }
+
+    /// `a`, `a and b`, `a, b and c`. Three delegates producing nothing is a
+    /// sentence somebody has to read, not a join.
+    private static func list(_ items: [String]) -> String {
+        guard items.count > 1 else { return items.first ?? "" }
+        return items.dropLast().joined(separator: ", ") + " and " + (items.last ?? "")
     }
 
     /// A task, as one line, for a roster entry.
@@ -1295,6 +1415,60 @@ final class Crew {
         return out
     }
 
+    /// What each delegate actually changed, and who changed nothing.
+    ///
+    /// Outside the nonce fence, deliberately and importantly. Everything inside
+    /// that fence is an agent's own words, quoted so the lead treats it as
+    /// material rather than instruction. This is not that: it is counted by
+    /// this app from what each session recorded doing, it is the one thing in
+    /// the report a delegate cannot write, and the whole point is that it may
+    /// disagree with the paragraph above it.
+    ///
+    /// The empty-handed get their own paragraph, in the same terms `refusals`
+    /// uses, because they are the same problem: work the lead is about to
+    /// describe as done that nobody has done. Reporting it softly is how a run
+    /// ends with a quarter of its plan missing and a summary that doesn't
+    /// mention it.
+    private func ledger() -> String {
+        let reported = order.compactMap { seat -> (Seat, Work)? in
+            evidence[seat].map { (seat, $0) }
+        }
+        guard !reported.isEmpty else { return "" }
+
+        var out = "\n\n[ai: what each of them actually changed on disk. This is "
+            + "counted from what their sessions recorded doing — it is not their "
+            + "own account of it, and where the two disagree this is the one that "
+            + "is measured:"
+        for (seat, work) in reported {
+            let files = work.files.isEmpty
+                ? (work.tools == 0 ? "no files, no commands"
+                                   : "no files, \(work.tools) command"
+                                     + (work.tools == 1 ? "" : "s"))
+                : "\(work.files.count) file" + (work.files.count == 1 ? "" : "s")
+                  + ": " + work.files.map { URL(fileURLWithPath: $0).lastPathComponent }
+                      .prefix(8).joined(separator: ", ")
+                  + (work.files.count > 8 ? ", …" : "")
+            out += "\n- \(seat.mention) — \(files)"
+        }
+        out += "]"
+
+        let empty = reported.filter { $0.1.isEmpty }.map(\.0)
+        guard !empty.isEmpty else { return out }
+
+        let one = empty.count == 1
+        out += "\n\n[ai: **" + Self.list(empty.map(\.mention))
+            + " wrote nothing and ran nothing.**"
+            + " Whatever \(one ? "it" : "they") said above, "
+            + "\(one ? "that piece of" : "those pieces of") the plan "
+            + "has not been done and nobody is working on "
+            + "\(one ? "it" : "them") now. Do "
+            + "\(one ? "it" : "them") yourself as part of assembling, "
+            + "or say plainly to the person that "
+            + "\(one ? "it is" : "they are") outstanding. Do not "
+            + "describe \(one ? "it" : "them") as done, in hand, or in progress.]"
+        return out
+    }
+
     private func report() -> String {
         let tag = Handoff.mark()
         var out = """
@@ -1310,6 +1484,7 @@ final class Crew {
         }
         out += "\n--- end [\(tag)] ---"
         out += conversation(tag)
+        out += ledger()
 
         if !held.isEmpty {
             out += "\n\n[ai: these pieces were not sent. Each would have carried "

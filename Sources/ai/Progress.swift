@@ -18,6 +18,8 @@ final class Progress {
         let seat: Seat
         var state: String
         var done = false
+        /// What it actually changed, once it has landed. `nil` while working.
+        var files: Int?
     }
 
     private var rows: [Row] = []
@@ -61,10 +63,19 @@ final class Progress {
         drawn = 0
     }
 
+    func worked(_ seat: Seat, files: Int) {
+        guard let index = rows.firstIndex(where: { $0.seat == seat }) else { return }
+        rows[index].files = files
+    }
+
     func finish(_ seat: Seat) {
         guard let index = rows.firstIndex(where: { $0.seat == seat }) else { return }
         rows[index].done = true
-        rows[index].state = "done"
+        // What it changed, not merely that it stopped. A delegate that wrote
+        // nothing and one that wrote nine files both used to read "done".
+        rows[index].state = rows[index].files.map {
+            $0 == 0 ? "done · no files written" : "done · \($0) file\($0 == 1 ? "" : "s")"
+        } ?? "done"
     }
 
     func end() {

@@ -96,6 +96,10 @@ final class ConsoleReporter: CrewReporter {
         Console.line("  " + heads + " " + Console.dim(String(flat.prefix(90))))
     }
 
+    func worked(_ seat: Seat, files: Int) {
+        progress.worked(seat, files: files)
+    }
+
     func landed(_ seat: Seat) {
         progress.finish(seat)
     }

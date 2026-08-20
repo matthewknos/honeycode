@@ -41,12 +41,15 @@ final class CrewRun: ObservableObject {
         /// The conversation it is working in, for live activity and spend.
         /// Absent for a piece that never left.
         var session: Session?
+        /// How many files it actually changed, once it has landed. `nil` while
+        /// it is still going. Zero is the number worth seeing — see `Crew.Work`.
+        var files: Int?
 
         var id: Seat { seat }
 
         static func == (a: Member, b: Member) -> Bool {
             a.seat == b.seat && a.model == b.model && a.piece == b.piece
-                && a.state == b.state && a.session === b.session
+                && a.state == b.state && a.session === b.session && a.files == b.files
         }
     }
 
@@ -127,6 +130,10 @@ final class CrewRun: ObservableObject {
     /// session knows the title that resolved to.
     func resolved(_ seat: Seat, model: String) {
         update(seat) { if $0.model.isEmpty || $0.model != model { $0.model = model } }
+    }
+
+    func worked(_ seat: Seat, files: Int) {
+        update(seat) { $0.files = files }
     }
 
     func landed(_ seat: Seat) {

@@ -108,6 +108,13 @@ protocol CrewReporter: AnyObject {
     /// black box that occasionally costs four times what you expected.
     func message(from: Seat, to: Seat, _ text: String, answering: Bool)
 
+    /// How many files a delegate actually changed, once it has landed.
+    ///
+    /// Separate from its report, and deliberately not derived from it: this is
+    /// counted from what the session recorded doing, and the whole point is
+    /// that it can disagree with what the agent says. See `Crew.Work`.
+    func worked(_ seat: Seat, files: Int)
+
     /// One delegate has landed. Separate from `working` because the two answer
     /// different questions: this one is "mark it finished", that one is "here
     /// is the current set".

@@ -163,6 +163,21 @@ final class Crew {
     private var launchMark: [Seat: Int] = [:]
     /// What each delegate actually did, as against what it said it did.
     private var evidence: [Seat: Work] = [:]
+    /// The piece each seat was handed, kept so one can be handed out again.
+    private var given: [Seat: CrewAssignment] = [:]
+    /// Pieces already re-issued once, and where each went.
+    ///
+    /// Once, strictly. An agent that produced nothing twice is telling you
+    /// something about the job or the account, not having bad luck, and a loop
+    /// that keeps paying to find that out is a loop that spends your money on
+    /// its own optimism.
+    private var reissued: Set<Seat> = []
+    private var secondAttempt: [Seat: Seat] = [:]
+    private var reissues = 0
+    /// A ceiling on the whole run as well as on each piece. Four delegates
+    /// failing at once is a subscription being down, and the right response to
+    /// that is to stop and say so rather than to buy four more of it.
+    private static let reissueCap = 2
 
     /// The record of a delegate's turn that isn't its own account of it.
     ///
@@ -311,6 +326,10 @@ final class Crew {
             self.introduced = []
             self.launchMark = [:]
             self.evidence = [:]
+            self.given = [:]
+            self.reissued = []
+            self.secondAttempt = [:]
+            self.reissues = 0
             self.answering = []
             self.owes = [:]
             self.traffic = []
@@ -981,7 +1000,6 @@ final class Crew {
             sending.append((assignment: assignment, session: session))
         }
 
-        running = Set(sending.map(\.assignment.to))
         replies = [:]
 
         // Everything was refused. There is still work to do and somebody to do
@@ -995,32 +1013,45 @@ final class Crew {
         }
 
         for (assignment, session) in sending {
-            let seat = assignment.to
-
-            // `endTurn` is the only thing that calls `onTurnComplete`, and a CLI
-            // that dies mid-turn never reaches it — the same contract `quietly`
-            // documents. Without this, one dead delegate means `running` never
-            // empties, assembly never fires, and the prompt never comes back.
-            // The Zscaler failure mode lands exactly here: a Node CLI whose TLS
-            // fails is silent rather than loud.
-            silence[seat] = (seen: Self.progress(of: session, from: marks[seat] ?? 0),
-                             seconds: 0)
-            watch(seat, session: session, leader: leader)
-
-            session.onTurnComplete = { [weak self] done in
-                guard let self else { return }
-                self.reporter.landed(seat)
-                self.reporter.speaker(seat, note: "done")
-                let reply = Self.lastTurn(of: done, from: self.marks[seat] ?? 0)
-                self.reporter.prose(reply)
-                self.finished(seat, reply: reply, leader: leader)
-            }
-            launchMark[seat] = session.items.count
-            deliver(instruction(assignment.task, from: leader, to: seat),
-                    to: session, as: seat, shownAs: nil)
+            hand(assignment, to: session, for: leader)
         }
 
         reporter.working(sending.map { (seat: $0.assignment.to, session: $0.session) })
+    }
+
+    /// Give one delegate one piece and start watching for it.
+    ///
+    /// Split out of `launch` so a re-issued piece goes out through exactly the
+    /// same path — the watchdog, the completion handler and the mark are the
+    /// parts a second copy would get subtly wrong, and a retry that isn't
+    /// watched is a retry that can wedge the run it was meant to rescue.
+    private func hand(_ assignment: CrewAssignment, to session: Session,
+                      for leader: Seat, retrying original: Seat? = nil) {
+        let seat = assignment.to
+        given[seat] = assignment
+        running.insert(seat)
+
+        // `endTurn` is the only thing that calls `onTurnComplete`, and a CLI
+        // that dies mid-turn never reaches it — the same contract `quietly`
+        // documents. Without this, one dead delegate means `running` never
+        // empties, assembly never fires, and the prompt never comes back.
+        // The Zscaler failure mode lands exactly here: a Node CLI whose TLS
+        // fails is silent rather than loud.
+        silence[seat] = (seen: Self.progress(of: session, from: marks[seat] ?? 0),
+                         seconds: 0)
+        watch(seat, session: session, leader: leader)
+
+        session.onTurnComplete = { [weak self] done in
+            guard let self else { return }
+            self.reporter.landed(seat)
+            self.reporter.speaker(seat, note: "done")
+            let reply = Self.lastTurn(of: done, from: self.marks[seat] ?? 0)
+            self.reporter.prose(reply)
+            self.finished(seat, reply: reply, leader: leader)
+        }
+        launchMark[seat] = session.items.count
+        deliver(instruction(assignment.task, from: leader, to: seat, retrying: original),
+                to: session, as: seat, shownAs: nil)
     }
 
     /// How long a delegate gets. Generous: the pieces of a real job run for
@@ -1048,6 +1079,11 @@ final class Crew {
                                  + "running anything — its piece has not been done")
             }
             reporter.worked(seat, files: did.files.count)
+            // Before `proceed`, which is what decides whether the run is over:
+            // a re-issued piece puts a seat back into `running`, and assembly
+            // has to wait for it rather than closing around the hole it was
+            // sent to fill.
+            if did.isEmpty { reissue(seat, for: leader) }
         }
         if let reply, !reply.isEmpty { record(reply, from: seat) }
         // Routed before the wait is evaluated: a question puts its addressee
@@ -1057,6 +1093,83 @@ final class Crew {
         // Anything that arrived for this agent while it was working goes now.
         drain(seat, leader: leader)
         proceed(leader)
+    }
+
+    /// Hand an empty-handed delegate's piece out one more time.
+    ///
+    /// The narrow case, deliberately. This fires only when a delegate wrote no
+    /// files *and* ran no commands — not when it did badly, not when its report
+    /// is thin, only when nothing happened — because that is the one outcome
+    /// this code can be certain about without reading anyone's work. Anything
+    /// broader is a machine spending your subscriptions on its own opinion of
+    /// quality.
+    ///
+    /// Preferring a fresh instance over the same conversation matters: the
+    /// first attempt ended without doing anything, and whatever state its CLI
+    /// is in is the state that produced that. A new seat is a new process. When
+    /// the account is already at `Seat.limit` there is no room for one, and the
+    /// original is asked again rather than the piece being dropped.
+    private func reissue(_ seat: Seat, for leader: Seat) {
+        guard let assignment = given[seat] else { return }
+        guard !reissued.contains(seat) else { return }
+        guard reissues < Self.reissueCap else {
+            reporter.problem("\(seat.mention)'s piece came back empty too, and this "
+                             + "run has already re-issued \(Self.reissueCap) — that "
+                             + "many at once is the agent or the account rather than "
+                             + "the task, so it goes back to "
+                             + "\(leader.mention) instead")
+            return
+        }
+        reissued.insert(seat)
+        reissues += 1
+
+        let target = freeSeat(on: seat.account) ?? seat
+        // A fresh seat joins the crew properly or it is invisible to the
+        // roster, the channel and the report — the same four things `enlist`
+        // exists to keep true.
+        if target != seat, !order.contains(target) {
+            order.append(target)
+            if Tenancy.inspects(leader.account, to: target.account) {
+                offTenant.insert(target)
+            }
+        }
+        pieces[target] = Self.gist(assignment.task)
+        secondAttempt[target] = seat
+
+        let again = CrewAssignment(to: target, task: assignment.task,
+                                   model: assignment.model, effort: assignment.effort)
+        if again.model != nil || again.effort != nil || announced[target] == nil {
+            apply(AgentMention.Pick(seat: target, model: again.model, effort: again.effort))
+        }
+
+        guard let session = delegate(for: target) else {
+            reporter.problem("couldn't give \(target.mention) a working directory — "
+                             + "\(seat.mention)'s piece stays undone")
+            return
+        }
+        reporter.status(target == seat
+            ? "\(seat.mention) produced nothing — asking it again, once"
+            : "\(seat.mention) produced nothing — handing its piece to "
+              + "\(target.mention), once")
+        hand(again, to: session, for: leader, retrying: seat)
+        reporter.working(running.compactMap { seat in
+            inFlight(seat).map { (seat: seat, session: $0) }
+        })
+    }
+
+    private func freeSeat(on account: Account) -> Seat? {
+        Self.spareSeat(on: account, taken: Set(order + [lead].compactMap { $0 }))
+    }
+
+    /// The lowest unused instance on an account, if it has one to spare.
+    ///
+    /// The lead counts as taken: it is a conversation on that account and
+    /// handing its seat to a delegate would put two jobs in one transcript.
+    /// Lowest rather than next-highest so a crew that has lost `#2` reuses that
+    /// number instead of climbing to `#5` and running out of room it still has.
+    static func spareSeat(on account: Account, taken: Set<Seat>) -> Seat? {
+        let used = Set(taken.filter { $0.account == account }.map(\.index))
+        return (1...Seat.limit).first { !used.contains($0) }.map { Seat(account, $0) }
     }
 
     /// Whether the run is done, and what to do about it.
@@ -1276,10 +1389,24 @@ final class Crew {
     /// project. Telling it that plainly is not politeness — an agent that finds
     /// nothing where it expected a repository spends its turn hunting for the
     /// repository and reports back that the files are missing.
-    private func instruction(_ task: String, from leader: Seat, to delegate: Seat) -> String {
+    private func instruction(_ task: String, from leader: Seat, to delegate: Seat,
+                             retrying original: Seat? = nil) -> String {
+        // Said first, and plainly. An agent handed a task it has no idea was
+        // already tried has every reason to do exactly what was done before —
+        // and what was done before produced nothing at all.
+        let again = original == nil ? "" : """
+            [ai: this piece was given to another agent first and came back with \
+            nothing written and nothing run — no files were created or changed. \
+            You are the second and last attempt at it. Start by checking what is \
+            already on disk so you don't redo work that exists, then write the \
+            files the task names. If something about the task makes it \
+            impossible, say so plainly rather than reporting progress.]
+
+
+            """
         guard !offTenant.contains(delegate) else {
             return """
-            [honeycode: \(leader.mention) is leading this job and \
+            \(again)[honeycode: \(leader.mention) is leading this job and \
             has given you one piece of it. \(Tenancy.confinement) When you're \
             done, say briefly what you produced.]
 
@@ -1296,7 +1423,7 @@ final class Crew {
               + "another turn of yours, and its files are not yours to change."
             : ""
         return """
-        [ai: \(leader.mention) is leading this job and has given you \
+        \(again)[ai: \(leader.mention) is leading this job and has given you \
         one piece of it. Other agents are working in the same directory at the \
         same time on different files — do the piece described and nothing \
         beside it, and do not tidy, rename or rewrite files you weren't asked \
@@ -1448,11 +1575,23 @@ final class Crew {
                   + ": " + work.files.map { URL(fileURLWithPath: $0).lastPathComponent }
                       .prefix(8).joined(separator: ", ")
                   + (work.files.count > 8 ? ", …" : "")
-            out += "\n- \(seat.mention) — \(files)"
+            let because = secondAttempt[seat].map {
+                $0 == seat ? " (second attempt)"
+                           : " (second attempt at \($0.mention)'s piece)"
+            } ?? ""
+            out += "\n- \(seat.mention) — \(files)\(because)"
         }
         out += "]"
 
-        let empty = reported.filter { $0.1.isEmpty }.map(\.0)
+        // A piece that came back empty and was then done by somebody else is
+        // not outstanding, so it doesn't belong in the paragraph that says so.
+        // Getting this wrong in the safe direction would have the lead redo
+        // work that exists, which is the failure this whole ledger is for,
+        // pointing the other way.
+        let rescued = Set(secondAttempt.compactMap { second, original in
+            evidence[second]?.isEmpty == false ? original : nil
+        })
+        let empty = reported.filter { $0.1.isEmpty && !rescued.contains($0.0) }.map(\.0)
         guard !empty.isEmpty else { return out }
 
         let one = empty.count == 1

@@ -109,6 +109,13 @@ final class CrewRun: ObservableObject {
     /// landed — including the case where the set is empty, which is how a run
     /// ends.
     func working(_ active: [(seat: Seat, session: Session)], answering: Set<Seat>) {
+        // A delegate the plan never mentioned — a piece re-issued to a fresh
+        // instance after the first came back empty. It joins the panel the same
+        // way it joins everything else: by turning up in the working set.
+        for live in active where !members.contains(where: { $0.seat == live.seat }) {
+            members.append(Member(seat: live.seat, model: live.session.model.title,
+                                  piece: "", state: .working, session: live.session))
+        }
         let now = Set(active.map(\.seat))
         for index in members.indices {
             let seat = members[index].seat

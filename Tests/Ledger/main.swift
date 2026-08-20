@@ -83,5 +83,30 @@ check("it scales with the crew, counting the lead",
 check("it never shrinks as the crew grows",
       (0...8).allSatisfy { cap($0) <= cap($0 + 1) })
 
+// --- where a re-issued piece goes ---
+//
+// A delegate that produced nothing gets its piece handed out once more, and
+// preferably to a fresh instance: the first attempt ended without doing
+// anything, and whatever state its CLI is in is the state that produced that.
+// A new seat is a new process. When there is no room the original is asked
+// again, which is better than dropping the piece.
+func spare(_ taken: [Seat]) -> Seat? {
+    MainActor.assumeIsolated { Crew.spareSeat(on: .kimi, taken: Set(taken)) }
+}
+check("a fresh instance is found beside the ones running",
+      spare([Seat(.kimi), Seat(.kimi, 2)]) == Seat(.kimi, 3))
+check("a gap is reused rather than climbed past",
+      spare([Seat(.kimi), Seat(.kimi, 3)]) == Seat(.kimi, 2))
+check("a full account has none to spare",
+      spare((1...Seat.limit).map { Seat(.kimi, $0) }) == nil)
+check("another subscription's seats are not this one's",
+      spare([Seat(.copilot), Seat(.copilot, 2), Seat(.work)]) == Seat(.kimi))
+check("the lead's own seat counts as taken",
+      MainActor.assumeIsolated {
+          Crew.spareSeat(on: .personal, taken: [Seat(.personal)])
+      } == Seat(.personal, 2))
+check("nothing running means the first instance",
+      spare([]) == Seat(.kimi))
+
 print(failures == 0 ? "\nall passed" : "\n\(failures) failed")
 exit(failures == 0 ? 0 : 1)

@@ -343,10 +343,15 @@ changes from upstream.
 
 ## A note on the bundle identifier
 
-It's `com.matthewquigley.honeycode`, and that string is load-bearing in three
-places: the preference domain shared by the app and `ai`, the code-signing
-requirement, and the Application Support folder name. Changing it orphans every
-saved session and preference on a machine that has already run the app.
+It's `com.matthewquigley.honeycode`, and it is load-bearing in three places: the
+preference domain shared by the app and `ai`, the Keychain service holding
+custom-account API keys, and the code-signing requirement.
+
+Saved sessions and artifacts are **not** among them — those live under
+`~/Library/Application Support/Honeycode/`, which is named literally and doesn't
+move. So changing the identifier costs an already-used machine its preferences
+and its stored API keys, plus one more round of Documents/Desktop prompts. A
+machine that has never run it pays nothing at all.
 
 If you fork this properly and want your own identifier, change every one of
 these together, before anyone on your team has run it rather than after:

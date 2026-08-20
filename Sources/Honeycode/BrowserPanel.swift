@@ -14,6 +14,7 @@ struct BrowserPanel: View {
     @StateObject private var web = WebController()
     @StateObject private var watch = FileWatch()
     @State private var address = ""
+    @State private var showingBlocked = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -99,6 +100,8 @@ struct BrowserPanel: View {
                 .background(Theme.well, in: Capsule())
                 .onSubmit(go)
 
+            if !web.blocked.isEmpty { blockedBadge }
+
             ZoomControl(zoom: $session.browserZoom)
                 .disabled(!loaded)
 
@@ -119,17 +122,7 @@ struct BrowserPanel: View {
                 }
             }
             navButton("folder", "Open a file…", enabled: true) { pick() }
-            navButton("safari", "Open in browser", enabled: loaded) {
-                // Out as a real file, so the browser renders it unsandboxed —
-                // which is the reason to ask for it.
-                if let file = session.browserFile {
-                    NSWorkspace.shared.open(file)
-                } else if let artifact = session.browserHTML, let file = artifact.write() {
-                    NSWorkspace.shared.open(file)
-                } else if let url = session.browserURL {
-                    NSWorkspace.shared.open(url)
-                }
-            }
+            navButton("safari", "Open in browser", enabled: loaded) { openExternally() }
             // Only in full width. Beside the transcript there's already a
             // composer six inches to the left.
             if session.browserFull {
@@ -164,6 +157,102 @@ struct BrowserPanel: View {
         .padding(.horizontal, Theme.s5)
         .padding(.vertical, Theme.s4)
         .padding(.top, Chrome.trafficLightClearance - Theme.s6)
+    }
+
+    /// Out as a real file, so the browser renders it unsandboxed — which is the
+    /// reason to ask for it.
+    private func openExternally() {
+        if let file = session.browserFile {
+            NSWorkspace.shared.open(file)
+        } else if let artifact = session.browserHTML, let file = artifact.write() {
+            NSWorkspace.shared.open(file)
+        } else if let url = session.browserURL {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
+    // MARK: What didn't load
+
+    /// The count of hosts the sandbox refused, and only when there are any.
+    ///
+    /// A permanent indicator saying "0 blocked" would be one more thing in a
+    /// toolbar that already has nine, and it would be telling you nothing on
+    /// almost every page you ever open. This appears when it has something to
+    /// say, which is also the only moment anyone would look for it.
+    private var blockedBadge: some View {
+        Button { showingBlocked.toggle() } label: {
+            HStack(spacing: Theme.s1) {
+                Image(systemName: "shield.slash")
+                    .font(.system(size: 10, weight: .medium))
+                Text("\(web.blocked.count)")
+                    .font(.system(size: 10.5, weight: .medium))
+                    .monospacedDigit()
+            }
+            .foregroundStyle(Color.diffDelText)
+            .padding(.horizontal, Theme.s3)
+            .frame(height: 22)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(HoverCapsule())
+        .help(web.blocked.count == 1
+              ? "One host blocked by the preview sandbox"
+              : "\(web.blocked.count) hosts blocked by the preview sandbox")
+        .popover(isPresented: $showingBlocked, arrowEdge: .bottom) { blockedDetail }
+        .transition(.opacity)
+    }
+
+    /// Which hosts, and what to do about it.
+    ///
+    /// Hosts rather than URLs, and the sentence before them matters more than
+    /// the list: the failure this explains looks like a broken page, not like a
+    /// refused request, so the first thing it has to do is say that the page is
+    /// probably fine and the sandbox stopped it.
+    private var blockedDetail: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            PopoverHeader("Blocked by the preview sandbox", top: Theme.s5)
+            Text("This page asked other servers for parts of itself. The preview "
+                 + "only reaches this machine, so those requests never left — "
+                 + "which is usually what a blank or half-drawn page here means.")
+                .font(.system(size: 11.5))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, Theme.s5)
+                .padding(.bottom, Theme.s4)
+
+            Divider().overlay(Theme.rule)
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: Theme.s2) {
+                    ForEach(web.blocked, id: \.self) { host in
+                        Text(host)
+                            .font(Theme.monoSmall)
+                            .textSelection(.enabled)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, Theme.s5)
+                .padding(.vertical, Theme.s4)
+            }
+            .frame(maxHeight: 132)
+
+            Divider().overlay(Theme.rule)
+
+            VStack(alignment: .leading, spacing: Theme.s4) {
+                Text("Ask the agent to keep these files beside the page, or open it "
+                     + "in your browser, which has no sandbox.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.tertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button("Open in Browser") {
+                    showingBlocked = false
+                    openExternally()
+                }
+                .controlSize(.small)
+            }
+            .padding(.horizontal, Theme.s5)
+            .padding(.vertical, Theme.s4)
+        }
+        .frame(width: 300)
     }
 
     /// Whether there's anything in the panel at all — a page or a document.

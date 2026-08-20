@@ -144,6 +144,28 @@ struct WebPreview: NSViewRepresentable {
         case .html(let markup):
             view.loadHTMLString(markup, baseURL: nil)
         case .url(let url):
+            // The one refusal nothing reports.
+            //
+            // A blocked sub-resource announces itself and a blocked *document*
+            // does not: WebKit cancels the navigation before the delegate is
+            // consulted, so there is no policy callback, no notification and no
+            // failure — an external address typed into the panel simply leaves
+            // the previous page sitting there. Measured rather than assumed: a
+            // second navigation to an allowed URL reaches `decidePolicyFor`,
+            // one to a blocked host never does.
+            //
+            // The grant is right here and the check is a string comparison, so
+            // the answer is worked out up front instead. A tick later, because
+            // this runs inside `updateNSView` and publishing from within a view
+            // update is a bug of its own.
+            if let scheme = url.scheme?.lowercased(),
+               scheme == "http" || scheme == "https", !loopback.permits(url) {
+                let controller = controller
+                DispatchQueue.main.async {
+                    controller?.clearBlocked()
+                    controller?.noteBlocked(url)
+                }
+            }
             view.load(URLRequest(url: url))
         case .file(let url):
             // The folder, not the file, so a page can find the stylesheet and
@@ -250,10 +272,103 @@ struct WebPreview: NSViewRepresentable {
             case .none:           return "none"
             }
         }
+
+        /// Whether this URL was inside the grant.
+        ///
+        /// A second opinion, and only ever used to *suppress* a report — the
+        /// rule engine decides what loads and this decides what the toolbar is
+        /// allowed to complain about. Written out rather than inferred from the
+        /// regexes above because the two answer different questions: those have
+        /// to be exact about what gets through, this only has to be sure before
+        /// telling you something was refused.
+        func permits(_ url: URL) -> Bool {
+            if url.scheme?.lowercased() == "file" { return true }
+            guard let host = url.host?.lowercased(),
+                  ["localhost", "127.0.0.1", "::1", "[::1]"].contains(host) else { return false }
+            switch self {
+            case .all:
+                return true
+            case .port(let port):
+                // The port a canonical URL doesn't carry is the scheme's own,
+                // which is the case a dev server on 80 actually hits.
+                return (url.port ?? (url.scheme?.lowercased() == "https" ? 443 : 80)) == port
+            case .none:
+                return false
+            }
+        }
     }
+
+    /// The one thing the rule list says out loud, and why it says anything.
+    ///
+    /// A blocked sub-resource is silent. `WKNavigationDelegate` reports
+    /// navigations, and a stylesheet or a module import that never left isn't
+    /// one — so what you get is a page that paints its background colour and
+    /// stops. No error, no console, nothing in the toolbar. The only way to
+    /// find out why was to read this file.
+    ///
+    /// That is not a hypothetical: the same project hit it twice in an hour.
+    /// An agent wrote a page against a CDN, the panel went black, and a sandbox
+    /// working exactly as designed was indistinguishable from a dead server. So
+    /// the list carries a `notify` action beside the block, and the panel
+    /// counts what it hears.
+    ///
+    /// This loosens nothing. `notify` doesn't allow a request; it reports one
+    /// that was refused, after it was refused.
+    static let notification = "honeycode-blocked"
 
     static func installBlocklist(on view: WKWebView, loopback: Loopback,
                                  then finish: @escaping (_ sandboxed: Bool) -> Void) {
+        compile(loopback, announcing: true) { list, _ in
+            if let list {
+                view.configuration.userContentController.add(list)
+                finish(true)
+                return
+            }
+            // The counter is a convenience and the block is a boundary, and
+            // they are not allowed to fail together. If `notify` is ever
+            // rejected — a WebKit that doesn't know it, a syntax that moves —
+            // the same list without it is compiled instead, so the preview
+            // loses its counter rather than its sandbox.
+            NSLog("Honeycode: preview sandbox rules failed to compile with the "
+                  + "blocked-request counter; retrying without it.")
+            compile(loopback, announcing: false) { list, error in
+                guard let list else {
+                    // Fail closed, and closed means *nothing loads*.
+                    //
+                    // Disabling JavaScript was the previous answer and it does
+                    // take effect — `webView.configuration` hands back a copy,
+                    // but the copy shares the same `WKWebpagePreferences`
+                    // object, so the flag reaches the live view (checked, not
+                    // assumed: a page whose only script fired a beacon didn't
+                    // fire it). It just isn't sufficient. A page with no script
+                    // at all can still carry `<img src="https://…/?stolen">`,
+                    // and the markup was written by the agent that has already
+                    // read your files — so "no JavaScript" leaves the
+                    // exfiltration path it was meant to close. Without a rule
+                    // list there is no safe way to show agent-written markup,
+                    // so it isn't shown.
+                    view.configuration.defaultWebpagePreferences
+                        .allowsContentJavaScript = false
+                    NSLog("Honeycode: preview sandbox rules failed to compile (%@); "
+                          + "this preview will not load.",
+                          error?.localizedDescription ?? "no reason given")
+                    finish(false)
+                    return
+                }
+                view.configuration.userContentController.add(list)
+                finish(true)
+            }
+        }
+    }
+
+    /// Build the list and hand it to WebKit.
+    ///
+    /// `announcing` is the only axis, and it is a separate identifier rather
+    /// than a flag threaded through one: the store caches by identifier, and
+    /// two different rule sets under one name is how you end up debugging a
+    /// list you didn't write.
+    private static func compile(_ loopback: Loopback, announcing: Bool,
+                                then finish: @escaping (WKContentRuleList?, Error?) -> Void) {
         var allow: [String] = []
         switch loopback {
         case .all:
@@ -278,44 +393,38 @@ struct WebPreview: NSViewRepresentable {
         // widen.
         allow.append("^file://")
 
-        // Ordering matters: `ignore-previous-rules` has to come after the block
-        // or it cancels it, which would silently produce an unrestricted web
-        // view that looked identical from the outside.
-        let rules = "[\n"
-            + ([#"{"trigger":{"url-filter":".*"},"action":{"type":"block"}}"#]
-               + allow.map {
-                   #"{"trigger":{"url-filter":"\#($0)"},"action":{"type":"ignore-previous-rules"}}"#
-               }).joined(separator: ",\n")
-            + "\n]"
-
-        WKContentRuleListStore.default()?.compileContentRuleList(
-            forIdentifier: "honeycode-sandbox-2-\(loopback.identifier)",
-            encodedContentRuleList: rules
-        ) { list, error in
-            guard let list else {
-                // Fail closed, and closed means *nothing loads*.
-                //
-                // Disabling JavaScript was the previous answer and it does take
-                // effect — `webView.configuration` hands back a copy, but the
-                // copy shares the same `WKWebpagePreferences` object, so the
-                // flag reaches the live view (checked, not assumed: a page
-                // whose only script fired a beacon didn't fire it). It just
-                // isn't sufficient. A page with no script at all can still
-                // carry `<img src="https://…/?stolen">`, and the markup was
-                // written by the agent that has already read your files — so
-                // "no JavaScript" leaves the exfiltration path it was meant to
-                // close. Without a rule list there is no safe way to show
-                // agent-written markup, so it isn't shown.
-                view.configuration.defaultWebpagePreferences.allowsContentJavaScript = false
-                NSLog("Honeycode: preview sandbox rules failed to compile (%@); "
-                      + "this preview will not load.",
-                      error?.localizedDescription ?? "no reason given")
-                finish(false)
-                return
-            }
-            view.configuration.userContentController.add(list)
-            finish(true)
+        // Ordering matters twice over.
+        //
+        // `ignore-previous-rules` has to come after the block or it cancels it,
+        // which would silently produce an unrestricted web view that looked
+        // identical from the outside.
+        //
+        // And `notify` has to come *before* those same allowances, because that
+        // is what keeps the counter honest: an allowed request matches the
+        // notify rule too, and the `ignore-previous-rules` that lets it through
+        // discards the notification along with the block. Only a request that
+        // was actually refused survives to be reported. (The panel re-checks
+        // each reported URL against the grant anyway — see `Loopback.permits`.
+        // A counter that cried wolf about localhost would be worse than none.)
+        var entries: [String] = []
+        if announcing {
+            entries.append(#"{"trigger":{"url-filter":".*"},"action":{"type":"notify","notification":"\#(notification)"}}"#)
         }
+        entries.append(#"{"trigger":{"url-filter":".*"},"action":{"type":"block"}}"#)
+        entries += allow.map {
+            #"{"trigger":{"url-filter":"\#($0)"},"action":{"type":"ignore-previous-rules"}}"#
+        }
+        let rules = "[\n" + entries.joined(separator: ",\n") + "\n]"
+
+        guard let store = WKContentRuleListStore.default() else {
+            finish(nil, nil)
+            return
+        }
+        store.compileContentRuleList(
+            forIdentifier: "honeycode-sandbox-3-\(announcing ? "loud" : "quiet")"
+                + "-\(loopback.identifier)",
+            encodedContentRuleList: rules,
+            completionHandler: finish)
     }
 
     final class Coordinator: NSObject, WKNavigationDelegate {
@@ -335,20 +444,55 @@ struct WebPreview: NSViewRepresentable {
         func webView(_ webView: WKWebView,
                      decidePolicyFor action: WKNavigationAction) async
         -> WKNavigationActionPolicy {
+            guard let url = action.request.url else { return .allow }
+
             // The initial load is `.other`; anything the user clicked leaves.
-            guard action.navigationType == .linkActivated,
-                  let url = action.request.url else { return .allow }
-            // Only the web schemes leave. Handing an arbitrary URL to
-            // `NSWorkspace` means handing it to Launch Services, and the markup
-            // around the link was written by the agent: `<a
-            // href="file:///…/results.command">Click for results</a>` reads as
-            // a link and behaves as a double-click on an executable. Cancelled
-            // rather than opened, and cancelled rather than navigated — a
-            // preview that follows a link stops being a preview.
-            guard let scheme = url.scheme?.lowercased(),
-                  ["http", "https", "mailto"].contains(scheme) else { return .cancel }
-            NSWorkspace.shared.open(url)
-            return .cancel
+            if action.navigationType == .linkActivated {
+                // Only the web schemes leave. Handing an arbitrary URL to
+                // `NSWorkspace` means handing it to Launch Services, and the
+                // markup around the link was written by the agent: `<a
+                // href="file:///…/results.command">Click for results</a>` reads
+                // as a link and behaves as a double-click on an executable.
+                // Cancelled rather than opened, and cancelled rather than
+                // navigated — a preview that follows a link stops being a
+                // preview.
+                guard let scheme = url.scheme?.lowercased(),
+                      ["http", "https", "mailto"].contains(scheme) else { return .cancel }
+                NSWorkspace.shared.open(url)
+                return .cancel
+            }
+
+            // A new document is a new set of complaints.
+            //
+            // Everything that reaches this method is about to be handed to the
+            // rule list *and will get there* — a document the list is going to
+            // refuse never arrives here at all, which is why `load` checks that
+            // case for itself. So this only ever fires for a page that is
+            // genuinely starting, which is exactly when the old page's blocked
+            // hosts stop being true.
+            if action.targetFrame?.isMainFrame ?? false {
+                controller?.clearBlocked()
+            }
+            return .allow
+        }
+
+        /// A request the rule list refused, as WebKit reports it.
+        ///
+        /// SPI, and the reason for using it is that there is no public
+        /// equivalent: content-rule blocks are invisible to every delegate
+        /// method that ships in the SDK. What it costs if it ever goes away is
+        /// a toolbar badge — the selector stops being called, nothing else
+        /// changes, and no part of the sandbox depends on it. Verified against a
+        /// live web view rather than assumed: an `<img>` and a `fetch()` to a
+        /// blocked host both arrive here, and an allowed loopback request
+        /// doesn't.
+        @MainActor
+        @objc(_webView:URL:contentRuleListIdentifiers:notifications:)
+        func webView(_ webView: WKWebView, url: URL,
+                     contentRuleListIdentifiers: [String], notifications: [String]) {
+            guard notifications.contains(WebPreview.notification) else { return }
+            guard !loopback.permits(url) else { return }
+            controller?.noteBlocked(url)
         }
 
         func webView(_ webView: WKWebView, didStartProvisionalNavigation nav: WKNavigation!) {
@@ -516,6 +660,13 @@ final class WebController: ObservableObject {
     /// redirect, or a link you followed.
     @Published private(set) var currentURL: URL?
 
+    /// Hosts the preview sandbox refused, in the order they were first heard
+    /// of, cleared whenever a new document starts.
+    ///
+    /// Diagnostic only. Nothing reads this to decide what loads — see
+    /// `WebPreview.notification` for why it exists at all.
+    @Published private(set) var blocked: [String] = []
+
     private weak var view: WKWebView?
 
     func attach(_ view: WKWebView) { self.view = view }
@@ -525,6 +676,20 @@ final class WebController: ObservableObject {
         canGoForward = view.canGoForward
         isLoading = loading
         currentURL = view.url
+    }
+
+    /// By host rather than by URL. A page pulling a library, its stylesheet
+    /// and four fonts off one CDN has one problem and not six, and the fix is
+    /// the same for all of them — so the list stays the length of the answer
+    /// rather than the length of the page.
+    func noteBlocked(_ url: URL) {
+        guard let host = url.host, !blocked.contains(host) else { return }
+        blocked.append(host)
+    }
+
+    func clearBlocked() {
+        guard !blocked.isEmpty else { return }
+        blocked = []
     }
 
     func back() { view?.goBack() }

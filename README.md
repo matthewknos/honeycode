@@ -364,3 +364,18 @@ That is `Resources/Info.plist`, `Sources/AgentKit/Prefs.swift` (the preference
 domain), `Sources/AgentKit/CustomAccount.swift` (the Keychain service — miss this
 one and saved API keys become unreadable), `build.sh`, `tools/doctor.sh` and
 `tools/signing-identity.sh`. The two `DispatchQueue` labels are cosmetic.
+
+---
+
+## Licence
+
+None, deliberately — all rights reserved.
+
+This is an internal tool, shared privately with the team that uses it. If you
+have access to this repo you're meant to clone it, build it and use it; that
+access is the permission. It carries no open-source licence and isn't for
+redistribution outside the team.
+
+If that ever needs to change — going public, or an employer wanting clarity on
+who owns what — add a real licence at that point rather than assuming this note
+covers it.

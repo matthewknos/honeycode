@@ -158,6 +158,40 @@ endpoint would mean writing the agent loop here, which is a different program.
 
 ## Using it
 
+### The window
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│  sidebar   │  ● session · ~/proj · main   @chips  ⌸  ⋯  │  W  │
+│  Code      │                                            │  o  │
+│  Crew      │  transcript                                │  r  │
+│  Agents    │                                            │  k  │
+│  ────────  │                                            │  b  │
+│  sessions  │  ┌──────────────────────────────────────┐  │  e  │
+│            │  │ composer                             │  │  n  │
+│  identity  │  └──────────────────────────────────────┘  │  c  │
+│  settings  │                                            │  h  │
+└──────────────────────────────────────────────────────────────┘
+```
+
+Three modes in the sidebar. **Code** is conversations, one column each, up to
+three side by side. **Crew** is who is running right now across every session,
+what each subscription can do and what it has left, and your saved teams.
+**Agents** is the ones that run on their own.
+
+Every column carries a **header bar**: which conversation, which folder, which
+branch, whether it's fenced, what it's doing, who else is on the message and
+what it has spent.
+
+The **workbench** down the trailing edge has four tabs — **Preview** (a page, a
+dev server or a rendered artifact), **Changes** (every file this session edited,
+with diffs and the way to a pull request), **Files** (the working directory),
+and **Run** (the crew, live). One panel, one width, one close; a badge on the
+button counts the files edited so far.
+
+Who you're signed in to GitHub and Azure as sits at the foot of the sidebar,
+and switches from there.
+
 ### Mentions
 
 ```
@@ -172,8 +206,9 @@ its own. Up to four seats per account. This is how you get parallelism out of on
 subscription: three Kimis with three different pieces, not one Kimi with three
 tasks queued behind each other.
 
-In the app, the **team bar** above the composer builds the mention list for you,
-so you don't have to type any of this.
+In the app you don't type any of this. The **Team** control in each column's
+header bar builds the mention list for you — accounts, seats and models — and
+the composer's `@` button opens the same list for a file or an agent by hand.
 
 ### Picking a model, and how hard it thinks
 
@@ -213,8 +248,11 @@ transcript — you see the plan and the work, not the plumbing. A delegate that
 comes back empty-handed is noticed and its piece is handed out once more; a
 delegate that correctly reports "nothing to do, this was already built" is not.
 
-The **crew panel** above the composer shows every seat, what it's on, what it's
-touched and what the run has cost, live.
+The **Run** tab of the workbench shows every seat, what it's on, what it's
+touched and what the run has cost, live — and a banner above the composer says a
+run has started if you're looking elsewhere. The **Crew** page in the sidebar
+shows every run in the window at once, along with what each subscription can
+run and how much of it is left.
 
 ### The tenancy fence
 

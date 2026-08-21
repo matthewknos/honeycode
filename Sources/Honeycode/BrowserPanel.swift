@@ -11,6 +11,10 @@ import AppKit
 struct BrowserPanel: View {
     @ObservedObject var session: Session
     @ObservedObject var workspace: Workspace
+    /// Inside the workbench, which supplies the tab strip, the titlebar
+    /// clearance and the close button. Without this the panel drew its own
+    /// close directly under the workbench's own, one point apart.
+    var embedded = false
     @StateObject private var web = WebController()
     @StateObject private var watch = FileWatch()
     @State private var address = ""
@@ -147,16 +151,18 @@ struct BrowserPanel: View {
                     if !session.browserFull { session.miniChatVisible = false }
                 }
             }
-            navButton("xmark", "Close panel", enabled: true) {
-                withAnimation(Motion.panel) {
-                    session.browserVisible = false
-                    session.browserFull = false
+            if !embedded {
+                navButton("xmark", "Close panel", enabled: true) {
+                    withAnimation(Motion.panel) {
+                        session.browserVisible = false
+                        session.browserFull = false
+                    }
                 }
             }
         }
         .padding(.horizontal, Theme.s5)
         .padding(.vertical, Theme.s4)
-        .padding(.top, Chrome.trafficLightClearance - Theme.s6)
+        .padding(.top, embedded ? 0 : Chrome.trafficLightClearance - Theme.s6)
     }
 
     /// Out as a real file, so the browser renders it unsandboxed — which is the

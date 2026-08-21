@@ -173,7 +173,7 @@ private struct RowChrome: View {
             if let files = member.files, !member.state.isLive {
                 Text(files == 0 ? "no files" : "\(files) file\(files == 1 ? "" : "s")")
                     .font(Theme.monoSmall)
-                    .foregroundStyle(files == 0 ? AnyShapeStyle(Color.red.opacity(0.8))
+                    .foregroundStyle(files == 0 ? AnyShapeStyle(Theme.stateHeld)
                                                 : AnyShapeStyle(.tertiary))
             }
 
@@ -194,10 +194,18 @@ private struct RowChrome: View {
         }
     }
 
+    /// State, in the state palette — never in the account's own.
+    ///
+    /// "working" used to be drawn in the member's account tint, which put the
+    /// same orange on the dot (meaning *personal*) and on the word beside it
+    /// (meaning *in flight*), so a row said one thing twice and neither
+    /// unambiguously. See `Theme.stateLive`.
     private var badgeTint: AnyShapeStyle {
         switch member.state {
-        case .working, .answering: return AnyShapeStyle(member.seat.account.accent)
-        case .held, .gaveUp:       return AnyShapeStyle(Color.red.opacity(0.8))
+        case .working, .answering: return AnyShapeStyle(Theme.stateLive)
+        case .done:                return AnyShapeStyle(Theme.stateDone)
+        case .held:                return AnyShapeStyle(Theme.stateHeld)
+        case .gaveUp:              return AnyShapeStyle(Theme.stateBad)
         default:                   return AnyShapeStyle(.tertiary)
         }
     }

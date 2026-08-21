@@ -27,6 +27,15 @@ struct SessionSnapshot: Codable, Sendable {
     var tokensSent: Int?
     var contextUsed: Int?
     var contextWindow: Int?
+    /// When each turn began, keyed by the id of the message that started it.
+    ///
+    /// A side table rather than a field on `TranscriptItem`, and deliberately:
+    /// the item is a `Codable` enum with associated values, and widening one of
+    /// its cases would mean touching every construction and every pattern match
+    /// of that case across the app to record a fact only two of the ten cases
+    /// have any use for. Optional so transcripts written before this keep
+    /// decoding — they simply have no times, which is the truth about them.
+    var stamps: [UUID: Date]?
 }
 
 /// One JSON file per session, in Application Support.

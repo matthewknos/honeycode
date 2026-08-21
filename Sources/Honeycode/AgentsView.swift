@@ -216,9 +216,14 @@ struct AgentsPane: View {
             if let setup = store.setup, store.selection == nil {
                 AgentSetup(store: store, session: setup, workspace: workspace)
             } else if let run = openRun {
-                SessionView(session: run, workspace: workspace)
+                // The way back is in the run's own header bar now, beside
+                // everything else that acts on the pane. It used to be a button
+                // floated over the top-left corner of the transcript, because
+                // there was no bar to put it in and a pane you can only leave
+                // through a sidebar is a dead end when the sidebar is collapsed.
+                SessionView(session: run, workspace: workspace,
+                            onBack: { store.openRun = nil })
                     .id(run.id)
-                    .overlay(alignment: .topLeading) { backToAgent }
             } else if let agent = store.agent(store.selection) {
                 AgentDetail(agent: agent, store: store, workspace: workspace)
                     .id(agent.id)
@@ -231,26 +236,6 @@ struct AgentsPane: View {
     private var openRun: Session? {
         guard let id = store.openRun else { return nil }
         return workspace.sessions.first { $0.id == id }
-    }
-
-    /// The way out of a run. A pane you can only leave through the sidebar is a
-    /// dead end when the sidebar is collapsed.
-    private var backToAgent: some View {
-        Button { store.openRun = nil } label: {
-            HStack(spacing: Theme.s2) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 9, weight: .semibold))
-                Text(store.agent(store.selection)?.name ?? "Agent")
-                    .font(.system(size: 11.5, weight: .medium))
-            }
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, Theme.s4)
-            .padding(.vertical, Theme.s2)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(HoverCapsule())
-        .padding(.top, Chrome.trafficLightClearance - Theme.s5)
-        .padding(.leading, Theme.s5)
     }
 
     private var empty: some View {

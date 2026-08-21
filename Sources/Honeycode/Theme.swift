@@ -73,8 +73,14 @@ enum Theme {
     /// the floating pill sits the same distance from the window edge as the
     /// View menu does on the other side.
     static let railWidth: CGFloat = 60
-    static let cornerCard: CGFloat = 8
+    static let cornerCard: CGFloat = 10
     static let cornerField: CGFloat = 10
+
+    /// The header bar above every column.
+    static let headerHeight: CGFloat = 34
+    /// How narrow the workbench may be dragged. Below this its tab strip loses
+    /// its labels and its toolbars start wrapping.
+    static let workbenchMinWidth: CGFloat = 340
 
     // MARK: Surfaces
 
@@ -104,6 +110,51 @@ enum Theme {
     /// text over a photograph is unreadable at any blur setting. A block of
     /// code has to sit on something solid.
     static var codeGround: Color { Color(nsColor: .honeycodeCodeGround) }
+
+    // MARK: Elevation
+    //
+    // One shadow, at two depths, and nothing else. The app had grown four
+    // ad-hoc shadows — a segmented pill's 1pt, a popover's, a card's — which is
+    // how a window ends up with three different ideas of how far off the page
+    // anything is. A raised control uses `low`; a layer that floats over the
+    // document — the workbench, the pop-out, a floating card — uses `high`.
+
+    static let shadowLow = (colour: Color.black.opacity(0.10),
+                            radius: CGFloat(1.5), y: CGFloat(0.5))
+    static let shadowHigh = (colour: Color.black.opacity(0.16),
+                             radius: CGFloat(14), y: CGFloat(4))
+
+    // MARK: State
+    //
+    // Kept apart from the account tints below, and this separation is the whole
+    // point of both sets existing. An account colour answers *who*; a state
+    // colour answers *how it is going*. They were the same palette until now —
+    // a working delegate was drawn in its account's orange, a failed one in a
+    // raw `Color.red.opacity(0.8)` — so a run of four agents put four hues on
+    // screen that meant identity and a fifth that meant trouble, all at the
+    // same weight, and nothing said which kind of thing you were reading.
+    //
+    // Identity stays with the dot. State is always the *text*, in one of these
+    // four, so the meaning of a colour never depends on where it is.
+
+    /// In flight. Deliberately not any account's tint.
+    static var stateLive: Color { Color(nsColor: .honeycodeStateLive) }
+    /// Finished, and fine.
+    static var stateDone: Color { Color(nsColor: .honeycodeDiffAdd) }
+    /// Waiting, held back, or otherwise not going anywhere by itself.
+    static var stateHeld: Color { Color(nsColor: .honeycodeStateHeld) }
+    /// Failed, refused, gave up.
+    static var stateBad: Color { Color(nsColor: .honeycodeDiffDel) }
+}
+
+/// One elevation, applied the same way everywhere.
+struct Elevated: ViewModifier {
+    var high = false
+
+    func body(content: Content) -> some View {
+        let depth = high ? Theme.shadowHigh : Theme.shadowLow
+        return content.shadow(color: depth.colour, radius: depth.radius, y: depth.y)
+    }
 }
 
 /// One motion vocabulary.
@@ -177,15 +228,76 @@ extension NSColor {
             ? NSColor(srgbRed: 1.000, green: 0.451, blue: 0.420, alpha: 1)
             : NSColor(srgbRed: 0.706, green: 0.145, blue: 0.110, alpha: 1)
     }
+
+    /// In flight. A cool grey-blue rather than a hue any account owns — the one
+    /// state colour that had no home, because "working" was being drawn in the
+    /// working agent's own tint and so said nothing the dot wasn't already
+    /// saying.
+    static let honeycodeStateLive = NSColor(name: "honeycodeStateLive") { appearance in
+        appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            ? NSColor(srgbRed: 0.541, green: 0.639, blue: 0.741, alpha: 1)
+            : NSColor(srgbRed: 0.294, green: 0.373, blue: 0.475, alpha: 1)
+    }
+
+    /// Queued, held, waiting on something. Amber, and distinguishable from
+    /// `honeycodeAccountPersonal` by being noticeably duller — the difference
+    /// between "this is the personal account" and "this is stuck" can't rest on
+    /// hue alone when both are orange, so it rests on chroma.
+    static let honeycodeStateHeld = NSColor(name: "honeycodeStateHeld") { appearance in
+        appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            ? NSColor(srgbRed: 0.839, green: 0.678, blue: 0.373, alpha: 1)
+            : NSColor(srgbRed: 0.549, green: 0.404, blue: 0.078, alpha: 1)
+    }
+
+    // MARK: The four accounts
+    //
+    // Tuned pairs rather than `systemOrange` / `systemBlue` / `systemPurple` /
+    // `systemGreen`, which is what these were.
+    //
+    // The system hues are each tuned to be the *only* saturated colour in a
+    // window. Four of them at once, on dots six points across, don't sit in one
+    // palette: system green and system orange are far brighter than system
+    // purple at the same size, so a Copilot dot shouted and a Kimi dot
+    // whispered, and the difference read as importance rather than as identity.
+    // These four hold one chroma and one lightness across the set, so the only
+    // thing that varies between them is hue — which is the only thing that is
+    // supposed to mean anything.
+    //
+    // Light mode is the darker half of each pair: a 6pt dot and an 11pt tally
+    // both have to hold against a near-white ground.
+
+    static let honeycodeAccountPersonal = NSColor(name: "honeycodeAccountPersonal") { appearance in
+        appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            ? NSColor(srgbRed: 0.941, green: 0.659, blue: 0.271, alpha: 1)
+            : NSColor(srgbRed: 0.761, green: 0.439, blue: 0.039, alpha: 1)
+    }
+
+    static let honeycodeAccountWork = NSColor(name: "honeycodeAccountWork") { appearance in
+        appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            ? NSColor(srgbRed: 0.420, green: 0.651, blue: 0.961, alpha: 1)
+            : NSColor(srgbRed: 0.114, green: 0.388, blue: 0.780, alpha: 1)
+    }
+
+    static let honeycodeAccountKimi = NSColor(name: "honeycodeAccountKimi") { appearance in
+        appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            ? NSColor(srgbRed: 0.710, green: 0.541, blue: 0.949, alpha: 1)
+            : NSColor(srgbRed: 0.478, green: 0.267, blue: 0.788, alpha: 1)
+    }
+
+    static let honeycodeAccountCopilot = NSColor(name: "honeycodeAccountCopilot") { appearance in
+        appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            ? NSColor(srgbRed: 0.373, green: 0.796, blue: 0.557, alpha: 1)
+            : NSColor(srgbRed: 0.106, green: 0.478, blue: 0.294, alpha: 1)
+    }
 }
 
 /// Account and diff colours, all derived from the system palette so they track
 /// appearance changes and match the rest of macOS.
 extension Color {
-    static var accentPersonal: Color { Color(nsColor: .systemOrange) }
-    static var accentWork: Color { Color(nsColor: .systemBlue) }
-    static var accentKimi: Color { Color(nsColor: .systemPurple) }
-    static var accentCopilot: Color { Color(nsColor: .systemGreen) }
+    static var accentPersonal: Color { Color(nsColor: .honeycodeAccountPersonal) }
+    static var accentWork: Color { Color(nsColor: .honeycodeAccountWork) }
+    static var accentKimi: Color { Color(nsColor: .honeycodeAccountKimi) }
+    static var accentCopilot: Color { Color(nsColor: .honeycodeAccountCopilot) }
 
     /// Fills carry the signal; the text stays legible. Saturated full-row
     /// green and red turns a review surface into a Christmas tree and stops
@@ -213,6 +325,35 @@ extension Account {
         case .kimi:     return .accentKimi
         case .copilot:  return .accentCopilot
         case .custom:   return custom?.tint.colour ?? .secondary
+        }
+    }
+
+    /// The account a delegate label names, if any.
+    ///
+    /// An `.opinion` block carries a *label* rather than an account — either
+    /// "Enterprise · Opus" from `askOpinion` or "Kimi Code #2" from a mirrored
+    /// crew seat — because the two callers that build one had no reason to keep
+    /// the account around. Both spellings begin with `Account.title`, which is
+    /// enough to get the tint right, and getting it right is the difference
+    /// between four delegates in a transcript being four identifiable agents
+    /// and four identical accent-coloured boxes.
+    static func named(inLabel label: String) -> Account? {
+        allCases.first { label.hasPrefix($0.title) }
+    }
+
+    /// The same colour for AppKit, which the terminal renderer draws in.
+    ///
+    /// Was a second `switch` inside `TerminalTranscript` naming the four system
+    /// colours directly — so retuning the palette here would have left coding
+    /// mode on the old one, and the same account would have been two different
+    /// oranges depending on which renderer you were looking at.
+    var nsAccent: NSColor {
+        switch self {
+        case .personal: return .honeycodeAccountPersonal
+        case .work:     return .honeycodeAccountWork
+        case .kimi:     return .honeycodeAccountKimi
+        case .copilot:  return .honeycodeAccountCopilot
+        case .custom:   return custom?.tint.nsColour ?? .labelColor
         }
     }
 }

@@ -65,8 +65,7 @@ private struct AccountHeader: View {
             Spacer(minLength: 0)
 
             Button {
-                guard let url = chooseDirectory(for: account) else { return }
-                workspace.add(account: account, directory: url)
+                workspace.requestNewSession(account)
             } label: {
                 Image(systemName: "plus")
                     .font(.system(size: 9.5, weight: .semibold))
@@ -264,13 +263,8 @@ private struct SessionRow: View {
     }
 }
 
-/// Shared by the rail, the section headers, and ⌘N.
-func chooseDirectory(for account: Account) -> URL? {
-    let panel = NSOpenPanel()
-    panel.canChooseDirectories = true
-    panel.canChooseFiles = false
-    panel.allowsMultipleSelection = false
-    panel.prompt = "Add Session"
-    panel.message = "Choose a working directory for this \(account.title) session."
-    return panel.runModal() == .OK ? panel.url : nil
-}
+// The shared `chooseDirectory` file panel is gone. Every route to a new
+// session goes through `NewSessionSheet`, which offers the folders you have
+// actually worked in and keeps the file panel behind a Browse button — see
+// `Workspace.requestNewSession`. The panel itself now lives in that sheet,
+// which is the one place that still needs it.

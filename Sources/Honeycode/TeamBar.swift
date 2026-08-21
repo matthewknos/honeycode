@@ -21,6 +21,13 @@ struct TeamBar: View {
     /// The account this composer belongs to. It leads, so it is never a
     /// delegate — naming it would be asking the conversation to help itself.
     var leader: Account
+    /// In the header bar rather than on a row of its own.
+    ///
+    /// Drops the trailing spacer and the agent count. A row inside the composer
+    /// card had the width to spend on both; a cluster sharing a 34pt bar with
+    /// the usage readouts and two buttons does not, and "3 agents" is a fact
+    /// the three chips beside it already state.
+    var inline = false
 
     @State private var picking = false
     /// Loaded when the popover opens rather than observed. Teams change only
@@ -38,8 +45,10 @@ struct TeamBar: View {
                 chip(pick)
             }
             addButton
-            Spacer(minLength: 0)
-            if !session.team.isEmpty { cost }
+            if !inline {
+                Spacer(minLength: 0)
+                if !session.team.isEmpty { cost }
+            }
         }
     }
 

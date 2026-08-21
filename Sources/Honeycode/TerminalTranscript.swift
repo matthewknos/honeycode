@@ -520,16 +520,10 @@ struct TerminalTranscript: NSViewRepresentable {
             return attributes
         }
 
-        private var accent: NSColor {
-            switch session?.account {
-            case .personal: return .systemOrange
-            case .work:     return .systemBlue
-            case .kimi:     return .systemPurple
-            case .copilot:  return .systemGreen
-            case .custom:   return session?.account.custom?.tint.nsColour ?? .labelColor
-            case nil:       return .labelColor
-            }
-        }
+        /// One source for the palette — see `Account.nsAccent`. This used to be
+        /// its own `switch` over the four system colours, which is a copy, and
+        /// a copy of a palette is a palette that goes out of date.
+        private var accent: NSColor { session?.account.nsAccent ?? .labelColor }
     }
 }
 

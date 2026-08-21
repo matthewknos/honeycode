@@ -107,6 +107,9 @@ struct TranscriptView: View {
         // the hot path, and the single largest cause of the lag.
         let items = visible
         let stale = superseded(in: items)
+        // Built here for the same reason `items` is: once per evaluation, not
+        // once per row.
+        let blocks = clustered(items, running: session.isRunning)
 
         return ScrollView {
                 // Eager, and it has to stay that way.
@@ -136,26 +139,38 @@ struct TranscriptView: View {
                 // the difference doesn't register. A transcript that sometimes
                 // shows nothing isn't worth the 2.5 seconds.
                 VStack(alignment: .leading, spacing: 0) {
-                    ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                        // `.equatable()` is what makes an eager stack of a few
-                        // hundred rows affordable. Without it every redraw —
-                        // a streamed delta, a hover, a scroll frame — rebuilt
-                        // and re-measured all of them; with it, all but the
-                        // one that actually changed stop at a handful of
-                        // integer and pointer comparisons. See `Row`.
-                        Row(item: item,
-                            todos: item.isTodos ? session.todos : [],
-                            topGap: gap(before: index, in: items),
-                            caret: session.isRunning && item.id == items.last?.id,
-                            stale: stale.contains(item.id),
-                            scale: scale,
-                            mode: mode,
-                            plain: plain,
-                            accent: session.account.accent,
-                            session: session,
-                            onEdit: onEdit)
-                            .equatable()
-                            .id(item.id)
+                    ForEach(Array(blocks.enumerated()), id: \.element.id) { index, block in
+                        switch block.kind {
+                        case .single(let item):
+                            // `.equatable()` is what makes an eager stack of a
+                            // few hundred rows affordable. Without it every
+                            // redraw — a streamed delta, a hover, a scroll
+                            // frame — rebuilt and re-measured all of them; with
+                            // it, all but the one that actually changed stop at
+                            // a handful of integer and pointer comparisons.
+                            Row(item: item,
+                                todos: item.isTodos ? session.todos : [],
+                                topGap: gap(before: index, in: blocks),
+                                caret: session.isRunning && item.id == items.last?.id,
+                                stale: stale.contains(item.id),
+                                scale: scale,
+                                mode: mode,
+                                plain: plain,
+                                accent: session.account.accent,
+                                sentAt: sentAt(of: item),
+                                session: session,
+                                onEdit: onEdit)
+                                .equatable()
+                                .id(item.id)
+                        case .cluster(let members):
+                            Cluster(items: members,
+                                    topGap: gap(before: index, in: blocks),
+                                    scale: scale,
+                                    mode: mode,
+                                    startExpanded: mode.expandsDetail)
+                                .equatable()
+                                .id(block.id)
+                        }
                     }
                     // Anchor so the last line clears the composer.
                     Color.clear.frame(height: 1)
@@ -163,11 +178,12 @@ struct TranscriptView: View {
                 .environment(\.proseScale, scale)
                 .environment(\.plainProse, plain)
                 .padding(.horizontal, rowInset)
-                // Clears the View menu floating in the corner. It used to
-                // overlap the first line of the transcript, which only showed
-                // up once the browser panel made the column narrow enough for
-                // the text to reach that far right.
-                .padding(.top, panelled ? Chrome.trafficLightClearance + Theme.s6 : Theme.s5)
+                // No longer clearing anything. This reserved 34pt for the
+                // status rail floating in the corner above it — a control that
+                // has been replaced by `HeaderBar`, which sits in the layout
+                // rather than over it and so takes its own space honestly. The
+                // transcript gets those points back.
+                .padding(.top, panelled ? Theme.s6 : Theme.s5)
                 // Clears the panel's own bottom inset as well as its padding,
                 // or the last line sits right on the masked edge.
                 .padding(.bottom, panelled ? Theme.s7 + ReadingPanel.inset : Theme.s5)
@@ -416,7 +432,7 @@ struct TranscriptView: View {
     }
 
     /// Machine chatter — tool calls, thinking, notices. Consecutive runs of
-    /// these belong together as one visual cluster.
+    /// these sit tightly together, whether or not they are folded.
     private func isChatter(_ item: TranscriptItem) -> Bool {
         switch item {
         case .tool, .thinking, .notice, .search: return true
@@ -424,10 +440,126 @@ struct TranscriptView: View {
         }
     }
 
-    private func gap(before index: Int, in items: [TranscriptItem]) -> CGFloat {
+    /// Chatter that may be folded away.
+    ///
+    /// A notice is chatter for spacing and is emphatically not chatter for
+    /// folding. It is the app speaking rather than the agent — "couldn't rejoin
+    /// this conversation", "/send needs the main window" — and it is rare,
+    /// which is exactly why it must not be summarised into "6 steps" alongside
+    /// eleven file reads. The two tests were one function; folding is what
+    /// separated them.
+    private func isFoldable(_ item: TranscriptItem) -> Bool {
+        switch item {
+        case .tool, .thinking, .search: return true
+        default: return false
+        }
+    }
+
+    // MARK: Grouping
+
+    /// One thing the transcript draws: a row, or a run of machinery folded into
+    /// one.
+    struct Block: Identifiable {
+        enum Kind {
+            case single(TranscriptItem)
+            case cluster([TranscriptItem])
+        }
+        let kind: Kind
+        /// The first member's id. Stable for as long as the run starts with the
+        /// same call, which is as long as a run exists — items are appended,
+        /// never inserted.
+        let id: UUID
+
+        var first: TranscriptItem {
+            switch kind {
+            case .single(let item): return item
+            case .cluster(let items): return items[0]
+            }
+        }
+        var last: TranscriptItem {
+            switch kind {
+            case .single(let item): return item
+            case .cluster(let items): return items[items.count - 1]
+            }
+        }
+    }
+
+    /// Runs of machinery, folded.
+    ///
+    /// The transcript was flat: a tool call, a thought, a notice and a reply
+    /// were all full-width siblings separated by nothing but the size of the
+    /// gap above them. That reads well for three of them and badly for thirty,
+    /// which is what a real turn produces — the sentence explaining the work
+    /// ends up as one line in a column of twenty-eight rows of plumbing, and
+    /// the eye has no way to skip past.
+    ///
+    /// So a run of `clusterFloor` or more collapses to a single line naming
+    /// what it did, which opens. Below that floor nothing is folded: two tool
+    /// calls are legible as themselves, and hiding them behind a disclosure
+    /// would cost a click to learn less than the rows already said.
+    ///
+    /// The final item is never folded while a turn is running. That is the row
+    /// carrying the streaming caret and the live "Thinking…" shimmer — the one
+    /// piece of machinery you are actually watching — and folding it would put
+    /// the only evidence of progress inside a collapsed box.
+    private func clustered(_ items: [TranscriptItem], running: Bool) -> [Block] {
+        // Where the turn you are watching begins. Nothing from here on is
+        // folded, however long it runs.
+        //
+        // Excluding only the *final* item was the obvious rule and the wrong
+        // one: a turn's machinery arrives one item at a time, so the fourth
+        // tool call would fold the first three away underneath a summary line
+        // while the agent was still working — the transcript collapsing itself
+        // as you watch it, which reads as the app losing your output rather
+        // than as tidying. History folds; the live turn does not.
+        let liveFrom: Int = {
+            guard running else { return items.count }
+            for index in stride(from: items.count - 1, through: 0, by: -1) {
+                if case .user = items[index] { return index }
+            }
+            return 0
+        }()
+
+        var blocks: [Block] = []
+        var run: [TranscriptItem] = []
+
+        func flush() {
+            guard !run.isEmpty else { return }
+            if run.count >= Self.clusterFloor {
+                blocks.append(Block(kind: .cluster(run), id: run[0].id))
+            } else {
+                blocks.append(contentsOf: run.map { Block(kind: .single($0), id: $0.id) })
+            }
+            run.removeAll(keepingCapacity: true)
+        }
+
+        for (index, item) in items.enumerated() {
+            if isFoldable(item) && index < liveFrom {
+                run.append(item)
+            } else {
+                flush()
+                blocks.append(Block(kind: .single(item), id: item.id))
+            }
+        }
+        flush()
+        return blocks
+    }
+
+    /// Below this a run stays as rows. Four is the point at which a column of
+    /// them starts reading as a wall rather than as a list.
+    private static let clusterFloor = 4
+
+    /// When this turn was sent, for the gutter clock. Only your own messages
+    /// carry one — see `Session.stamps`.
+    private func sentAt(of item: TranscriptItem) -> Date? {
+        guard case .user(let id, _) = item else { return nil }
+        return session.stamps[id]
+    }
+
+    private func gap(before index: Int, in blocks: [Block]) -> CGFloat {
         guard index > 0 else { return 0 }
-        let current = items[index]
-        let previous = items[index - 1]
+        let current = blocks[index].first
+        let previous = blocks[index - 1].last
 
         // A new prompt starts a new turn — the biggest break in the document.
         if case .user = current { return (Theme.gapTurn + Theme.s3) * scale }
@@ -445,7 +577,9 @@ struct TranscriptView: View {
     ///
     /// Overlaying the buttons on the block instead put them straight on top of
     /// the prose — on a one-line reply the button covered the last three words.
-    private static let gutter: CGFloat = 26
+    /// Not private: `Cluster` reserves the same two strips so a folded run of
+    /// machinery lines up with the prose above and below it.
+    static let gutter: CGFloat = 26
 
     /// Margins either side of the reading column.
     ///
@@ -525,6 +659,8 @@ extension TranscriptView {
         let mode: TranscriptMode
         let plain: Bool
         let accent: Color
+        /// When this turn was sent, for user rows. Nothing else has one.
+        let sentAt: Date?
 
         let session: Session
         let onEdit: (String) -> Void
@@ -551,6 +687,7 @@ extension TranscriptView {
                 && a.mode == b.mode
                 && a.plain == b.plain
                 && a.accent == b.accent
+                && a.sentAt == b.sentAt
         }
 
         var body: some View {
@@ -568,8 +705,14 @@ extension TranscriptView {
                 // put the text 26pt from the card's leading edge and flush
                 // against its trailing one, which is the same fault the other
                 // way round.
+                // The leading gutter used to be empty — reserved purely so the
+                // reading column sat centred against the trailing gutter's
+                // buttons. It holds the turn clock now, which is the one thing
+                // that wants to be beside a message rather than inside it, and
+                // which a document with four agents writing into it for twenty
+                // minutes badly needed.
                 if !plain {
-                    Color.clear.frame(width: TranscriptView.gutter, height: 0)
+                    clock.frame(width: TranscriptView.gutter, alignment: .leading)
                 }
                 content
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -587,6 +730,40 @@ extension TranscriptView {
                 if hovered != inside { hovered = inside }
             }
         }
+
+        /// When this turn was sent, on hover.
+        ///
+        /// Hover rather than always: a column of times down the left of every
+        /// prompt is a log file, and this is a document. It appears where your
+        /// pointer already is when you are reading back through a long run
+        /// wondering how long ago something happened.
+        @ViewBuilder
+        private var clock: some View {
+            if let sentAt, hovered {
+                Text(Self.relative.localizedString(for: sentAt, relativeTo: Date()))
+                    .font(.system(size: 9.5))
+                    .foregroundStyle(.quaternary)
+                    .lineLimit(1)
+                    .fixedSize()
+                    .help(Self.absolute.string(from: sentAt))
+                    .transition(.opacity)
+            }
+        }
+
+        /// "2 hours ago". Shared, because a formatter is expensive to build and
+        /// this one would otherwise be rebuilt per row per hover.
+        private static let relative: RelativeDateTimeFormatter = {
+            let formatter = RelativeDateTimeFormatter()
+            formatter.unitsStyle = .abbreviated
+            return formatter
+        }()
+
+        private static let absolute: DateFormatter = {
+            let formatter = DateFormatter()
+            formatter.dateStyle = .medium
+            formatter.timeStyle = .short
+            return formatter
+        }()
 
         /// Only replies and edits are worth another agent's opinion. Your own
         /// messages, tool rows and rules aren't.
@@ -939,16 +1116,29 @@ private struct OpinionCard: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    /// The delegate's own colour, not the system accent.
+    ///
+    /// Every one of these used to be edged in `Color.accentColor`, so a crew
+    /// run put four lanes on screen that were the same blue and told apart only
+    /// by reading the name at the top of each. The dot beside every other
+    /// mention of that agent — in the sidebar, the crew chips, the run rows —
+    /// was already carrying its identity; this was the one place that dropped
+    /// it. See `Account.named(inLabel:)`.
+    private var tint: Color {
+        Account.named(inLabel: agent)?.accent ?? .accentColor
+    }
+
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
             RoundedRectangle(cornerRadius: 1.5)
-                .fill(Color.accentColor.opacity(0.55))
+                .fill(tint.opacity(0.55))
                 .frame(width: 2)
 
             VStack(alignment: .leading, spacing: Theme.s4) {
                 HStack(spacing: Theme.s3 - 1) {
-                    Image(systemName: "arrow.turn.up.right")
-                        .font(.system(size: 9, weight: .semibold))
+                    Circle()
+                        .fill(tint)
+                        .frame(width: 5, height: 5)
                     if done {
                         Text(agent)
                             .font(Theme.label)
@@ -1036,3 +1226,154 @@ private struct Notice: View {
 
 // MARK: - Empty state
 
+
+// MARK: - A run of machinery, folded
+
+/// Several tool calls, thoughts and notices as one line.
+///
+/// The transcript's hierarchy was flat: every kind of item was a full-width
+/// sibling of every other kind, told apart only by the size of the gap above
+/// it. That is a workable rule for a turn that runs three tools and a poor one
+/// for a turn that runs thirty — the one sentence saying what happened ends up
+/// as a single line in a column of plumbing, with nothing to scroll past.
+///
+/// Folded, a turn reads as: what you asked, one line saying what it did, what
+/// it said. Opened, it is exactly the rows it was before — the same `ToolRow`s,
+/// the same `ThinkingView`, in the same order. Nothing is hidden that a click
+/// doesn't bring back, and Verbose opens every cluster by default because that
+/// is what Verbose is for.
+///
+/// `Equatable` for the same reason `Row` is, and it matters more here: a
+/// cluster stands in for up to dozens of rows, so a comparison that fails
+/// rebuilds all of them.
+struct Cluster: View, Equatable {
+    let items: [TranscriptItem]
+    let topGap: CGFloat
+    let scale: CGFloat
+    let mode: TranscriptMode
+    let startExpanded: Bool
+
+    @State private var expanded = false
+    /// Set once from `startExpanded`. Read directly, the disclosure could not
+    /// be closed in Verbose — every redraw would reassert it.
+    @State private var primed = false
+
+    static func == (a: Cluster, b: Cluster) -> Bool {
+        a.items.count == b.items.count
+            && a.topGap == b.topGap
+            && a.scale == b.scale
+            && a.mode == b.mode
+            && a.startExpanded == b.startExpanded
+            && zip(a.items, b.items).allSatisfy { $0.rendersSameAs($1) }
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 0) {
+            Color.clear.frame(width: TranscriptView.gutter, height: 0)
+
+            VStack(alignment: .leading, spacing: Theme.gapTight * scale) {
+                header
+                if expanded {
+                    ForEach(items, id: \.id) { item in
+                        member(item)
+                    }
+                    .transition(.opacity)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Color.clear.frame(width: TranscriptView.gutter, height: 0)
+        }
+        .padding(.top, topGap)
+        .onAppear {
+            guard !primed else { return }
+            primed = true
+            expanded = startExpanded
+        }
+    }
+
+    /// One line: what it did, and how many times.
+    ///
+    /// Names rather than a bare count. "6 steps" tells you the turn was busy;
+    /// "Read, Edit, Bash · 6 steps" tells you it read some files, changed one
+    /// and ran something — which is usually the whole of what you wanted to
+    /// know, and is the difference between a fold that saves you reading and a
+    /// fold that costs you a click.
+    private var header: some View {
+        Button {
+            withAnimation(Motion.disclose) { expanded.toggle() }
+        } label: {
+            HStack(spacing: Theme.s3) {
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundStyle(.quaternary)
+                    .rotationEffect(.degrees(expanded ? 0 : -90))
+                Text(summary)
+                    .font(Theme.label)
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+                if failures > 0 {
+                    Text(failures == 1 ? "1 failed" : "\(failures) failed")
+                        .font(Theme.label)
+                        .foregroundStyle(Theme.stateBad)
+                }
+                Spacer(minLength: 0)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(expanded ? "Fold these away" : "Show what it did")
+    }
+
+    /// Up to three distinct tool names, then the count.
+    private var summary: String {
+        var names: [String] = []
+        var thoughts = 0
+        for item in items {
+            switch item {
+            case .tool(_, _, let name, _, _, _):
+                if !names.contains(name) { names.append(name) }
+            case .search:
+                if !names.contains("Search") { names.append("Search") }
+            case .thinking:
+                thoughts += 1
+            default:
+                break
+            }
+        }
+        let steps = "\(items.count) step\(items.count == 1 ? "" : "s")"
+        if names.isEmpty {
+            return thoughts > 0 ? "Thought it through · \(steps)" : steps
+        }
+        let shown = names.prefix(3).joined(separator: ", ")
+        return names.count > 3 ? "\(shown)… · \(steps)" : "\(shown) · \(steps)"
+    }
+
+    /// Anything that didn't work, counted for the header — because the one
+    /// thing you must not be able to fold away silently is a failure.
+    private var failures: Int {
+        items.count { item in
+            if case .tool(_, _, _, _, _, let state) = item {
+                return state.isFailed || state.isDeclined
+            }
+            return false
+        }
+    }
+
+    @ViewBuilder
+    private func member(_ item: TranscriptItem) -> some View {
+        switch item {
+        case .tool(_, _, let name, let target, let detail, let state):
+            ToolRow(name: name, target: target, detail: detail, state: state,
+                    startExpanded: mode.expandsDetail)
+        case .thinking(_, let text, let started, let finished):
+            ThinkingView(text: text,
+                         elapsed: finished.map { $0.timeIntervalSince(started) })
+        case .search(_, _, let query, let results, let state):
+            WebSearchView(query: query, results: results, state: state)
+        default:
+            // Nothing else is ever clustered — see `TranscriptView.isFoldable`.
+            EmptyView()
+        }
+    }
+}

@@ -254,7 +254,6 @@ struct HoneycodeApp: App {
     private var currentAccount: Account { workspace.selected?.account ?? .personal }
 
     private func newSession(in account: Account) {
-        guard let url = chooseDirectory(for: account) else { return }
-        workspace.add(account: account, directory: url)
+        workspace.requestNewSession(account)
     }
 }

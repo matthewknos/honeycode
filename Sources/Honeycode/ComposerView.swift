@@ -41,7 +41,10 @@ struct ComposerView: View {
     @FocusState private var focused: Bool
     @StateObject private var dictation = Dictation()
     @StateObject private var files = FileIndex()
-    @ObservedObject private var usage = UsageStore.shared
+    // `UsageStore` was observed here for the rail's readouts. Those moved to
+    // `UsageMeter`, and with them the subscription — a composer that redraws on
+    // every usage tick is a text field re-laying itself out because a quota
+    // refreshed somewhere else.
     @EnvironmentObject private var background: BackgroundStore
 
     /// Where the live `@` mention is, derived from the draft every time.
@@ -334,17 +337,15 @@ struct ComposerView: View {
     private var contents: some View {
         VStack(alignment: .leading, spacing: Theme.s4) {
             if let pending = session.relayPending { relayNotice(pending) }
+            queuedRow
             if !session.attachments.isEmpty { attachmentRow }
-            // With the chips rather than in the rail: both answer "what goes
-            // with this message besides what I typed".
-            //
-            // Coding mode shows it only once there is a team. A terminal
-            // doesn't caption its prompt — the same rule that keeps the rail
-            // and the hint line out — but a crew you have assembled is state
-            // rather than chrome, and a terminal has always shown state.
-            if !terminal || !session.team.isEmpty {
-                TeamBar(session: session, leader: session.account)
-            }
+            // The team used to be a row of chips in here. It is in the header
+            // bar now — see `HeaderBar` — because a crew is a property of the
+            // *session* rather than of the draft: it survives switching away
+            // and coming back, which the draft does not, so a control for it
+            // inside the message box was describing the wrong lifetime. It also
+            // cost this card a whole row, on the surface that had least to
+            // spare.
 
             HStack(alignment: .firstTextBaseline, spacing: Theme.s3) {
                 if terminal {
@@ -483,18 +484,22 @@ struct ComposerView: View {
             .buttonStyle(HoverCapsule())
             .help("Attach files")
 
-            // The account chip and directory used to sit here. Both were
-            // restating what the sidebar already shows for the selected
-            // session, and a rail that repeats context is just clutter under
-            // the thing you're actually typing.
-
-            // Usage sits with the thing that spends it.
+            // The two grammars this field understands, as buttons.
             //
-            // These were four separate chips in the opposite corner, as far
-            // from the send button as the window allows. Cost, quota and
-            // context are all consequences of pressing send, so they belong
-            // where your eye already is when you press it.
-            if !compact { usageStrip }
+            // `@` and `/` were keyboard-only, and that is not a small omission:
+            // `@agent:model:effort` is how you choose which model a delegate
+            // runs, and being invisible is how a crew spent an hour on the
+            // wrong one. A control that types the character is a poor sort of
+            // button, and it is still the difference between a feature you can
+            // find and a feature you have to be told about.
+            grammarButtons
+
+            // Usage used to sit here — context, quota, spend. It is in the
+            // header bar now. The instinct was right (beside the button that
+            // spends them) and the place was wrong: this rail was carrying
+            // seven concerns, and usage was the first thing it shed when the
+            // column narrowed, so the readouts vanished exactly when several
+            // agents were running and somebody would want them.
 
             Spacer(minLength: Theme.s4)
 
@@ -508,91 +513,9 @@ struct ComposerView: View {
         }
     }
 
-    @ViewBuilder
-    private var usageStrip: some View {
-        HStack(spacing: Theme.s4) {
-            // Shown from 60%, when it starts to matter. A permanent "12% ctx"
-            // is furniture.
-            if let context = session.context, context.percent >= 60 {
-                readout("\(context.percent)% ctx",
-                        alarming: context.percent >= 90,
-                        help: context.summary)
-            }
-
-            if let limit = session.rateLimit, limit.isConstrained {
-                readout(limit.resetsAt.map { "resets \(RateLimit.clock.string(from: $0))" }
-                        ?? limit.windowName,
-                        alarming: limit.status == "rejected",
-                        help: limit.summary)
-            }
-
-            allowance
-        }
-    }
-
-    /// What this account has left, not what it has spent.
-    ///
-    /// The three accounts bill in genuinely different ways, so one number
-    /// can't serve all of them: a capped subscription wants a percentage, a
-    /// usage-based enterprise seat wants spend against a contract figure, and
-    /// Copilot bills in AI Units per request.
-    @ViewBuilder
-    private var allowance: some View {
-        if !session.account.reportsCost {
-            // Tokens rather than money because ACP reports no cost, and a
-            // Copilot seat bills in units rather than dollars anyway. Shown as
-            // "≈" because it genuinely is: see `tokensSent`.
-            if session.tokensSent > 0 {
-                readout("≈\(Self.compact(session.tokensSent)) tok",
-                        alarming: false,
-                        help: "Roughly \(Self.compact(session.tokensSent)) input tokens "
-                            + "sent in this conversation.\nCounted once per turn from the "
-                            + "context window, so a turn that ran several tools sent more "
-                            + "than this shows.")
-            }
-            if let units = session.aiUnits, units > 0 {
-                readout(units == units.rounded()
-                        ? "\(Int(units)) AIC" : String(format: "%.2f AIC", units),
-                        alarming: false,
-                        help: "AI Units consumed by this conversation")
-            }
-        } else if let account = usage.usage[session.account], let binding = account.binding {
-            readout("\(binding.percent)% \(binding.label)",
-                    alarming: binding.percent >= 90,
-                    help: account.summary)
-        } else if let cap = usage.capUsage(session.account) {
-            readout("\(cap.percent)% month",
-                    alarming: cap.percent >= 90,
-                    help: String(format: "$%.2f of $%.0f this month.", cap.spent, cap.cap)
-                        + "\nCounts turns run in Honeycode only.")
-        } else if session.costUSD > 0 {
-            readout(String(format: "$%.3f", session.costUSD),
-                    alarming: false, help: "Session cost so far")
-        }
-    }
-
-    private func readout(_ text: String, alarming: Bool, help: String) -> some View {
-        Text(text)
-            .font(.system(size: 10.5, weight: .medium))
-            .monospacedDigit()
-            .foregroundStyle(alarming ? AnyShapeStyle(Color.diffDelText)
-                                      : AnyShapeStyle(.tertiary))
-            .help(help)
-    }
-
-    /// 28,400 → "28k", 1,240,000 → "1.2M". A token count is an order of
-    /// magnitude, not a figure you'd reconcile, and the strip has room for
-    /// about four characters.
-    private static func compact(_ count: Int) -> String {
-        switch count {
-        case 1_000_000...:
-            return String(format: "%.1fM", Double(count) / 1_000_000)
-        case 1_000...:
-            return "\(Int((Double(count) / 1_000).rounded()))k"
-        default:
-            return "\(count)"
-        }
-    }
+    // `usageStrip`, `allowance`, `readout` and `compact(_:)` moved to
+    // `UsageMeter` in HeaderBar.swift, unchanged apart from taking the session
+    // as an observed object rather than reading it from an enclosing view.
 
     /// Append relayed material to the draft and clear it, so switching away
     /// and back doesn't paste it a second time.
@@ -600,6 +523,78 @@ struct ComposerView: View {
         guard let arrived = session.relayIncoming else { return }
         draft = draft.isEmpty ? arrived : draft + "\n\n" + arrived
         session.relayIncoming = nil
+    }
+
+    /// `@` and `/`, as controls.
+    ///
+    /// The mention grammar is the most capable thing in this application and
+    /// the least visible: `@kimi#2:k3:high` names a second Kimi seat, on K3, at
+    /// high effort, and until now nothing on screen so much as hinted that any
+    /// of it existed. These do not teach the grammar — they open the list that
+    /// does, which is the same list the keystroke opens.
+    ///
+    /// `/` is disabled once you have typed something, because a slash command
+    /// has to start the message and a button that inserts a character the
+    /// parser will ignore is a button that lies.
+    private var grammarButtons: some View {
+        HStack(spacing: Theme.s1) {
+            grammarButton("@", help: "Mention a file or an agent — @kimi, @kimi:k3, @src/main.swift")
+            grammarButton("/", help: "Run a command or a skill")
+                .disabled(!draft.isEmpty)
+                .opacity(draft.isEmpty ? 1 : 0.35)
+        }
+    }
+
+    private func grammarButton(_ character: String, help: String) -> some View {
+        Button {
+            draft += character
+            dismissed = false
+            focused = true
+        } label: {
+            Text(character)
+                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .frame(width: 20, height: 24)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(HoverCapsule())
+        .help(help)
+    }
+
+    /// What is waiting to go, rather than how many things are.
+    ///
+    /// The hint line has always been able to say "2 messages queued", which
+    /// answers the smaller half of the question. Sending three follow-ups into
+    /// a long turn and then losing track of what they were is the other half,
+    /// and the only way to find out used to be waiting for them to arrive.
+    @ViewBuilder
+    private var queuedRow: some View {
+        if !session.queued.isEmpty {
+            VStack(alignment: .leading, spacing: Theme.s2) {
+                ForEach(Array(session.queued.enumerated()), id: \.offset) { _, text in
+                    HStack(spacing: Theme.s3) {
+                        Image(systemName: "arrow.up.to.line")
+                            .font(.system(size: 8.5, weight: .semibold))
+                            .foregroundStyle(.quaternary)
+                        Text(text)
+                            .font(.system(size: 11.5))
+                            .foregroundStyle(.tertiary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                        Spacer(minLength: 0)
+                    }
+                }
+                Button("Clear the queue") { session.clearQueue() }
+                    .buttonStyle(.plain)
+                    .font(Theme.label)
+                    .foregroundStyle(Color.accentColor)
+            }
+            .padding(.horizontal, Theme.s4)
+            .padding(.vertical, Theme.s3)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .modifier(InsetSurface(radius: Theme.cornerField))
+            .transition(.opacity)
+        }
     }
 
     private var micButton: some View {

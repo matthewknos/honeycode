@@ -11,27 +11,61 @@ struct SettingsView: View {
     @ObservedObject var background: BackgroundStore
     @Binding var appearance: HoneycodeApp.Appearance
 
+    /// Grouped by the *thing being configured*, not by the kind of control.
+    ///
+    /// The six tabs before this were General, Reading, Skills, Background,
+    /// Accounts and Shortcuts, and the split ran along the wrong seam. A Claude
+    /// account's config directory was under Accounts while the permission flag
+    /// that decides what that account may do was under General; the tenancy
+    /// fence and the spend cap — both facts about running a crew — were filed
+    /// beside an appearance picker; and the reading measure and the wallpaper,
+    /// which are the same decision about how the window looks, were two tabs
+    /// apart.
+    ///
+    /// Five now, each answering one question: who can run, what a crew is
+    /// allowed to do, how it looks, what the agents know, and which keys do
+    /// what.
     var body: some View {
         TabView {
-            GeneralSettings(appearance: $appearance)
-                .tabItem { Label("General", systemImage: "gearshape") }
+            AccountSettings()
+                .tabItem { Label("Accounts", systemImage: "person.2") }
 
-            ReadingSettings()
-                .tabItem { Label("Reading", systemImage: "textformat.size") }
+            CrewSettings()
+                .tabItem { Label("Crew & Safety", systemImage: "lock.shield") }
+
+            AppearanceSettings(store: background, appearance: $appearance)
+                .tabItem { Label("Appearance", systemImage: "paintpalette") }
 
             SkillSettings()
                 .tabItem { Label("Skills", systemImage: "wand.and.stars") }
-
-            BackgroundSettings(store: background)
-                .tabItem { Label("Background", systemImage: "photo") }
-
-            AccountSettings()
-                .tabItem { Label("Accounts", systemImage: "person.2") }
 
             ShortcutSettings()
                 .tabItem { Label("Shortcuts", systemImage: "keyboard") }
         }
         .frame(width: 640)
+    }
+}
+
+// MARK: - Appearance
+
+/// How the window looks: the scheme, the measure, the ground.
+///
+/// Reading and Background were separate tabs, which meant deciding how the
+/// transcript should look involved switching between two panes and remembering
+/// the other one — and the text-size sample was being judged against a
+/// background it was not being shown on.
+private struct AppearanceSettings: View {
+    @ObservedObject var store: BackgroundStore
+    @Binding var appearance: HoneycodeApp.Appearance
+
+    var body: some View {
+        TabView {
+            ReadingSettings(appearance: $appearance)
+                .tabItem { Label("Text", systemImage: "textformat.size") }
+            BackgroundSettings(store: store)
+                .tabItem { Label("Background", systemImage: "photo") }
+        }
+        .padding(.top, Theme.s4)
     }
 }
 
@@ -198,8 +232,12 @@ private struct SkillEditor: View {
 
 // MARK: - General
 
-private struct GeneralSettings: View {
-    @Binding var appearance: HoneycodeApp.Appearance
+/// What a crew is allowed to do, and what it may spend.
+///
+/// These three were spread across General — beside an appearance picker — and,
+/// in the case of the per-project verification command, buried inside a popover
+/// inside the composer. They are one subject: the rules a run operates under.
+private struct CrewSettings: View {
     @AppStorage("agent.skipPermissions") private var skipPermissions = true
     /// The key `Tenancy.gates` reads. `@AppStorage` and that property are the
     /// same `UserDefaults` entry seen from two sides — the engine can't import
@@ -211,13 +249,6 @@ private struct GeneralSettings: View {
 
     var body: some View {
         Form {
-            Picker("Appearance:", selection: $appearance) {
-                ForEach(HoneycodeApp.Appearance.allCases) { option in
-                    Text(option.title).tag(option)
-                }
-            }
-            .pickerStyle(.inline)
-
             Section {
                 Toggle("Skip permission prompts", isOn: $skipPermissions)
                 Text(skipPermissions
@@ -296,6 +327,11 @@ private struct GeneralSettings: View {
 /// type in a wider one. The sample shows the pair together, because that's the
 /// only way to judge either.
 private struct ReadingSettings: View {
+    /// The light/dark override, here rather than in a General tab that no
+    /// longer exists. It belongs beside the measure and the ground: those three
+    /// are one decision about how the transcript reads, and judging any of them
+    /// against the other two was the point of a preview.
+    @Binding var appearance: HoneycodeApp.Appearance
     @AppStorage("transcript.textScale") private var textScale: Double = 1
     @AppStorage("transcript.width") private var width: Double = Double(Theme.readingWidth)
 
@@ -307,6 +343,14 @@ private struct ReadingSettings: View {
 
     var body: some View {
         Form {
+            Section {
+                Picker("Appearance", selection: $appearance) {
+                    ForEach(HoneycodeApp.Appearance.allCases) { option in
+                        Text(option.title).tag(option)
+                    }
+                }
+            }
+
             Section {
                 LabeledContent("Text size") {
                     HStack(spacing: Theme.s5) {

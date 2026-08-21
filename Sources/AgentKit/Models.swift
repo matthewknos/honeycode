@@ -404,6 +404,47 @@ enum TranscriptMode: String, CaseIterable, Identifiable {
     var expandsDetail: Bool { self == .verbose }
 }
 
+/// The four things the workbench can show.
+///
+/// One panel with tabs rather than four surfaces that each invented their own
+/// way onto the screen. Before this, previewing was a side panel, reviewing was
+/// a modal sheet, opening a pull request was a second sheet *inside* that one,
+/// and watching a crew run was a block that appeared between the transcript and
+/// the composer and pushed both around. They are all the same kind of thing —
+/// the work, as opposed to the conversation about the work — so they share one
+/// place and you switch between them instead of summoning each one differently.
+enum WorkbenchTab: String, CaseIterable, Identifiable, Codable, Sendable {
+    /// The live page, the dev server, a rendered artifact.
+    case preview
+    /// What the agent has edited, with the diffs and the way to a pull request.
+    case changes
+    /// The working directory as it stands, whoever wrote it.
+    case files
+    /// The crew, while it is running.
+    case run
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .preview: return "Preview"
+        case .changes: return "Changes"
+        case .files:   return "Files"
+        case .run:     return "Run"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .preview: return "safari"
+        case .changes: return "plusminus"
+        case .files:   return "folder"
+        case .run:     return "person.2"
+        }
+    }
+}
+
+
 /// A slash command the agent advertises.
 ///
 /// Both CLIs announce their full command set on connect and Honeycode discarded
@@ -746,8 +787,17 @@ final class Session: ObservableObject, Identifiable {
     @Published var context: ContextUsage?
     /// A dev server the agent started, spotted in command output.
     @Published var devServer: URL?
-    /// The browser panel, which is per-session because the server is.
+    /// Whether the workbench — the panel down the trailing edge — is open.
+    ///
+    /// Named for the browser because the browser was all it held. It now holds
+    /// the preview, the changed files, the working tree and the live crew run,
+    /// which is the point: those four used to be a panel, a modal sheet, a
+    /// second modal sheet nested inside it, and a block wedged between the
+    /// transcript and the composer, and no two of them could be on screen at
+    /// once. The name stays so a saved arrangement still restores.
     @Published var browserVisible = false
+    /// Which of the workbench's tabs is showing.
+    @Published var workbenchTab: WorkbenchTab = .preview
     @Published var browserURL: URL?
     /// Whether the current URL is one you typed rather than one detected.
     ///
@@ -900,6 +950,8 @@ final class Session: ObservableObject, Identifiable {
     /// Published so the window can draw it. Written by `TranscriptReporter`
     /// from the events `Crew` already reports, which is what keeps `Crew`
     /// ignorant of the fact that anything is watching. See `CrewRun`.
+    /// When each of your turns was sent. See `SessionSnapshot.stamps`.
+    @Published var stamps: [UUID: Date] = [:]
     @Published var crewRun: CrewRun?
 
     /// The agents this conversation sends to, and what each should run.
@@ -1003,6 +1055,7 @@ final class Session: ObservableObject, Identifiable {
         costUSD = snapshot.costUSD
         aiUnits = snapshot.aiUnits
         tokensSent = snapshot.tokensSent ?? 0
+        stamps = snapshot.stamps ?? [:]
         // Restored so the readouts are right before the first turn of a resumed
         // session, rather than blank until it next reports.
         if let used = snapshot.contextUsed, let window = snapshot.contextWindow {
@@ -1039,7 +1092,8 @@ final class Session: ObservableObject, Identifiable {
             SessionSnapshot(conversationID: conversationID, started: hasStarted,
                             items: items, todos: todos, costUSD: costUSD,
                             aiUnits: aiUnits, tokensSent: tokensSent,
-                            contextUsed: context?.used, contextWindow: context?.window),
+                            contextUsed: context?.used, contextWindow: context?.window,
+                            stamps: stamps.isEmpty ? nil : stamps),
             for: id)
     }
 
@@ -1609,6 +1663,11 @@ final class Session: ObservableObject, Identifiable {
     /// Any transcript element other than reasoning closes the open block.
     func append(_ item: TranscriptItem) {
         closeThinking()
+        // When you asked. Only your own turns are stamped: a clock on every
+        // tool row would be noise at the scale a transcript runs to, and the
+        // question anybody actually has about an old conversation is when the
+        // *turn* was, not when the eleventh `Read` inside it was.
+        if case .user(let id, _) = item { stamps[id] = Date() }
         // A repeated notice says nothing the first one didn't. Four identical
         // "couldn't rejoin" lines stacked up is what a failed resume looked
         // like across four relaunches, and it reads as the app malfunctioning
@@ -1984,6 +2043,18 @@ final class Workspace: ObservableObject {
     /// and a counter is the smallest thing that survives being fired twice with
     /// the same clipboard.
     @Published var clipboardRelayTick = 0
+    /// A new session being chosen, and which account it will belong to.
+    ///
+    /// Held on the workspace rather than in a view because there are six ways
+    /// to ask for one — the sidebar header, an account's hover `+`, two rail
+    /// popovers, ⌘N and the File menu — and before this each of them ran its
+    /// own file panel. Six doors are fine; six different rooms behind them was
+    /// not, and the menu bar in particular could not reach a sheet owned by a
+    /// view at all.
+    @Published var newSessionRequest: Account?
+
+    /// Ask for a new session on this account. The sheet does the rest.
+    func requestNewSession(_ account: Account) { newSessionRequest = account }
 
     // Still `bench.` on purpose. These are the keys your session roster is
     // written under in the preferences that exist right now; renaming them is
@@ -2186,6 +2257,12 @@ final class Workspace: ObservableObject {
         adopt(session)
         sessions.append(session)
         selection = session.id
+        // Every route to a new session lands here, which is why the recents
+        // list is written here rather than in the picker that chose the folder
+        // — a session started from the command palette, from a saved
+        // arrangement or from an agent run is the same evidence that you work
+        // in that directory.
+        RecentProjects.remember(directory)
         save()
     }
 

@@ -55,4 +55,44 @@ enum Changes {
         }
         return order.compactMap { byFile[$0] }
     }
+
+    /// A number that changes whenever the summary would.
+    ///
+    /// Cheaper than `summarise` by the whole of its cost — it copies nothing and
+    /// looks at no rows — so a view can compare it every frame and rebuild the
+    /// real summary only when it has actually moved.
+    ///
+    /// The item count alone is not enough, which is the trap this exists to
+    /// avoid: `Session.upgradeToDiff` turns a tool row into a diff card *in
+    /// place*, so an agent's second and subsequent edits change what the
+    /// summary says without changing how many items there are. Counting the
+    /// diffs and their rows alongside the total catches all three ways a
+    /// summary moves — a new item, an item becoming a diff, and a diff growing.
+    static func signature(_ items: [TranscriptItem]) -> Int {
+        var value = items.count
+        for item in items {
+            guard case .diff(_, _, _, let rows, let state) = item else { continue }
+            value = value &* 31 &+ rows.count
+            value = value &* 31 &+ (state.isDeclined ? 1 : 0)
+        }
+        return value
+    }
+
+    /// How many files were touched, without building the summary.
+    ///
+    /// The header bar draws a badge from this on every redraw — including
+    /// thirty times a second while a reply streams — and `summarise` is far too
+    /// expensive to ask that often: it copies every diff's rows into fresh
+    /// structs to answer a question that only needs the count of distinct file
+    /// names. That cost is what kept the old View menu from showing a count at
+    /// all, and so what kept a run that rewrote twelve files silent until you
+    /// went looking.
+    static func fileCount(_ items: [TranscriptItem]) -> Int {
+        var seen = Set<String>()
+        for item in items {
+            guard case .diff(_, _, let file, _, _) = item else { continue }
+            seen.insert(file)
+        }
+        return seen.count
+    }
 }

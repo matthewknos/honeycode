@@ -73,3 +73,91 @@ enum Diagnostic {
         text.count > limit ? String(text.prefix(limit - 1)) + "…" : text
     }
 }
+
+// MARK: - Is this account ready to run
+
+/// Whether an account can actually do anything, and if not, what to do.
+///
+/// `tools/doctor.sh` has answered this from a terminal since the beginning, and
+/// the window has never answered it at all — so the first run on a new machine
+/// looked identical whether an agent CLI was installed or not, and the failure
+/// arrived as a spawn error after you had typed a message. That is the wrong
+/// end of the interaction to find out at.
+///
+/// Checked in the same places `ACPAgent.binaryCandidates` and
+/// `ClaudeAdapter` look, rather than by a `PATH` search: an app launched from
+/// Finder inherits launchd's `PATH`, which contains neither Homebrew nor nvm,
+/// so a search would report every account missing on a machine where all four
+/// work perfectly.
+struct AccountReadiness: Equatable, Sendable, Identifiable {
+    let account: Account
+    /// The CLI exists and is executable.
+    let hasCLI: Bool
+    /// A config directory with something in it. Only meaningful for the Claude
+    /// accounts, which are the two that can be installed and not logged in —
+    /// the ACP agents keep their credentials elsewhere and report a sign-in
+    /// problem when they start, which is the only place it can be seen.
+    let hasLogin: Bool?
+
+    var id: String { account.id }
+
+    var isReady: Bool { hasCLI && hasLogin != false }
+
+    /// One short phrase. Not a sentence — this sits in a row beside three
+    /// others, and a paragraph per account is a wall rather than a status.
+    var summary: String {
+        if !hasCLI { return "not installed" }
+        if hasLogin == false { return "not signed in" }
+        return "ready"
+    }
+
+    /// What actually fixes it, for the tooltip.
+    var remedy: String? {
+        if !hasCLI {
+            switch account {
+            case .personal, .work: return "Install Claude Code — claude.com/claude-code"
+            case .kimi:            return "npm install -g @moonshotai/kimi-cli"
+            case .copilot:         return "npm install -g @github/copilot"
+            case .custom:          return "Set this account's command in Settings ▸ Accounts"
+            }
+        }
+        if hasLogin == false {
+            return "Run `claude` once in a terminal with CLAUDE_CONFIG_DIR set to "
+                + (account.configDir ?? "this account's directory")
+        }
+        return nil
+    }
+}
+
+extension Diagnostic {
+
+    /// Every account, checked. Off the main thread, please — this stats a
+    /// dozen paths and may walk the nvm tree.
+    nonisolated static func readiness() -> [AccountReadiness] {
+        Account.allCases.map(readiness(of:))
+    }
+
+    nonisolated static func readiness(of account: Account) -> AccountReadiness {
+        let manager = FileManager.default
+        let candidates: [String]
+        switch account.protocolKind {
+        case .claudeStreamJSON:
+            candidates = [NSHomeDirectory() + "/.local/bin/claude",
+                          "/opt/homebrew/bin/claude",
+                          "/usr/local/bin/claude"]
+        case .acp(let agent):
+            candidates = agent.binaryCandidates
+        }
+        let hasCLI = candidates.contains { manager.isExecutableFile(atPath: $0) }
+
+        // A directory that exists but holds nothing is a directory somebody
+        // made by hand, or one this app created and never logged into. Both
+        // read as "not signed in", which is what they are.
+        var hasLogin: Bool?
+        if let directory = account.configDir {
+            let contents = (try? manager.contentsOfDirectory(atPath: directory)) ?? []
+            hasLogin = !contents.isEmpty
+        }
+        return AccountReadiness(account: account, hasCLI: hasCLI, hasLogin: hasLogin)
+    }
+}

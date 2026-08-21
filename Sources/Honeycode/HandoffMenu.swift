@@ -103,7 +103,7 @@ private struct HandoffForm: View {
         // becomes a candidate by existing. Claude Personal and Claude Enterprise
         // count as the same agent here — different credentials, same model
         // behind them.
-        let others = Account.allCases.filter { $0.agentName != source.account.agentName }
+        let others = Account.enabled.filter { $0.agentName != source.account.agentName }
         self._account = State(initialValue: others.first ?? .copilot)
     }
 
@@ -122,7 +122,7 @@ private struct HandoffForm: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header("Ask")
-            ForEach(Account.allCases) { option in
+            ForEach(Account.enabled) { option in
                 accountRow(option)
             }
 

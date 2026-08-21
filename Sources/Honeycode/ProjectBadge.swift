@@ -43,6 +43,11 @@ struct ProjectBadge: View {
     }
 
     private func refresh() async {
+        // The chip is entirely about Azure — it names a resource group and
+        // links to the portal — so with Azure switched off there is nothing
+        // here to draw and no reason to walk the directory looking for an
+        // `azure.yaml` that would not be shown.
+        guard Features.isOn(.azure) else { return project = nil }
         project = await Task.detached(priority: .utility) {
             ProjectDetector.azure(near: directory)
         }.value

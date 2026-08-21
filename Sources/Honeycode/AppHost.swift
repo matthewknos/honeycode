@@ -26,6 +26,7 @@ final class AppHost: WorkspaceHost {
     }
 
     nonisolated func announce(sessionID: UUID, title: String, body: String) {
+        guard Features.isOn(.notifications) else { return }
         Notifier.post(sessionID: sessionID, title: title, body: body)
     }
 
@@ -33,7 +34,12 @@ final class AppHost: WorkspaceHost {
     func attach(to workspace: Workspace) {
         self.workspace = workspace
         workspace.host = self
-        Notifier.configure()
+        // Only where they have been asked for. `configure` is what raises the
+        // system's permission dialog, and raising it four seconds into a first
+        // launch — before there is anything to be notified about — is how an
+        // app gets denied by reflex. Setup asks instead, and switching the
+        // feature on there calls this.
+        if Features.isOn(.notifications) { Notifier.configure() }
 
         // The transcript's markdown parser, lent to `Relay` so it can tell a
         // reply that *is* a document from one that merely quotes some markup.

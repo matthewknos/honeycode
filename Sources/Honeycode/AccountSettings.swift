@@ -14,6 +14,23 @@ struct AccountSettings: View {
     @State private var accounts: [CustomAccount] = CustomAccounts.all
     @State private var editing: CustomAccount?
     @State private var confirming: CustomAccount?
+    /// A local mirror of which accounts are switched on, so a toggle redraws.
+    /// The value on disk is written the moment it changes — see `Account.isEnabled`.
+    @State private var enabled: [String: Bool] = [:]
+
+    /// Whether this account appears anywhere you choose one.
+    ///
+    /// Four accounts ship and nobody has four. Off is not "broken" and not
+    /// "deleted": the sessions stay in the sidebar, the transcripts stay on
+    /// disk, and the account stops being offered by every menu, mention list
+    /// and roster in the app.
+    private func inUse(_ account: Account) -> Binding<Bool> {
+        Binding(get: { enabled[account.id] ?? account.isEnabled },
+                set: { on in
+                    enabled[account.id] = on
+                    Account.setEnabled(on, for: account)
+                })
+    }
 
     /// Bound to preferences rather than to state: this is read at process
     /// launch by every Claude session, so the value on screen has to be the
@@ -39,6 +56,9 @@ struct AccountSettings: View {
                 // failure reads as a login problem rather than a settings one.
                 ForEach([Account.personal, Account.work], id: \.self) { account in
                     HStack(spacing: Theme.s4) {
+                        Toggle("", isOn: inUse(account))
+                            .labelsHidden()
+                            .controlSize(.mini)
                         Circle().fill(account.accent).frame(width: 7, height: 7)
                         VStack(alignment: .leading, spacing: Theme.s1) {
                             Text(account.title)
@@ -61,6 +81,9 @@ struct AccountSettings: View {
                 }
                 ForEach([Account.kimi, Account.copilot], id: \.self) { account in
                     HStack(spacing: Theme.s4) {
+                        Toggle("", isOn: inUse(account))
+                            .labelsHidden()
+                            .controlSize(.mini)
                         Circle().fill(account.accent).frame(width: 7, height: 7)
                         Text(account.title)
                         Spacer()
@@ -71,9 +94,12 @@ struct AccountSettings: View {
             } header: {
                 Text("Built in")
             } footer: {
-                Text("Claude accounts are switched by CLAUDE_CONFIG_DIR — the directory "
-                     + "is the account. With one Claude login, point both at ~/.claude "
-                     + "or just use the one. Kimi and Copilot keep their own credentials "
+                Text("The switch is whether you have the subscription at all — an "
+                     + "account switched off stops being offered anywhere, and its "
+                     + "existing conversations stay where they are. Claude accounts "
+                     + "are then switched by CLAUDE_CONFIG_DIR: the directory is the "
+                     + "account. With one Claude login, point both at ~/.claude or "
+                     + "just use the one. Kimi and Copilot keep their own credentials "
                      + "and are signed in through their own CLIs.")
                     .font(Theme.label)
                     .foregroundStyle(.tertiary)
@@ -87,6 +113,9 @@ struct AccountSettings: View {
                 }
                 ForEach(accounts) { account in
                     HStack(spacing: Theme.s4) {
+                        Toggle("", isOn: inUse(.custom(account.id)))
+                            .labelsHidden()
+                            .controlSize(.mini)
                         Circle().fill(account.tint.colour).frame(width: 7, height: 7)
                         VStack(alignment: .leading, spacing: Theme.s1) {
                             Text(account.title)
@@ -127,6 +156,10 @@ struct AccountSettings: View {
             }
         }
         .formStyle(.grouped)
+        .onAppear {
+            enabled = Dictionary(uniqueKeysWithValues:
+                Account.allCases.map { ($0.id, $0.isEnabled) })
+        }
         .sheet(item: $editing) { draft in
             AccountEditor(draft: draft, existing: accounts) { saved in
                 if let saved { CustomAccounts.save(saved) }

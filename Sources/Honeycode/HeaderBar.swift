@@ -58,7 +58,10 @@ struct HeaderBar: View {
 
     private var showsUsage: Bool { available >= 640 }
     private var showsLocation: Bool { available >= 520 }
-    private var showsTeam: Bool { available >= 420 }
+    /// Width, and then whether a crew is a thing in this app at all. The Team
+    /// control's only purpose is naming other accounts to run with; with Crew
+    /// switched off there is nothing on the other side of it.
+    private var showsTeam: Bool { available >= 420 && Features.isOn(.crew) }
 
     var body: some View {
         HStack(spacing: Theme.s4) {
@@ -365,7 +368,7 @@ private struct LocationChip: View {
                 .lineLimit(1)
                 .truncationMode(.head)
 
-            if let branch, !branch.isEmpty {
+            if let branch, !branch.isEmpty, Features.isOn(.git) {
                 Text("·")
                     .font(.system(size: 11.5))
                     .foregroundStyle(.quaternary)
@@ -389,6 +392,10 @@ private struct LocationChip: View {
     }
 
     private func refresh() async {
+        // With Git switched off this is the folder's name and nothing else, so
+        // don't spend two subprocesses per window activation working out
+        // something that will not be drawn.
+        guard Features.isOn(.git) else { return branch = nil }
         let directory = directory
         branch = await Task.detached(priority: .utility) {
             guard let root = Git.root(of: directory) else { return nil }

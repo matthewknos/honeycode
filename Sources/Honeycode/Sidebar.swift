@@ -16,7 +16,7 @@ struct SidebarList: View {
 
     var body: some View {
         List(selection: $workspace.selection) {
-            ForEach(Account.allCases) { account in
+            ForEach(workspace.listedAccounts) { account in
                 // The setter honours the value it's given rather than blindly
                 // toggling. SwiftUI writes to this binding on its own schedule —
                 // during layout, on focus changes — and a setter that ignores

@@ -85,8 +85,8 @@ extension Mention {
     /// rows that do the same thing is a choice between things that aren't
     /// different.
     static func agents(_ query: String) -> [Account] {
-        guard !query.isEmpty else { return Account.allCases }
-        return Account.allCases
+        guard !query.isEmpty else { return Account.enabled }
+        return Account.enabled
             .compactMap { account -> (Account, Int)? in
                 let handle = AgentMention.handle(account)
                 let scores = [Fuzzy.score(query, in: handle),

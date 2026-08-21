@@ -131,9 +131,20 @@ struct AccountReadiness: Equatable, Sendable, Identifiable {
 
 extension Diagnostic {
 
-    /// Every account, checked. Off the main thread, please — this stats a
-    /// dozen paths and may walk the nvm tree.
+    /// Every account you have, checked. Off the main thread, please — this
+    /// stats a dozen paths and may walk the nvm tree.
+    ///
+    /// The ones switched off in setup are not "not ready", they are not yours:
+    /// a roster reporting Copilot missing on a Mac belonging to somebody who
+    /// has never had Copilot is noise wearing a warning's clothes.
     nonisolated static func readiness() -> [AccountReadiness] {
+        Account.enabled.map(readiness(of:))
+    }
+
+    /// Every account that exists, switched off ones included. Setup needs this:
+    /// the whole point of that step is deciding which you have, and you cannot
+    /// decide about a row you cannot see.
+    nonisolated static func readinessOfAll() -> [AccountReadiness] {
         Account.allCases.map(readiness(of:))
     }
 

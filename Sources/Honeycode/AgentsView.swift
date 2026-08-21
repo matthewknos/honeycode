@@ -391,7 +391,7 @@ struct AgentDetail: View {
     /// setting on this pane, and it should be readable without a click.
     private var accountChips: some View {
         HStack(spacing: Theme.s3) {
-            ForEach(Account.allCases) { account in
+            ForEach(Account.enabled) { account in
                 let on = editing.account == account
                 Button {
                     guard !on else { return }

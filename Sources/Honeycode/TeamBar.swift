@@ -136,7 +136,7 @@ struct TeamBar: View {
                 .font(Theme.label)
                 .foregroundStyle(.secondary)
 
-            ForEach(Account.allCases.filter { $0 != leader }, id: \.self) { account in
+            ForEach(Account.enabled.filter { $0 != leader }, id: \.self) { account in
                 accountRow(account)
             }
 

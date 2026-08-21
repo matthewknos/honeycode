@@ -71,7 +71,7 @@ struct NewSessionSheet: View {
     /// segment cannot say "not installed" and this needs to.
     private var accounts: some View {
         HStack(spacing: Theme.s3) {
-            ForEach(Account.allCases) { candidate in
+            ForEach(Account.enabled) { candidate in
                 accountChip(candidate)
             }
             Spacer(minLength: 0)

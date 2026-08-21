@@ -84,6 +84,16 @@ struct HoneycodeApp: App {
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1160, height: 760)
         .commands {
+            // Under About, where an application's own setup belongs. There is
+            // no other route back into the flow — Settings holds every switch
+            // it sets, but not the order or the reasons.
+            CommandGroup(after: .appInfo) {
+                Button("Set Up Honeycode…") {
+                    Setup.rerun()
+                    workspace.showingSetup = true
+                }
+            }
+
             CommandGroup(after: .toolbar) {
                 Picker("Appearance", selection: $appearance) {
                     ForEach(Appearance.allCases) { option in
@@ -112,7 +122,7 @@ struct HoneycodeApp: App {
             // group is noise. Replace it with what "new" actually means here.
             CommandGroup(replacing: .newItem) {
                 Menu("New Session") {
-                    ForEach(Account.allCases) { account in
+                    ForEach(Account.enabled) { account in
                         Button(account.title) { newSession(in: account) }
                     }
                 }
@@ -131,10 +141,10 @@ struct HoneycodeApp: App {
 
                 Divider()
 
-                // Still every account, and a key only for the ones that have
-                // one — an added account belongs in this menu whether or not it
-                // can be reached from the keyboard.
-                ForEach(Account.allCases) { account in
+                // Still every account you have, and a key only for the ones
+                // that have one — an added account belongs in this menu whether
+                // or not it can be reached from the keyboard.
+                ForEach(Account.enabled) { account in
                     let item = Button(account.title) { workspace.focus(account) }
                     if let key = account.shortcut {
                         item.keyboardShortcut(key, modifiers: .command)

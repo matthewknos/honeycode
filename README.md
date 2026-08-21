@@ -59,7 +59,8 @@ cd honeycode
 **the same places the app looks**, checks whether each Claude account has a config
 directory with a login in it, and prints the one command that fixes whatever it
 found. Start there — it catches the two failures that are otherwise baffling
-(see [Troubleshooting](#troubleshooting)).
+(see [Troubleshooting](#troubleshooting)). The window asks the same questions on
+its first run; this is the version you can run before there is a window.
 
 Then, once:
 
@@ -69,6 +70,57 @@ Then, once:
 ./build-ai.sh                  # build/ai
 open build/Honeycode.app
 ```
+
+### The first run
+
+The first time the window opens it asks four questions, in the order they
+matter:
+
+1. **What this is** — one screen.
+2. **Which subscriptions you have.** It can see which agent CLIs are installed
+   and which Claude directories hold a login; it cannot see which you pay for,
+   and that is the answer that decides what every menu offers from then on. A
+   missing CLI shows the command that installs it, and a Claude account with no
+   login gets a **Sign in…** button that opens a terminal running `claude` with
+   `CLAUDE_CONFIG_DIR` already set. Both ticks re-check when you come back to
+   the window, so installing something in a terminal and switching back is the
+   whole loop.
+3. **What should be on screen** — the switches below.
+4. **What the agents are allowed to do** — permission prompts, the tenancy
+   fence and the monthly cap.
+
+Everything it sets is also in Settings, leaving early counts as having been
+asked, and **Honeycode ▸ Set Up Honeycode…** opens it again.
+
+A Mac that already holds a session roster never sees it. Setup is for a machine
+that has nothing, not a tour for somebody who has been using this for months —
+and on that machine every switch stays where it was.
+
+### Switching things off
+
+Most of this app depends on something it didn't install. **Settings ▸ Features**
+is one switch each, and switching one off takes its controls with it rather than
+greying them out:
+
+| | |
+|---|---|
+| **Git** | the branch on each session's folder chip |
+| **GitHub** | which account you push as, and pull requests |
+| **Azure** | which tenant you're in, and the resource-group chip |
+| **Crew** | the Crew half of the sidebar, the Team control, the Run tab |
+| **Agents** | the Agents half of the sidebar |
+| **Preview** | the workbench's browser |
+| **Dictation** | the mic in the composer |
+| **Notifications** | a banner when a turn finishes somewhere you aren't looking |
+
+Notifications start **off**, and switching them on is what raises the system's
+permission dialog — rather than raising it four seconds into a first launch,
+before there is anything to be notified about.
+
+Accounts have the same switch, in **Settings ▸ Accounts**. Four ship and nobody
+has four; one switched off stops being offered by every menu, mention list and
+roster. It is not a delete — conversations you already have on it stay in the
+sidebar, and the transcripts stay on disk.
 
 ### Why the signing step
 

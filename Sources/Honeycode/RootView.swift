@@ -25,11 +25,51 @@ struct RootView: View {
     /// the chrome are one thing throughout, and Code keeps its column
     /// arrangement while you're off looking at an agent. Persisted, because
     /// which half you were last in is the same kind of fact as which session.
-    enum SidebarMode: String {
+    enum SidebarMode: String, CaseIterable {
         case code, crew, agents
+
+        var title: String {
+            switch self {
+            case .code:   return "Code"
+            case .crew:   return "Crew"
+            case .agents: return "Agents"
+            }
+        }
+
+        var symbol: String {
+            switch self {
+            case .code:   return "chevron.left.forwardslash.chevron.right"
+            case .crew:   return "person.2"
+            case .agents: return "sparkles"
+            }
+        }
+
+        /// The switch that decides whether this half of the sidebar exists.
+        /// Code has none: a window with no conversations in it is not a
+        /// simpler Honeycode, it is a different program.
+        var feature: Feature? {
+            switch self {
+            case .code:   return nil
+            case .crew:   return .crew
+            case .agents: return .agents
+            }
+        }
     }
 
     @AppStorage("sidebar.mode") private var mode = SidebarMode.code
+
+    /// The halves that are switched on.
+    private var modes: [SidebarMode] {
+        SidebarMode.allCases.filter { $0.feature.map(Features.isOn) ?? true }
+    }
+
+    /// Which one is actually showing.
+    ///
+    /// Read instead of `mode` everywhere the sidebar branches. The stored value
+    /// is left alone: switching Crew off while you are looking at it puts you
+    /// back in Code, and switching it on again puts you back where you were
+    /// rather than somewhere the app chose.
+    private var shownMode: SidebarMode { modes.contains(mode) ? mode : .code }
     /// Read here only to cancel `forcesLightContent` — coding mode leaves the
     /// artwork out of the hierarchy, so the light it was compensating for
     /// isn't there any more.
@@ -70,7 +110,7 @@ struct RootView: View {
                 }
 
                 Group {
-                    switch mode {
+                    switch shownMode {
                     case .code:   SessionColumns(workspace: workspace)
                     case .crew:   CrewPane(workspace: workspace)
                     case .agents: AgentsPane(store: agents, workspace: workspace)
@@ -108,10 +148,26 @@ struct RootView: View {
                              set: { workspace.newSessionRequest = $0?.account })) { request in
             NewSessionSheet(workspace: workspace, initial: request.account)
         }
+        // The first run, or a way back into it from the app menu. Raised here
+        // rather than presented from `HoneycodeApp` because a sheet needs a
+        // view to hang from, and this is the only one the window has.
+        .sheet(isPresented: $workspace.showingSetup) {
+            SetupFlow(workspace: workspace)
+        }
         // The floating window is reconciled from `poppedOut` rather than opened
         // and closed at the call sites, so every route in — the row menu, the
         // menu bar, a restored arrangement at launch — goes through one path.
-        .onAppear { PopOut.shared.sync(workspace: workspace, background: background) }
+        .onAppear {
+            PopOut.shared.sync(workspace: workspace, background: background)
+            if Setup.needsRun { workspace.showingSetup = true }
+        }
+        // Asked for from Settings, which is a different scene and can't reach
+        // a sheet on this one. The window is brought forward first, or the
+        // flow opens behind the Settings window that asked for it.
+        .onReceive(NotificationCenter.default.publisher(for: Setup.requested)) { _ in
+            NSApp.activate(ignoringOtherApps: true)
+            workspace.showingSetup = true
+        }
         .onChange(of: workspace.poppedOut) { _, _ in
             PopOut.shared.sync(workspace: workspace, background: background)
         }
@@ -183,7 +239,7 @@ struct RootView: View {
                 // the whole reason both layouts sit at fixed widths (see above)
                 // is that AppKit-backed views redo their layout rather than
                 // interpolate it.
-                switch mode {
+                switch shownMode {
                 case .code:   SidebarList(workspace: workspace)
                 case .crew:   CrewSidebar(workspace: workspace) { id in
                                   workspace.reveal(id)
@@ -314,7 +370,7 @@ struct RootView: View {
                         railMenuChrome(
                             VStack(alignment: .leading, spacing: 0) {
                                 PopoverHeader("New session")
-                                ForEach(Account.allCases) { account in
+                                ForEach(Account.enabled) { account in
                                     PopoverRow(title: account.title,
                                                blurb: account.agentName) {
                                         railTarget = nil
@@ -326,7 +382,10 @@ struct RootView: View {
                         .frame(width: 240)
                     }
 
-                ForEach(Account.allCases) { account in
+                // The rail is the sidebar's own list at 60pt, so it lists
+                // what the sidebar lists — including an account switched off
+                // that still holds conversations.
+                ForEach(workspace.listedAccounts) { account in
                     railDot(account)
                 }
             }
@@ -421,8 +480,10 @@ struct RootView: View {
 
     private var railSettings: some View {
         VStack(spacing: Theme.s2) {
-            IdentityMenu(compact: true)
-                .frame(width: 28)
+            if Features.isOn(.gitHub) || Features.isOn(.azure) {
+                IdentityMenu(compact: true)
+                    .frame(width: 28)
+            }
             settingsGlyph
         }
         .padding(.vertical, Theme.s2)
@@ -457,9 +518,14 @@ struct RootView: View {
             // app-wide fact, so it belongs to the window rather than to a
             // column, and it is the kind of fact this corner of a Mac window
             // has always held.
-            IdentityMenu()
-                .padding(.horizontal, Theme.s4)
-                .padding(.top, Theme.s3)
+            // Gone entirely when neither GitHub nor Azure is switched on.
+            // A control whose whole job is naming the account you are acting
+            // as has nothing to name when you are acting as nobody.
+            if Features.isOn(.gitHub) || Features.isOn(.azure) {
+                IdentityMenu()
+                    .padding(.horizontal, Theme.s4)
+                    .padding(.top, Theme.s3)
+            }
 
             SettingsLink {
                 HStack(spacing: Theme.s3) {
@@ -524,32 +590,37 @@ struct RootView: View {
         .padding(.bottom, Theme.s3)
     }
 
-    /// Code / Agents.
+    /// Code / Crew / Agents.
     ///
-    /// A segmented control rather than two tabs or a popup: there are exactly
-    /// two halves, both worth naming, and the one you aren't in should stay
-    /// visible — a control that hides the alternative is how a second mode goes
-    /// undiscovered.
+    /// A segmented control rather than tabs or a popup: the halves are all
+    /// worth naming, and the one you aren't in should stay visible — a control
+    /// that hides the alternative is how a second mode goes undiscovered.
+    ///
+    /// Nothing at all when Crew and Agents are both switched off. A segmented
+    /// control with one segment is a label wearing a control's clothes, and the
+    /// thing it would be switching to is the thing already on screen.
+    @ViewBuilder
     private var pill: some View {
-        HStack(spacing: 2) {
-            segment(.code, "Code", "chevron.left.forwardslash.chevron.right")
-            segment(.crew, "Crew", "person.2")
-            segment(.agents, "Agents", "sparkles")
+        if modes.count > 1 {
+            HStack(spacing: 2) {
+                ForEach(modes, id: \.self) { value in
+                    segment(value)
+                }
+            }
+            .padding(2)
+            .background(Theme.well, in: RoundedRectangle(cornerRadius: 8))
+            .padding(.horizontal, Theme.s5)
+            .padding(.bottom, Theme.s5)
         }
-        .padding(2)
-        .background(Theme.well, in: RoundedRectangle(cornerRadius: 8))
-        .padding(.horizontal, Theme.s5)
-        .padding(.bottom, Theme.s5)
     }
 
-    private func segment(_ value: SidebarMode, _ title: String,
-                         _ symbol: String) -> some View {
-        let on = mode == value
+    private func segment(_ value: SidebarMode) -> some View {
+        let on = shownMode == value
         return Button { withAnimation(Motion.hover) { mode = value } } label: {
             HStack(spacing: Theme.s2) {
-                Image(systemName: symbol)
+                Image(systemName: value.symbol)
                     .font(.system(size: 10, weight: .medium))
-                Text(title)
+                Text(value.title)
                     .font(.system(size: 11.5, weight: .medium))
             }
             .foregroundStyle(on ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
@@ -618,7 +689,7 @@ struct RootView: View {
 
     private var newSessionMenu: some View {
         PopoverMenu(header: "New session",
-                    choices: Account.allCases.map { account in
+                    choices: Account.enabled.map { account in
                         PopoverChoice(title: account.title,
                                       blurb: account.agentName) {
                             add(to: account)
@@ -1128,7 +1199,12 @@ struct SessionView: View {
                                },
                                mode: mode,
                                scale: CGFloat(textScale), width: CGFloat(readingWidth))
-                    .environment(\.openArtifact) { artifact in
+                    // Nil with Preview switched off, which is what removes the
+                    // Open affordance from every artifact card — `CodeBlock`
+                    // already draws the card without one when there is nowhere
+                    // to open it. The alternative was a button leading to a tab
+                    // that isn't in the row.
+                    .environment(\.openArtifact, Features.isOn(.preview) ? { artifact in
                         withAnimation(Motion.panel) {
                             // Written to disk and shown from there. A revision
                             // inherits the same path, so the panel — and your
@@ -1136,7 +1212,7 @@ struct SessionView: View {
                             // new version rather than pointing at a dead one.
                             session.open(artifact)
                         }
-                    }
+                    } : nil)
                 runBanner()
                 composer()
             }

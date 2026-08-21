@@ -504,7 +504,7 @@ struct ComposerView: View {
             Spacer(minLength: Theme.s4)
 
             ModelPicker(session: session)
-            micButton
+            if Features.isOn(.dictation) { micButton }
             // Stop and send are both present while a turn runs: you might want
             // to add to it *or* abandon it, and folding them into one control
             // meant picking one at build time.

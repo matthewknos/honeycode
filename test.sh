@@ -82,6 +82,7 @@ kit Overlap
 kit Checks
 kit Teams
 kit Changes
+kit Setup
 
 # The sandbox suite drives a real WKWebView against a real local server, which
 # is the only way to learn anything about a content rule list: every interesting

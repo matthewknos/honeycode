@@ -134,7 +134,7 @@ enum Describe {
     /// they happened to land, which for a machine-readable report means a
     /// different key order every run.
     static func run(_ crew: Crew, then finish: @escaping () -> Void) {
-        var queue = Account.allCases
+        var queue = Account.enabled
         var reports: [AccountReport] = []
 
         func next() {

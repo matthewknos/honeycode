@@ -29,13 +29,33 @@ struct Workbench: View {
 
     @State private var openingPullRequest = false
 
+    /// The tabs this panel is showing.
+    ///
+    /// `WorkbenchTab.available` plus one exception: a crew run that is actually
+    /// in flight brings Run back even with Crew switched off. The switch hides
+    /// the Team control; it does not refuse a message naming three accounts,
+    /// and a run nobody can watch is a worse outcome than a tab nobody asked
+    /// for.
+    private var available: [WorkbenchTab] {
+        var out = WorkbenchTab.available
+        if session.crewRun != nil, !out.contains(.run) { out.append(.run) }
+        return out
+    }
+
+    /// Which one is on screen. A stored tab whose feature has been switched off
+    /// since it was last open has no button in the row above, so leaving it
+    /// there would be a panel you cannot navigate out of.
+    private var shownTab: WorkbenchTab {
+        available.contains(session.workbenchTab) ? session.workbenchTab : .changes
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             tabs
             Divider().overlay(Theme.rule)
 
             Group {
-                switch session.workbenchTab {
+                switch shownTab {
                 case .preview:
                     BrowserPanel(session: session, workspace: workspace, embedded: true)
                 case .changes:
@@ -71,7 +91,7 @@ struct Workbench: View {
         GeometryReader { geometry in
             let labelled = geometry.size.width >= 420
             HStack(spacing: Theme.s2) {
-                ForEach(WorkbenchTab.allCases) { tab in
+                ForEach(available) { tab in
                     tabButton(tab, labelled: labelled)
                 }
                 Spacer(minLength: Theme.s3)
@@ -98,7 +118,7 @@ struct Workbench: View {
     }
 
     private func tabButton(_ tab: WorkbenchTab, labelled: Bool) -> some View {
-        let on = session.workbenchTab == tab
+        let on = shownTab == tab
         let badge = self.badge(for: tab)
         return Button {
             withAnimation(Motion.hover) { session.workbenchTab = tab }
@@ -230,10 +250,16 @@ private struct ChangesTab: View {
             // which is the question a pull request description exists to
             // answer. Everything downstream of the button is a form you edit
             // before anything is pushed.
-            Button("Pull Request…") { openingPullRequest = true }
-                .buttonStyle(.plain)
-                .font(.system(size: 11.5, weight: .medium))
-                .foregroundStyle(Color.accentColor)
+            //
+            // It needs both switches: the form commits with `git` and opens
+            // the request with `gh`, and with either one off the button leads
+            // to a sheet that can only apologise.
+            if Features.isOn(.git) && Features.isOn(.gitHub) {
+                Button("Pull Request…") { openingPullRequest = true }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 11.5, weight: .medium))
+                    .foregroundStyle(Color.accentColor)
+            }
         }
         .padding(.horizontal, Theme.s5)
         .padding(.vertical, Theme.s4)
@@ -242,8 +268,11 @@ private struct ChangesTab: View {
     private var empty: some View {
         WorkbenchEmpty(symbol: "plusminus",
                        title: "Nothing edited yet",
-                       blurb: "Files this session writes show up here, with their "
-                            + "diffs and a way to open a pull request.")
+                       blurb: Features.isOn(.git) && Features.isOn(.gitHub)
+                            ? "Files this session writes show up here, with their "
+                            + "diffs and a way to open a pull request."
+                            : "Files this session writes show up here, with their "
+                            + "diffs.")
     }
 
     private func row(_ change: FileChange) -> some View {

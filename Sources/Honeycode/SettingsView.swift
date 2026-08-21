@@ -30,6 +30,9 @@ struct SettingsView: View {
             AccountSettings()
                 .tabItem { Label("Accounts", systemImage: "person.2") }
 
+            FeatureSettings()
+                .tabItem { Label("Features", systemImage: "switch.2") }
+
             CrewSettings()
                 .tabItem { Label("Crew & Safety", systemImage: "lock.shield") }
 
@@ -43,6 +46,92 @@ struct SettingsView: View {
                 .tabItem { Label("Shortcuts", systemImage: "keyboard") }
         }
         .frame(width: 640)
+    }
+}
+
+// MARK: - Features
+
+/// What this app is, on this Mac.
+///
+/// Every one of these was written as though everybody had the thing behind it.
+/// The identity switcher assumes `gh` and `az`; the Preview tab assumes you
+/// want a browser in your editor; the crew assumes several subscriptions. On
+/// the machine this was built on all of that holds. Elsewhere most of it is
+/// chrome asking about tools that aren't installed.
+///
+/// A switch each, and switching one off takes its controls with it rather than
+/// greying them — see `Feature`. The first run asks these questions in order
+/// with their reasons attached; this is where they live afterwards.
+private struct FeatureSettings: View {
+    /// A local mirror, because `Features` is plain preferences rather than an
+    /// observable object — the engine has no Combine in it and shouldn't grow
+    /// some for eight booleans. Seeded on appear, written through on change.
+    @State private var on: [Feature: Bool] = [:]
+
+    var body: some View {
+        Form {
+            ForEach(Feature.Group.allCases) { group in
+                Section {
+                    ForEach(Feature.allCases.filter { $0.group == group }) { feature in
+                        row(feature)
+                    }
+                } header: {
+                    Text(group.title)
+                }
+            }
+
+            Section {
+                HStack {
+                    Button("Set Up Honeycode…") {
+                        Setup.rerun()
+                        NotificationCenter.default.post(name: Setup.requested, object: nil)
+                    }
+                    Spacer()
+                }
+            } footer: {
+                Text("The first-run flow again, from the top: which subscriptions "
+                     + "you have, what should be on screen, and what the agents are "
+                     + "allowed to do. It sets the same switches as this pane — "
+                     + "nothing is reset by opening it.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .formStyle(.grouped)
+        .frame(height: 560)
+        .onAppear {
+            on = Dictionary(uniqueKeysWithValues: Feature.allCases.map { ($0, Features.isOn($0)) })
+        }
+    }
+
+    private func row(_ feature: Feature) -> some View {
+        VStack(alignment: .leading, spacing: Theme.s2) {
+            Toggle(feature.title, isOn: binding(feature))
+            Text(feature.blurb)
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            // Only when it is actually missing. A line saying which tool a
+            // feature needs, on a Mac that has it, is a fact nobody asked for.
+            if let requirement = feature.requirement, !feature.isAvailable {
+                Text("`\(requirement.tool)` isn't installed — \(requirement.install)")
+                    .font(Theme.monoSmall)
+                    .foregroundStyle(Theme.stateHeld)
+            }
+        }
+        .padding(.vertical, Theme.s1)
+    }
+
+    private func binding(_ feature: Feature) -> Binding<Bool> {
+        Binding(get: { on[feature] ?? Features.isOn(feature) },
+                set: { value in
+                    on[feature] = value
+                    Features.set(feature, value)
+                    // The system prompt, at the moment somebody asked for
+                    // notifications. See `AppHost.attach`.
+                    if feature == .notifications && value { Notifier.configure() }
+                })
     }
 }
 

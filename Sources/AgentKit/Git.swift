@@ -116,7 +116,7 @@ enum Shell {
         let script = """
         #!/bin/sh
         \(preamble)echo "\(announcing)"
-        echo "When it's done, reopen Honeycode's View menu to switch to it."
+        echo "When it's done, go back to Honeycode."
         echo
         exec \(command)
         """

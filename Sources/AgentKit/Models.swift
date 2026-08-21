@@ -442,6 +442,22 @@ enum WorkbenchTab: String, CaseIterable, Identifiable, Codable, Sendable {
         case .run:     return "person.2"
         }
     }
+
+    /// The switch this tab depends on. Changes and Files depend on nothing —
+    /// they are the session's own edits and the session's own folder, and both
+    /// exist whatever else is turned off.
+    var feature: Feature? {
+        switch self {
+        case .preview: return .preview
+        case .run:     return .crew
+        case .changes, .files: return nil
+        }
+    }
+
+    /// The tabs this app currently has.
+    static var available: [WorkbenchTab] {
+        allCases.filter { $0.feature.map(Features.isOn) ?? true }
+    }
 }
 
 
@@ -2056,6 +2072,14 @@ final class Workspace: ObservableObject {
     /// Ask for a new session on this account. The sheet does the rest.
     func requestNewSession(_ account: Account) { newSessionRequest = account }
 
+    /// The first-run flow, on screen.
+    ///
+    /// Here rather than in a view for the same reason `newSessionRequest` is:
+    /// the menu bar offers a way back into setup, and `.commands` sits outside
+    /// the view hierarchy. `RootView` raises it at launch when `Setup.needsRun`,
+    /// and again when Settings — a scene of its own — asks for it.
+    @Published var showingSetup = false
+
     // Still `bench.` on purpose. These are the keys your session roster is
     // written under in the preferences that exist right now; renaming them is
     // not a rename, it's a delete — the app would start up looking for keys
@@ -2074,6 +2098,11 @@ final class Workspace: ObservableObject {
         // body, so the stores had already read empty defaults by then.
         Migration.run()
         Support.prepare()
+        // Which subscriptions and which features this Mac starts with, decided
+        // before the first frame so nothing reads a default that is about to
+        // change. A roster in preferences means this app has been used here
+        // before, and a returning install is never shown the flow.
+        Setup.prepare(returning: Prefs.store.object(forKey: Self.storeKey) != nil)
 
         let stored = Self.load()
         // Model and effort were being written to the store and then dropped on
@@ -2328,6 +2357,15 @@ final class Workspace: ObservableObject {
         if !inAccount.contains(where: { $0.id == selection }) { selection = inAccount.first?.id }
     }
 
+    /// The accounts the sidebar and the rail list.
+    ///
+    /// The ones you have, plus any you have switched off that still hold
+    /// conversations. Switching an account off tidies away a subscription you
+    /// don't pay for; it must never hide work you did on one you used to.
+    var listedAccounts: [Account] {
+        Account.allCases.filter { $0.isEnabled || !sessions(in: $0).isEmpty }
+    }
+
     /// ⌘⌥↓ / ⌘⌥↑ — step through every session in sidebar order, crossing
     /// account boundaries so the whole list is reachable without the mouse.
     func step(_ delta: Int) {
@@ -2353,12 +2391,22 @@ final class Workspace: ObservableObject {
         return list
     }
 
+    /// What a Mac with no roster opens on.
+    ///
+    /// This used to be two sessions in `~/Workspace/Personal` and `~/Workspace`,
+    /// which is one particular person's filing and exists on one particular
+    /// Mac. Everywhere else it was two conversations about folders that had
+    /// never been created — and a session whose directory isn't there fails at
+    /// the first command rather than at the moment you could have fixed it.
+    ///
+    /// One session now, on an account that can actually run, in a folder that
+    /// definitely exists. Setup asks for a real one at the end; this is what
+    /// the window has behind that sheet in the meantime.
     private static func seed() -> [Session] {
-        let workspace = URL(fileURLWithPath: NSHomeDirectory())
-            .appendingPathComponent("Workspace")
-        return [
-            Session(account: .personal, directory: workspace.appendingPathComponent("Personal")),
-            Session(account: .work, directory: workspace),
-        ]
+        let home = URL(fileURLWithPath: NSHomeDirectory())
+        let workspace = home.appendingPathComponent("Workspace")
+        let start = FileManager.default.fileExists(atPath: workspace.path) ? workspace : home
+        let account = Account.enabled.first ?? .personal
+        return [Session(account: account, directory: start)]
     }
 }

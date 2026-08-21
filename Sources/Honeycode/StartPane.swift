@@ -59,9 +59,14 @@ struct StartPane<Composer: View>: View {
         VStack(alignment: .leading, spacing: Theme.s4) {
             roster
 
-            Text("Add agents with **Team** above to run a crew — the first one "
+            // The crew sentence only where a crew exists. With it switched off
+            // the Team control isn't in the header bar, and pointing at a
+            // control that isn't there is worse than saying nothing.
+            Text(Features.isOn(.crew)
+                 ? "Add agents with **Team** above to run a crew — the first one "
                  + "named plans the work and hands out the pieces. "
-                 + "Type **@** for a file, **/** for a command.")
+                 + "Type **@** for a file, **/** for a command."
+                 : "Type **@** for a file, **/** for a command.")
                 .font(.system(size: 11.5))
                 .foregroundStyle(.tertiary)
                 .fixedSize(horizontal: false, vertical: true)

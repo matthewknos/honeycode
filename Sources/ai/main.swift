@@ -106,7 +106,7 @@ final class Program {
     func run() {
         begin()
 
-        let accounts = Account.allCases.map { "@" + AgentMention.handle($0) }.joined(separator: "  ")
+        let accounts = Account.enabled.map { "@" + AgentMention.handle($0) }.joined(separator: "  ")
         Console.line()
         Console.line(Console.paint("ai", "244", bold: true) + Console.dim("  ·  " + directory.path))
         Console.line(Console.dim("  " + accounts))
@@ -156,7 +156,7 @@ final class Program {
     private func models(_ argument: String, then finish: @escaping () -> Void) {
         let wanted: [Account]
         if argument.isEmpty {
-            wanted = Account.allCases
+            wanted = Account.enabled
         } else if let one = AgentMention.account(forHandle:
                     argument.trimmingCharacters(in: CharacterSet(charactersIn: "@"))) {
             wanted = [one]

@@ -33,6 +33,12 @@ struct IdentityMenu: View {
     private var activeGitHub: GitHubAccount? { gitHub.first(where: \.isActive) }
     private var activeAzure: AzureAccount? { azure.first(where: \.isActive) }
 
+    /// Either half can be switched off in setup. Both off and this control
+    /// isn't built at all — see `RootView.footer` — so at least one of these
+    /// is true wherever the rest of this file runs.
+    private var showsGitHub: Bool { Features.isOn(.gitHub) }
+    private var showsAzure: Bool { Features.isOn(.azure) }
+
     var body: some View {
         Button { showing.toggle() } label: { label }
             .buttonStyle(SidebarFooterButton())
@@ -60,17 +66,28 @@ struct IdentityMenu: View {
 
             if !compact {
                 VStack(alignment: .leading, spacing: 0) {
-                    Text(activeGitHub?.login ?? (GitHubAuth.isInstalled
-                                                 ? "Not signed in" : "gh not installed"))
-                        .font(.system(size: 12))
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                    if let azure = activeAzure {
-                        Text(azure.user)
-                            .font(.system(size: 10.5))
-                            .foregroundStyle(.tertiary)
+                    if showsGitHub {
+                        Text(activeGitHub?.login ?? (GitHubAuth.isInstalled
+                                                     ? "Not signed in" : "gh not installed"))
+                            .font(.system(size: 12))
                             .lineLimit(1)
                             .truncationMode(.middle)
+                    }
+                    if let azure = activeAzure, showsAzure {
+                        Text(azure.user)
+                            // Promoted to the primary line when GitHub is off
+                            // and this is the only identity there is. A single
+                            // line of tertiary type in a control's own row
+                            // reads as a subtitle for something missing.
+                            .font(.system(size: showsGitHub ? 10.5 : 12))
+                            .foregroundStyle(showsGitHub ? AnyShapeStyle(.tertiary)
+                                                         : AnyShapeStyle(.primary))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    } else if !showsGitHub {
+                        Text(AzureAuth.isInstalled ? "Not signed in" : "az not installed")
+                            .font(.system(size: 12))
+                            .lineLimit(1)
                     }
                 }
                 Spacer(minLength: 0)
@@ -87,19 +104,26 @@ struct IdentityMenu: View {
 
     private var help: String {
         var lines: [String] = []
-        lines.append("GitHub: " + (activeGitHub?.login ?? "not signed in"))
-        lines.append("Azure: " + (activeAzure?.user ?? "not signed in"))
+        if showsGitHub { lines.append("GitHub: " + (activeGitHub?.login ?? "not signed in")) }
+        if showsAzure { lines.append("Azure: " + (activeAzure?.user ?? "not signed in")) }
         return lines.joined(separator: "\n")
     }
 
     private var menu: some View {
         VStack(alignment: .leading, spacing: 0) {
-            PopoverHeader("GitHub account")
-            gitHubRows
+            if showsGitHub {
+                PopoverHeader("GitHub account")
+                gitHubRows
+            }
 
-            Divider().overlay(Theme.rule).padding(.vertical, Theme.s2)
-            PopoverHeader("Azure account")
-            azureRows
+            if showsGitHub && showsAzure {
+                Divider().overlay(Theme.rule).padding(.vertical, Theme.s2)
+            }
+
+            if showsAzure {
+                PopoverHeader("Azure account")
+                azureRows
+            }
         }
         .padding(.vertical, Theme.s3)
         .frame(width: 272)
@@ -200,8 +224,8 @@ struct IdentityMenu: View {
     // MARK: Reading and switching
 
     private func reload() async {
-        await loadGitHub()
-        await loadAzure()
+        if showsGitHub { await loadGitHub() }
+        if showsAzure { await loadAzure() }
     }
 
     private func loadGitHub() async {

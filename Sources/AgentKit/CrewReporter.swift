@@ -11,11 +11,33 @@ struct CrewAssignment: Equatable {
     /// "four ways" and mean it.
     let to: Seat
     let task: String
+    /// The part of the job every piece shares, written once by the lead and
+    /// prepended to each task on the way out.
+    ///
+    /// Kept beside the task rather than folded into it, which is the whole
+    /// subtlety. Everything that *describes* a piece wants the task alone —
+    /// `Crew.gist` builds the roster line from it, and the plan the person
+    /// reads is a list of them, and three delegates whose entries all began
+    /// with the same four hundred words of project preamble would be a plan you
+    /// cannot skim. Everything that *acts* on a piece wants both: the tenancy
+    /// check has to see the preamble because that is exactly where a lead would
+    /// put the organisation's material, and the overlap check has to see it
+    /// because it is where shared filenames get named. That is `wire`.
+    var brief: String?
     /// What the lead asked this delegate to run, if it asked. Same grammar as a
     /// mention — `{"to": "kimi:k3"}` — because that is the grammar the lead
     /// reads in its own briefing and will reasonably write back.
     var model: String?
     var effort: EffortChoice?
+
+    /// The whole instruction, as the delegate will receive it.
+    ///
+    /// Used by everything that reads a piece for what it *contains* rather than
+    /// for what it is called — see `brief`.
+    var wire: String {
+        guard let brief, !brief.isEmpty else { return task }
+        return brief + "\n\n" + task
+    }
 
     /// `@kimi#2:k3` — how the plan should read.
     ///

@@ -116,6 +116,9 @@ final class ACPAdapter: AgentAdapter {
     private var held: [String] = []
     /// The id of the in-flight `session/prompt`, so its result ends the turn.
     private var promptID: Int?
+    /// Where the transcript stood when this turn's prompt went out, so the turn
+    /// can be asked whether it produced anything. See `reportSilentTurn`.
+    private var promptMark = 0
     /// A bookkeeping prompt we sent ourselves. Both are answered by the CLI
     /// itself rather than by a model — verified over ACP: they return instantly
     /// and register as 0 AI Units — so asking after every turn costs nothing.
@@ -230,6 +233,49 @@ final class ACPAdapter: AgentAdapter {
         return true
     }
 
+    /// A turn that ended having produced nothing at all, said out loud.
+    ///
+    /// This is the failure this file's own troubleshooting note describes and
+    /// never detected. Over ACP a CLI that has failed does not say so: the
+    /// turn comes back `{"stopReason":"end_turn"}` with no content, no error
+    /// object and nothing on stderr, and it is indistinguishable from an agent
+    /// that genuinely had nothing to add. Measured against Kimi Code with a
+    /// spent quota — `kimi -p` prints `403 You've reached your usage limit for
+    /// this billing cycle`, and the same CLI over ACP returns a bare
+    /// `end_turn`. The expired-login and TLS-failure cases look identical.
+    ///
+    /// So the *symptom* is what gets reported, because it is the only thing
+    /// visible from here, and it is reported as a suspicion rather than a
+    /// diagnosis: this code cannot know which of the three it is, and the one
+    /// command that can is the one worth printing.
+    ///
+    /// Emitting it as a notice rather than swallowing it is what lets `Crew`
+    /// act on it — see `Crew.trouble`. Without this the crew sees an empty
+    /// reply, calls the delegate empty-handed, and buys the same refusal again
+    /// on a fresh seat of the same exhausted subscription.
+    private func reportSilentTurn() {
+        let produced = session.items.dropFirst(max(0, promptMark)).contains { item in
+            switch item {
+            case .assistant(_, let text):
+                return !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            case .thinking(_, let text, _, _):
+                return !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            case .tool, .diff, .search:
+                return true
+            default:
+                return false
+            }
+        }
+        guard !produced else { return }
+        session.items.append(.notice(id: UUID(), text:
+            "\(agent.displayName) ended the turn without producing anything — no text, "
+            + "no tools, no files. Over ACP that is what a failure inside the CLI looks "
+            + "like: the turn ends normally with no content and no error, so the reason "
+            + "can't be seen from here. Run `\(agent.command) -p \"hi\"` in a terminal to "
+            + "get it — a spent quota, an expired login and a TLS failure all look "
+            + "exactly like this."))
+    }
+
     private func locateBinary() -> URL? {
         agent.binaryCandidates
             .first { FileManager.default.isExecutableFile(atPath: $0) }
@@ -322,6 +368,7 @@ final class ACPAdapter: AgentAdapter {
 
     private func prompt(_ text: String, in sessionID: String) {
         replaying = false
+        promptMark = session.items.count
         promptID = request("session/prompt", params: [
             "sessionId": sessionID,
             "prompt": [["type": "text", "text": preface() + text]],
@@ -580,6 +627,10 @@ final class ACPAdapter: AgentAdapter {
                 // `held` happens there and neither needs a lock — the same
                 // arrangement the Claude adapter uses, for the same reason.
                 self.turnInFlight = false
+                // Before `endTurn`, so whatever is waiting on the turn — the
+                // crew, above all — sees the notice as part of this turn rather
+                // than after it has already judged the turn empty.
+                self.reportSilentTurn()
                 self.session.endTurn()
                 // After `endTurn`, so anything held goes out against a session
                 // already marked idle.

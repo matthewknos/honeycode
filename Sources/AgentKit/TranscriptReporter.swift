@@ -183,13 +183,16 @@ final class TranscriptReporter: CrewReporter {
     /// The first sentence rather than the first N characters where there is
     /// one: an assignment opens by saying what to build, and cutting mid-clause
     /// turns that into a riddle.
+    /// One line of somebody else's text, for a notice.
+    ///
+    /// `Crew.gist` and nothing else. This was a private copy of it — same
+    /// intent, same shape, and the same bug, which is the argument against
+    /// copies made concretely: `gist` was fixed to stop treating the full stop
+    /// in `world.js` as the end of a sentence, and this went on cutting the
+    /// extension off every filename it was handed. A crew message reading
+    /// "I own js/render" is a notice about a file that doesn't exist, in the
+    /// one channel whose entire subject is who owns which file.
     private static func summarise(_ task: String, limit: Int = 120) -> String {
-        let flat = task.replacingOccurrences(of: "\n", with: " ")
-            .replacingOccurrences(of: "  ", with: " ")
-            .trimmingCharacters(in: .whitespaces)
-        if let stop = flat.firstIndex(of: "."), flat.distance(from: flat.startIndex, to: stop) < limit {
-            return String(flat[..<stop])
-        }
-        return flat.count > limit ? String(flat.prefix(limit - 1)) + "…" : flat
+        Crew.gist(task, limit: limit)
     }
 }

@@ -5,3 +5,7 @@ build/
 .buildloop/
 
 .DS_Store
+
+# Crew lab runs — real transcripts and whatever the crew built. Evidence,
+# not source, and some of it is large.
+runs/

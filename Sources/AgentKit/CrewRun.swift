@@ -90,14 +90,35 @@ final class CrewRun: ObservableObject {
 
     func setPhase(_ text: String?) { phase = text }
 
-    /// The plan, as members. Called once, before anything is sent — including
-    /// the pieces that turn out not to be sendable, for the same reason the
+    /// The plan, as members. Called before anything is sent — including the
+    /// pieces that turn out not to be sendable, for the same reason the
     /// reporter is told about those: a plan you can see and a plan that ran are
     /// different things.
+    ///
+    /// Called once per round, not once per run. A lead may hand work out again
+    /// when it assembles, and this used to replace the array — so the second
+    /// round would wipe the first off the panel mid-run, taking with it the
+    /// file counts and the held pieces that are the only record of what the
+    /// first round did. Anyone the new round doesn't mention keeps the state
+    /// they finished in; anyone it does goes back to `waiting`, because they
+    /// are about to start again.
     func plan(_ assignments: [CrewAssignment], model: (Seat) -> String) {
-        members = assignments.map {
-            Member(seat: $0.to, model: model($0.to),
-                   piece: Crew.gist($0.task), state: .waiting, session: nil)
+        for assignment in assignments {
+            let piece = Crew.gist(assignment.task)
+            let title = model(assignment.to)
+            guard let index = members.firstIndex(where: { $0.seat == assignment.to }) else {
+                members.append(Member(seat: assignment.to, model: title,
+                                      piece: piece, state: .waiting, session: nil))
+                continue
+            }
+            members[index].piece = piece
+            members[index].state = .waiting
+            members[index].session = nil
+            // Cleared rather than kept: it counts what this seat changed, and
+            // it is about to change more. Carrying the old number forward would
+            // show a finished count beside an agent that is working again.
+            members[index].files = nil
+            if !title.isEmpty { members[index].model = title }
         }
     }
 

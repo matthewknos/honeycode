@@ -293,7 +293,7 @@ Sources/Honeycode/    the app (SwiftUI/AppKit)
 Sources/ai/           the terminal client
 Tests/                one main.swift per suite, no framework
 Resources/            Info.plist, entitlements, icon, syntax themes
-tools/                doctor.sh, signing-identity.sh
+tools/                doctor.sh, signing-identity.sh, crewlab.sh, crewscore.py
 build.sh              → build/Honeycode.app
 build-ai.sh           → build/ai
 test.sh               everything; --typecheck for a fast loop
@@ -322,6 +322,36 @@ tests.
 `test.sh` writes nothing into `build/` and never stops a running app, so it's
 safe to run while you're using the thing it's testing. `build.sh` does quit
 Honeycode, because it has to overwrite the binary the running copy has mapped.
+
+### The crew lab
+
+The suites above check the parts of a crew run that are decidable from text —
+what a plan parses to, which pieces collide, what the ledger says. They cannot
+tell you the thing you actually want to know, which is whether a real lead given
+a real job splits it well.
+
+```sh
+tools/crewlab.sh "build a snake game. html"          three Kimis, the default
+tools/crewlab.sh --crew "@kimi @kimi#2" "…"          a smaller crew
+tools/crewlab.sh --dry-run "…"                       print it, spend nothing
+tools/crewscore.py --all                             every run so far
+```
+
+`ai -p` is the whole mechanism: the same engine the window drives, minus the
+window, in a scratch directory under `runs/`. Every line is stamped with seconds
+since launch, which is what makes the one number worth having recoverable — how
+much of the run had the whole crew in it, and how much had the lead on its own.
+
+That number is the point. A crew is worth paying for because several agents work
+at once, and the first run measured this way spent 28% of its wall clock with
+three agents in it and 72% with one. `crewscore.py` prints that split, then the
+things that went wrong: contested files, delegates that wrote nothing, pieces
+handed out twice, messages nobody received, and how much of the crew's
+conversation was agents thanking each other.
+
+**It spends real money.** A three-seat run of a game-sized task has cost $5–7
+and taken half an hour, and it will happily exhaust a subscription's quota for
+the rest of the day. `runs/` is gitignored — the logs are evidence, not source.
 
 ---
 

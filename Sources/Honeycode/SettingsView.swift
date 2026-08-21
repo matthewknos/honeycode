@@ -58,14 +58,47 @@ private struct AppearanceSettings: View {
     @ObservedObject var store: BackgroundStore
     @Binding var appearance: HoneycodeApp.Appearance
 
+    /// Which half of Appearance is showing. Not persisted: it is a place in a
+    /// window, not a preference, and reopening Settings on whichever sub-pane
+    /// you happened to leave last is a small surprise for no gain.
+    @State private var half = Half.text
+
+    private enum Half: String, CaseIterable, Identifiable {
+        case text, background
+        var id: String { rawValue }
+        var title: String { self == .text ? "Text" : "Background" }
+    }
+
+    /// A segmented picker, **not** a nested `TabView`.
+    ///
+    /// This was a `TabView` and it did not survive contact with the Settings
+    /// scene. AppKit does not nest preference tab bars: the inner tabs were
+    /// hoisted into the *outer* toolbar, so choosing Appearance showed seven
+    /// tabs instead of five — Accounts, Crew & Safety, Appearance, Skills,
+    /// Shortcuts and then a stray Text and Background — and the window title
+    /// changed to "Text", which is the name of a pane nobody had selected.
+    ///
+    /// A `Picker` in the pane's own content is the shape the platform actually
+    /// uses for a preference pane with two faces, and it cannot be promoted
+    /// anywhere because it is content rather than chrome.
     var body: some View {
-        TabView {
-            ReadingSettings(appearance: $appearance)
-                .tabItem { Label("Text", systemImage: "textformat.size") }
-            BackgroundSettings(store: store)
-                .tabItem { Label("Background", systemImage: "photo") }
+        VStack(spacing: 0) {
+            Picker("", selection: $half) {
+                ForEach(Half.allCases) { option in
+                    Text(option.title).tag(option)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .frame(width: 260)
+            .padding(.top, Theme.s5)
+            .padding(.bottom, Theme.s3)
+
+            switch half {
+            case .text:       ReadingSettings(appearance: $appearance)
+            case .background: BackgroundSettings(store: store)
+            }
         }
-        .padding(.top, Theme.s4)
     }
 }
 
@@ -396,7 +429,13 @@ private struct ReadingSettings: View {
             }
         }
         .formStyle(.grouped)
-        .frame(height: 440)
+        // The same height as `BackgroundSettings`, which is the other half of
+        // this pane. They were 440 and 560 while they were separate tabs, where
+        // a differing height only means the window resizes as you switch tabs —
+        // ordinary behaviour. Sharing one pane behind a segmented control, that
+        // same difference reads as the window flinching every time you touch
+        // the control, because nothing else on screen changed.
+        .frame(height: 560)
     }
 
     private var sample: some View {

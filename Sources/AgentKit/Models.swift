@@ -2077,8 +2077,18 @@ final class Workspace: ObservableObject {
     /// Here rather than in a view for the same reason `newSessionRequest` is:
     /// the menu bar offers a way back into setup, and `.commands` sits outside
     /// the view hierarchy. `RootView` raises it at launch when `Setup.needsRun`,
-    /// and again when Settings — a scene of its own — asks for it.
+    /// and again when the Features pane asks for it.
     @Published var showingSetup = false
+
+    /// Settings, in the pane.
+    ///
+    /// Here for the same reason as the two above: ⌘, is a menu key equivalent
+    /// and `.commands` sits outside the view hierarchy. It also has to be *one*
+    /// flag rather than view state — the sidebar footer row and the collapsed
+    /// rail's gear are the same control drawn twice, and each of them used to
+    /// be a `SettingsLink`, which is a control that opens a window and has no
+    /// idea whether one is already open.
+    @Published var showingSettings = false
 
     // Still `bench.` on purpose. These are the keys your session roster is
     // written under in the preferences that exist right now; renaming them is

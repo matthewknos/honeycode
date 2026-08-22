@@ -1,51 +1,189 @@
 import SwiftUI
 import AppKit
 
-/// The Settings window (⌘,).
+/// Settings (⌘,), in the window rather than beside it.
 ///
-/// Classic macOS preferences shape: a toolbar of tabs, one pane each, sized to
-/// its content. Deliberately *not* the System Settings sidebar — that layout is
-/// for a hundred panes, and borrowing it for two makes an app look like it's
-/// wearing a coat three sizes too big.
-struct SettingsView: View {
+/// This was a SwiftUI `Settings` scene, which is to say a second window. That
+/// is the platform default and it was the wrong default here for three
+/// reasons, all of which showed up as bugs rather than as taste:
+///
+/// - **A scene cannot reach the window.** Settings ▸ Features offers a way
+///   back into the first-run flow, and the flow is a sheet on `RootView` — so
+///   the button had to post a notification and then activate the app, or the
+///   flow opened *behind* the window that asked for it. Nothing about that
+///   was a preferences problem; it was a two-windows problem.
+/// - **AppKit owned the chrome.** `AppearanceSettings` documents an entire
+///   design decision — a segmented picker rather than a nested `TabView` —
+///   forced by the Settings scene hoisting inner tabs into its own toolbar.
+/// - **It was a pane pretending to be a window.** Crew and Agents are panes,
+///   reached from the sidebar, drawn in the same place. Settings is reached
+///   from the sidebar too, from a row directly below them, and was the only
+///   one of the three that flew off somewhere else.
+///
+/// So: the same six tabs, in the pane, in the tab strip this app already uses
+/// for the workbench. The classic preferences shape is kept — a strip of tabs,
+/// one pane each — and deliberately still *not* the System Settings sidebar,
+/// which is a layout for a hundred panes.
+///
+/// Every route in is the one flag `Workspace.showingSettings`, and every route
+/// out puts you back where the pane was: the pill, a session in the list, the
+/// footer row again, or Done.
+struct SettingsPane: View {
+    @ObservedObject var workspace: Workspace
     @ObservedObject var background: BackgroundStore
     @Binding var appearance: HoneycodeApp.Appearance
 
-    /// Grouped by the *thing being configured*, not by the kind of control.
-    ///
-    /// The six tabs before this were General, Reading, Skills, Background,
-    /// Accounts and Shortcuts, and the split ran along the wrong seam. A Claude
-    /// account's config directory was under Accounts while the permission flag
-    /// that decides what that account may do was under General; the tenancy
-    /// fence and the spend cap — both facts about running a crew — were filed
-    /// beside an appearance picker; and the reading measure and the wallpaper,
-    /// which are the same decision about how the window looks, were two tabs
-    /// apart.
-    ///
-    /// Five now, each answering one question: who can run, what a crew is
-    /// allowed to do, how it looks, what the agents know, and which keys do
-    /// what.
+    /// Not persisted, for the reason `AppearanceSettings.half` gives about its
+    /// own: which tab you were last on is a place in a window, not a
+    /// preference, and reopening on it is a small surprise for no gain.
+    @State private var tab = SettingsTab.accounts
+
     var body: some View {
-        TabView {
-            AccountSettings()
-                .tabItem { Label("Accounts", systemImage: "person.2") }
+        VStack(spacing: 0) {
+            strip
+            Divider().overlay(Theme.rule)
 
-            FeatureSettings()
-                .tabItem { Label("Features", systemImage: "switch.2") }
-
-            CrewSettings()
-                .tabItem { Label("Crew & Safety", systemImage: "lock.shield") }
-
-            AppearanceSettings(store: background, appearance: $appearance)
-                .tabItem { Label("Appearance", systemImage: "paintpalette") }
-
-            SkillSettings()
-                .tabItem { Label("Skills", systemImage: "wand.and.stars") }
-
-            ShortcutSettings()
-                .tabItem { Label("Shortcuts", systemImage: "keyboard") }
+            // Each pane is a `Form` and does its own scrolling, so this only
+            // has to give them the room and the measure.
+            Group {
+                switch tab {
+                case .accounts:  AccountSettings()
+                case .features:  FeatureSettings()
+                case .crew:      CrewSettings()
+                case .appearance: AppearanceSettings(store: background,
+                                                     appearance: $appearance)
+                case .skills:    SkillSettings()
+                case .shortcuts: ShortcutSettings()
+                }
+            }
+            // The width the Settings window used to be. A `Form` run out to the
+            // full width of a 1600pt pane puts its controls a foot away from
+            // their labels; the measure is what made the window readable and it
+            // is not a property of being in a window.
+            .frame(maxWidth: 640)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .frame(width: 640)
+        .background(Theme.canvas)
+    }
+
+    /// The tabs, and the way out.
+    ///
+    /// Same shape as the workbench's strip — icons with labels, a `Theme.well`
+    /// fill on the selected one — because it is the same control doing the same
+    /// job, and the app having two ideas of what a tab looks like is how the
+    /// last review found four ideas of what a shadow looks like.
+    ///
+    /// Six labels need about 640pt, and the pane is 660 with the sidebar out at
+    /// the window's minimum width — too close to call it fits. So below that
+    /// the strip keeps the label on the *selected* tab and drops the other
+    /// five to glyphs: five icons and one named place still says where you are,
+    /// which a row of six identical-weight glyphs does not.
+    private var strip: some View {
+        GeometryReader { geometry in
+            let wide = geometry.size.width >= 700
+            HStack(spacing: Theme.s2) {
+                ForEach(SettingsTab.allCases) { candidate in
+                    button(candidate, labelled: wide || candidate == tab)
+                }
+                Spacer(minLength: Theme.s3)
+                Button {
+                    withAnimation(Motion.panel) { workspace.showingSettings = false }
+                } label: {
+                    Text("Done")
+                        .font(.system(size: 11.5, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, Theme.s4)
+                        .frame(height: 24)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(HoverCapsule())
+                .help("Back to what you were looking at")
+            }
+            .padding(.horizontal, Theme.s5)
+            .frame(height: Theme.headerHeight)
+            .frame(maxHeight: .infinity, alignment: .bottom)
+        }
+        .frame(height: Theme.headerHeight + Chrome.trafficLightClearance - Theme.s6)
+    }
+
+    private func button(_ candidate: SettingsTab, labelled: Bool) -> some View {
+        let on = tab == candidate
+        return Button {
+            withAnimation(Motion.hover) { tab = candidate }
+        } label: {
+            HStack(spacing: Theme.s2) {
+                Image(systemName: candidate.symbol)
+                    .font(.system(size: 10.5, weight: .medium))
+                if labelled {
+                    Text(candidate.title)
+                        .font(.system(size: 11.5, weight: .medium))
+                }
+            }
+            .foregroundStyle(on ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
+            .padding(.horizontal, Theme.s4)
+            .frame(height: 24)
+            .background(on ? Theme.well : .clear,
+                        in: RoundedRectangle(cornerRadius: Theme.cornerChip))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(candidate.blurb)
+    }
+}
+
+/// The six panes.
+///
+/// Grouped by the *thing being configured*, not by the kind of control.
+///
+/// The six tabs before this were General, Reading, Skills, Background,
+/// Accounts and Shortcuts, and the split ran along the wrong seam. A Claude
+/// account's config directory was under Accounts while the permission flag
+/// that decides what that account may do was under General; the tenancy fence
+/// and the spend cap — both facts about running a crew — were filed beside an
+/// appearance picker; and the reading measure and the wallpaper, which are the
+/// same decision about how the window looks, were two tabs apart.
+///
+/// Each answers one question: who can run, what this app is on this Mac, what
+/// a crew is allowed to do, how it looks, what the agents know, and which keys
+/// do what.
+enum SettingsTab: String, CaseIterable, Identifiable {
+    case accounts, features, crew, appearance, skills, shortcuts
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .accounts:   return "Accounts"
+        case .features:   return "Features"
+        case .crew:       return "Crew & Safety"
+        case .appearance: return "Appearance"
+        case .skills:     return "Skills"
+        case .shortcuts:  return "Shortcuts"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .accounts:   return "person.2"
+        case .features:   return "switch.2"
+        case .crew:       return "lock.shield"
+        case .appearance: return "paintpalette"
+        case .skills:     return "wand.and.stars"
+        case .shortcuts:  return "keyboard"
+        }
+    }
+
+    /// The tooltip — and the only thing naming a tab whose label the strip has
+    /// dropped for width.
+    var blurb: String {
+        switch self {
+        case .accounts:   return "The subscriptions you have, and where each keeps its login"
+        case .features:   return "What this app is on this Mac"
+        case .crew:       return "What the agents are allowed to do, and what a run may cost"
+        case .appearance: return "The scheme, the measure and the ground"
+        case .skills:     return "Instructions every agent can reach"
+        case .shortcuts:  return "Which keys do what"
+        }
     }
 }
 
@@ -99,7 +237,7 @@ private struct FeatureSettings: View {
             }
         }
         .formStyle(.grouped)
-        .frame(height: 560)
+        .frame(maxHeight: .infinity)
         .onAppear {
             on = Dictionary(uniqueKeysWithValues: Feature.allCases.map { ($0, Features.isOn($0)) })
         }
@@ -248,7 +386,7 @@ private struct SkillSettings: View {
             }
         }
         .formStyle(.grouped)
-        .frame(height: 440)
+        .frame(maxHeight: .infinity)
         .onAppear { store.reload() }
         .sheet(item: $editing) { skill in
             SkillEditor(skill: skill, store: store)
@@ -432,7 +570,7 @@ private struct CrewSettings: View {
             }
         }
         .formStyle(.grouped)
-        .frame(height: 560)
+        .frame(maxHeight: .infinity)
         // Both flags are fixed at process launch, so live sessions restart.
         .onChange(of: skipPermissions) {
             NotificationCenter.default.post(name: ClaudeAdapter.permissionsChanged, object: nil)
@@ -518,13 +656,12 @@ private struct ReadingSettings: View {
             }
         }
         .formStyle(.grouped)
-        // The same height as `BackgroundSettings`, which is the other half of
-        // this pane. They were 440 and 560 while they were separate tabs, where
-        // a differing height only means the window resizes as you switch tabs —
-        // ordinary behaviour. Sharing one pane behind a segmented control, that
-        // same difference reads as the window flinching every time you touch
-        // the control, because nothing else on screen changed.
-        .frame(height: 560)
+        // Was pinned to 560 to match `BackgroundSettings`, the other half of
+        // this pane: two heights behind one segmented control read as the
+        // *window* flinching every time you touched it. In the pane there is
+        // no window to flinch — the pane is the size it is, and both halves
+        // fill it — so the pin is gone and each half keeps its own measure.
+        .frame(maxHeight: .infinity)
     }
 
     private var sample: some View {
@@ -628,7 +765,7 @@ private struct ShortcutSettings: View {
             }
         }
         .formStyle(.grouped)
-        .frame(height: 560)
+        .frame(maxHeight: .infinity)
     }
 }
 
@@ -653,7 +790,7 @@ private struct BackgroundSettings: View {
             }
             .padding(Theme.s7)
         }
-        .frame(height: 560)
+        .frame(maxHeight: .infinity)
     }
 
     // MARK: Preview

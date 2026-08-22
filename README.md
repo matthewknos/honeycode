@@ -43,7 +43,7 @@ replace them — it never talks to a model endpoint directly.
 | `@kimi` Kimi Code | `kimi` | [MoonshotAI/kimi-cli](https://github.com/MoonshotAI/kimi-cli) (Node) |
 | `@copilot` GitHub Copilot | `copilot` | [github/copilot-cli](https://github.com/github/copilot-cli) |
 
-You can add others — see [Adding your own account](#adding-your-own-account).
+The rest of the ACP registry is one click away in **Settings ▸ Accounts ▸ Add** — Gemini, Codex, Cursor, OpenCode, Cline, goose and the rest. See [Adding another agent](#adding-another-agent).
 
 ---
 
@@ -145,6 +145,19 @@ ln -s "$PWD/build/ai" ~/.local/bin/ai
 
 ## Accounts
 
+### The short version
+
+You do not have to do any of what follows by hand. **Settings ▸ Accounts** — and
+the second step of first-run setup — shows every account with one button beside
+it, and the button is whatever that account needs next: **Install** when the CLI
+isn't on this Mac, **Sign in** when it is and there's no login behind it. Either
+one opens a terminal, because installing and signing in are things these CLIs do
+in a terminal, and the window watches for it to finish rather than making you
+come back and check.
+
+The rest of this section is what those buttons do, for when you would rather do
+it yourself or something has gone sideways.
+
 ### The two Claude accounts
 
 Claude Code stores its login in a directory, and `CLAUDE_CONFIG_DIR` picks which
@@ -162,8 +175,13 @@ Honeycode ships pointing at:
 only on a machine that has two Claude accounts and moved one out of the way.
 
 **If you have one Claude account, point both at `~/.claude`** — or just use the
-one and ignore the other. Both paths are editable in **Settings ▸ Accounts**, with
-a checkmark beside each that tells you whether the directory is actually there.
+one and ignore the other. Both paths are editable in **Settings ▸ Accounts**, and
+setup offers **Use Enterprise's** (or **Use Personal's**) beside the field, which
+does exactly that in one click once the other one is signed in.
+
+Beside each is a status, and it means a login rather than a folder: a directory
+that exists but holds no `.credentials.json` and no `projects/` reads as *not
+signed in*, which is what it is.
 
 **If you have two**, sign the second one in like this:
 
@@ -177,14 +195,46 @@ the variable itself for every session it launches.
 ### Kimi and Copilot
 
 These keep their own credentials and have no equivalent knob. Run `kimi` or
-`copilot` once in a terminal, sign in there, and Honeycode picks it up.
+`copilot` once in a terminal, sign in there, and Honeycode picks it up — or press
+**Sign in…** beside either of them, which opens that terminal for you.
 
-### Adding your own account
+Honeycode cannot see whether these two are signed in, only that they are
+installed, so that is all it claims: the row says *installed*, with no tick.
+A green tick here would be a promise about a file this app has never looked at.
 
-**Settings ▸ Accounts ▸ Add** takes any CLI that speaks ACP — the Agent Client
-Protocol, newline-delimited JSON-RPC 2.0 over stdio. A Gemini CLI, a second Kimi
-seat on a different key, an in-house agent, a Claude Code pointed at a proxy. You
-give it:
+### Adding another agent
+
+Four accounts ship. Any CLI that speaks ACP — the Agent Client Protocol,
+newline-delimited JSON-RPC 2.0 over stdio — can be a fifth, and most of the ones
+worth having are already in the list.
+
+**Settings ▸ Accounts ▸ Add**, or **Add an agent** on the second step of setup,
+opens the catalogue: Gemini CLI, Codex, Cursor, OpenCode, Cline, goose, Qwen
+Code, Amp, Devin, Factory Droid and the rest, each with its command,
+arguments and environment already filled in. One click adds it, picks a handle
+that isn't taken and a colour that isn't in use, and switches it on.
+
+Most of them need nothing installed: the entry runs `npx -y <package>`, which
+fetches the agent the first time you send a message. The ones that ship their
+own binary are marked **installs itself** and their row carries a **Get…** link
+to where it lives.
+
+The list is generated from the protocol's own registry by
+`tools/acp-catalogue.py`, which writes `Sources/AgentKit/AgentCatalogue+Generated.swift`.
+Re-run it to pick up new agents:
+
+```sh
+./tools/acp-catalogue.py
+```
+
+The app itself never fetches it — nothing here makes a network request of its
+own, and a list of names is not worth breaking that for.
+
+#### Anything not in the list
+
+**Something else…** in that sheet opens the form — for an in-house agent, a
+second Kimi seat on a different key, a Claude Code pointed at a proxy. You give
+it:
 
 - a **name**, a **handle** (`@gemini`) and a colour;
 - the **command** and its **arguments** (`kimi acp`, `copilot --acp`);

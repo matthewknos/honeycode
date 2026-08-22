@@ -18,6 +18,12 @@ struct RootView: View {
     @ObservedObject var agents: AgentStore
     @Binding var showPalette: Bool
     @Binding var paletteOpensBeside: Bool
+    /// Threaded down from `HoneycodeApp` rather than re-read from `@AppStorage`
+    /// here. Two wrappers on one key do stay in sync, but the app also hangs
+    /// `NSApp.appearance` off its `onChange` — so a second source of truth for
+    /// this one would work until it didn't, in the one place where failing
+    /// means popovers drawing dark text on light material.
+    @Binding var appearance: HoneycodeApp.Appearance
 
     /// Which half of the app the sidebar is showing.
     ///
@@ -110,10 +116,19 @@ struct RootView: View {
                 }
 
                 Group {
-                    switch shownMode {
-                    case .code:   SessionColumns(workspace: workspace)
-                    case .crew:   CrewPane(workspace: workspace)
-                    case .agents: AgentsPane(store: agents, workspace: workspace)
+                    // Settings covers the pane and leaves the sidebar alone,
+                    // which is what makes every way out of it a place you were
+                    // already looking at — a session in the list, the pill, or
+                    // the footer row you came in by.
+                    if workspace.showingSettings {
+                        SettingsPane(workspace: workspace, background: background,
+                                     appearance: $appearance)
+                    } else {
+                        switch shownMode {
+                        case .code:   SessionColumns(workspace: workspace)
+                        case .crew:   CrewPane(workspace: workspace)
+                        case .agents: AgentsPane(store: agents, workspace: workspace)
+                        }
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -124,8 +139,15 @@ struct RootView: View {
                     // backgrounds doesn't change the structural identity of the
                     // columns and throw away every transcript's scroll position
                     // along with it. Assigning the inherited scheme is a no-op.
+                    //
+                    // Not while Settings is up. The override exists because
+                    // the pane sits *over* the artwork; the Settings pane
+                    // paints an opaque `Theme.canvas` and never does, so it
+                    // keeps your chosen appearance for the same reason the
+                    // sidebar does — see `BackgroundStore.forcesLightContent`.
                     .environment(\.colorScheme,
                                  background.forcesLightContent && !codingMode
+                                     && !workspace.showingSettings
                                      ? .light : systemScheme)
             }
         }
@@ -161,12 +183,30 @@ struct RootView: View {
             PopOut.shared.sync(workspace: workspace, background: background)
             if Setup.needsRun { workspace.showingSetup = true }
         }
-        // Asked for from Settings, which is a different scene and can't reach
-        // a sheet on this one. The window is brought forward first, or the
-        // flow opens behind the Settings window that asked for it.
+        // Asked for by the Features pane. Still a notification rather than a
+        // direct write: `FeatureSettings` is a private view several levels down
+        // and has no business holding the workspace to set one flag. What it no
+        // longer needs is the `NSApp.activate` that used to go with it — the
+        // pane asking is in this window now, not in a second one the flow would
+        // have opened behind. Settings steps aside so the flow isn't answering
+        // questions on top of the pane that sets the same switches.
         .onReceive(NotificationCenter.default.publisher(for: Setup.requested)) { _ in
-            NSApp.activate(ignoringOtherApps: true)
+            workspace.showingSettings = false
             workspace.showingSetup = true
+        }
+        // Choosing a session is a way out of Settings: you clicked the thing
+        // you wanted to look at, so look at it.
+        //
+        // Watched here rather than handled in the row, because `SidebarRow`
+        // documents at length why it carries no tap recogniser — any gesture on
+        // a `List` row has to wait out the double-click interval and eats the
+        // row's own selection while it does. The cost of watching instead is
+        // that re-clicking the row that is *already* selected writes nothing
+        // and so doesn't land; the pill, the footer row and Done all do.
+        .onChange(of: workspace.selection) { _, _ in
+            if workspace.showingSettings {
+                withAnimation(Motion.panel) { workspace.showingSettings = false }
+            }
         }
         .onChange(of: workspace.poppedOut) { _, _ in
             PopOut.shared.sync(workspace: workspace, background: background)
@@ -491,22 +531,27 @@ struct RootView: View {
     }
 
     private var settingsGlyph: some View {
-        SettingsLink {
+        Button {
+            withAnimation(Motion.panel) { workspace.showingSettings.toggle() }
+        } label: {
             Image(systemName: "gearshape")
                 .font(.system(size: 12.5))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(workspace.showingSettings
+                                 ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
                 .frame(width: 28, height: 26)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help("Settings (⌘,)")
+        .help(workspace.showingSettings ? "Close Settings (⌘,)" : "Settings (⌘,)")
     }
 
     /// Settings, pinned to the bottom edge.
     ///
-    /// `SettingsLink` rather than poking `showSettingsWindow:` through
-    /// `NSApp.sendAction` — that selector is private, has been renamed at least
-    /// once between releases, and fails silently when it changes again.
+    /// A plain button over `Workspace.showingSettings`. It was a `SettingsLink`
+    /// — chosen over poking the private `showSettingsWindow:` selector through
+    /// `NSApp.sendAction`, which was right while there was a window to open.
+    /// There isn't: Settings is a pane now, so this is a row that selects one,
+    /// and it shows that the way every other row in this sidebar does.
     private var footer: some View {
         VStack(spacing: 0) {
             Divider().overlay(Theme.rule)
@@ -527,11 +572,15 @@ struct RootView: View {
                     .padding(.top, Theme.s3)
             }
 
-            SettingsLink {
+            Button {
+                withAnimation(Motion.panel) { workspace.showingSettings.toggle() }
+            } label: {
                 HStack(spacing: Theme.s3) {
                     Image(systemName: "gearshape")
                         .font(.system(size: 12.5))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(workspace.showingSettings
+                                         ? AnyShapeStyle(.primary)
+                                         : AnyShapeStyle(.secondary))
                         // Same 12pt leading column the session rows use, so the
                         // footer aligns with the list above rather than sitting
                         // a few points off it.
@@ -551,7 +600,7 @@ struct RootView: View {
                 .frame(maxWidth: .infinity, alignment: expanded ? .leading : .center)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(SidebarFooterButton())
+            .buttonStyle(SidebarFooterButton(selected: workspace.showingSettings))
             .padding(.horizontal, expanded ? Theme.s4 : Theme.s3)
             .padding(.vertical, Theme.s3)
         }
@@ -616,7 +665,14 @@ struct RootView: View {
 
     private func segment(_ value: SidebarMode) -> some View {
         let on = shownMode == value
-        return Button { withAnimation(Motion.hover) { mode = value } } label: {
+        return Button {
+            withAnimation(Motion.hover) { mode = value }
+            // The pill switches the sidebar, and the pane follows it — so
+            // reaching for Code while Settings is up has to mean Code.
+            if workspace.showingSettings {
+                withAnimation(Motion.panel) { workspace.showingSettings = false }
+            }
+        } label: {
             HStack(spacing: Theme.s2) {
                 Image(systemName: value.symbol)
                     .font(.system(size: 10, weight: .medium))

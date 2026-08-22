@@ -57,7 +57,7 @@ final class UsageStore: ObservableObject {
     /// knows about — the limit lives in the contract, so it has to be typed in.
     /// Read straight from defaults rather than through `@AppStorage`, which is
     /// SwiftUI and so can't be here. No loss: the field that *writes* this key
-    /// lives in `SettingsView` and keeps its wrapper, and this side only ever
+    /// lives in `CrewSettings` and keeps its wrapper, and this side only ever
     /// read it.
     var monthlyCap: Double {
         (Prefs.store.object(forKey: "usage.monthlyCap") as? Double) ?? 500

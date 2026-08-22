@@ -246,13 +246,21 @@ struct HoverRow: ButtonStyle {
 /// shape, so it reads as part of the source list rather than a button bolted
 /// underneath it.
 struct SidebarFooterButton: ButtonStyle {
+    /// Standing selected, as opposed to momentarily hovered. The footer's
+    /// Settings row now *goes* somewhere — the pane — so it has to be able to
+    /// say it is the thing on screen, which a hover fill cannot: let go of the
+    /// pointer and a row that is still the current place stops looking like it.
+    var selected = false
+
     @State private var hovering = false
 
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .background(hovering || configuration.isPressed ? Theme.well : .clear,
+        let filled = selected || hovering || configuration.isPressed
+        return configuration.label
+            .background(filled ? Theme.well : .clear,
                         in: RoundedRectangle(cornerRadius: 6))
             .animation(Motion.hover, value: hovering)
+            .animation(Motion.hover, value: selected)
             .onHover { hovering = $0 }
     }
 }

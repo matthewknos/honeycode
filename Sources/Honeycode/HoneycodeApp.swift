@@ -60,7 +60,8 @@ struct HoneycodeApp: App {
     var body: some Scene {
         Window("Honeycode", id: "main") {
             RootView(workspace: workspace, background: background, agents: agents,
-                     showPalette: $showPalette, paletteOpensBeside: $paletteOpensBeside)
+                     showPalette: $showPalette, paletteOpensBeside: $paletteOpensBeside,
+                     appearance: $appearance)
                 .preferredColorScheme(appearance.scheme)
                 .environmentObject(background)
                 .environmentObject(workspace)
@@ -92,6 +93,18 @@ struct HoneycodeApp: App {
                     Setup.rerun()
                     workspace.showingSetup = true
                 }
+            }
+
+            // Declared here because there is no `Settings` scene to declare it
+            // for us any more. Same place in the menu, same key, and the same
+            // key a second time closes it — which the scene's own item could
+            // never do, since a window that is already open has nothing to
+            // toggle.
+            CommandGroup(replacing: .appSettings) {
+                Button(workspace.showingSettings ? "Close Settings" : "Settings…") {
+                    withAnimation(Motion.panel) { workspace.showingSettings.toggle() }
+                }
+                .keyboardShortcut(",", modifiers: .command)
             }
 
             CommandGroup(after: .toolbar) {
@@ -251,11 +264,6 @@ struct HoneycodeApp: App {
                 .keyboardShortcut(Shortcuts.delete.key,
                                   modifiers: Shortcuts.delete.modifiers)
             }
-        }
-
-        Settings {
-            SettingsView(background: background, appearance: $appearance)
-                .preferredColorScheme(appearance.scheme)
         }
     }
 

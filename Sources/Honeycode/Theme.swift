@@ -75,6 +75,10 @@ enum Theme {
     static let railWidth: CGFloat = 60
     static let cornerCard: CGFloat = 10
     static let cornerField: CGFloat = 10
+    /// A tab in a strip, and anything else the size of one. Tighter than a
+    /// card because at 24pt tall a 10pt radius is most of the way to a capsule,
+    /// and a row of capsules reads as segmented control rather than as tabs.
+    static let cornerChip: CGFloat = 7
 
     /// The header bar above every column.
     static let headerHeight: CGFloat = 34

@@ -133,6 +133,9 @@ else
     note "  ln -s \"$ALSO\" ~/.local/bin/claude"
   else
     warn "claude not found — both Claude accounts will be unusable"
+    # The same line the app's Install button runs. See
+    # `AccountReadiness.installCommand`, which is the one copy of it.
+    note "npm install -g @anthropic-ai/claude-code"
     note "https://claude.com/claude-code"
   fi
 fi
@@ -174,10 +177,10 @@ heading "Other agents"
 # Both are optional, and both are ACP CLIs that keep their own credentials —
 # there is no equivalent of CLAUDE_CONFIG_DIR to check, so all this can say is
 # whether the binary exists.
-for pair in "kimi:Kimi Code:https://github.com/MoonshotAI/kimi-cli" \
-            "copilot:GitHub Copilot:https://github.com/github/copilot-cli"; do
+for pair in "kimi:Kimi Code:npm install -g @moonshotai/kimi-cli" \
+            "copilot:GitHub Copilot:npm install -g @github/copilot"; do
   TOOL="${pair%%:*}"; REST="${pair#*:}"
-  LABEL="${REST%%:*}"; URL="${REST#*:}"
+  LABEL="${REST%%:*}"; INSTALL="${REST#*:}"
   FOUND="$(find_tool "$TOOL" || true)"
   if [[ -n "$FOUND" ]]; then
     ok "$LABEL — $FOUND"
@@ -189,7 +192,7 @@ for pair in "kimi:Kimi Code:https://github.com/MoonshotAI/kimi-cli" \
       note "ln -s \"$ALSO\" ~/.local/bin/$TOOL"
     else
       warn "$LABEL not installed — the @$TOOL account will not start"
-      note "$URL"
+      note "$INSTALL"
     fi
   fi
 done

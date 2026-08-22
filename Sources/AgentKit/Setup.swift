@@ -361,3 +361,63 @@ extension Setup {
             run: binary)
     }
 }
+
+// MARK: - Doing the next step
+
+extension Setup {
+
+    /// A terminal that installs this account's CLI.
+    ///
+    /// Setup used to print `npm install -g …` in a code box with a Copy link
+    /// beside it, which is a fine way to hand somebody a command and a poor way
+    /// to install something: on a fresh Mac three of the four rows start there,
+    /// and each one costs finding a terminal, pasting, waiting, and coming back
+    /// to a window that has no idea any of it happened. The app knows the
+    /// command. It can run it.
+    ///
+    /// A login shell rather than an absolute `npm`, which makes this the one
+    /// place here that doesn't hunt for a binary by path. Everything else does
+    /// because a GUI app inherits launchd's `PATH` — but this script runs in
+    /// *your* terminal, under your profile, so it finds the `npm` you would
+    /// have used yourself, including one installed by nvm. `Shell.toolPath` is
+    /// appended as a floor under that, for a profile that sets up nothing.
+    ///
+    /// Nil for an added account, which runs a command somebody else installed
+    /// and has no line this could name without guessing.
+    static func installScript(for account: Account) -> URL? {
+        let command = AccountReadiness.installCommand(account)
+        guard !command.isEmpty else { return nil }
+        let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
+        return Shell.terminalScript(
+            named: "honeycode-install-\(account.id)",
+            announcing: "Installing \(account.agentName), for \(account.title).",
+            preamble: "export PATH=\"$PATH:" + Shell.toolPath + "\"\n",
+            run: shell, ["-lc", command])
+    }
+
+    /// A terminal this account can be signed in from.
+    ///
+    /// Two different jobs behind one button. A Claude account is signed in by
+    /// running `claude` with `CLAUDE_CONFIG_DIR` pointed at it — see
+    /// `claudeLoginScript`, which is the whole mechanism. Kimi and Copilot are
+    /// signed in by running Kimi and Copilot, which is what the README has told
+    /// people to do by hand and what this now does for them.
+    ///
+    /// Nil when there is nothing to run, which for an ACP agent means its
+    /// binary isn't installed — a state whose button says Install instead.
+    static func signInScript(for account: Account) -> URL? {
+        switch account.protocolKind {
+        case .claudeStreamJSON:
+            return claudeLoginScript(for: account)
+        case .acp(let agent):
+            guard let binary = agent.binaryCandidates.first(where: {
+                FileManager.default.isExecutableFile(atPath: $0)
+            }) else { return nil }
+            return Shell.terminalScript(
+                named: "honeycode-signin-\(account.id)",
+                announcing: "Sign in to \(account.title) here. It keeps its own "
+                          + "login, and Honeycode uses whichever one it finds.",
+                run: binary)
+        }
+    }
+}

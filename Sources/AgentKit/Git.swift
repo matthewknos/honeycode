@@ -113,9 +113,18 @@ enum Shell {
         // Quoted, both of them: a path can carry a space, and this is a shell.
         let command = (["\"\(binary)\""] + arguments.map { "\"\($0)\"" })
             .joined(separator: " ")
+        // The announcement is interpolated into a double-quoted `echo`, and
+        // one of its callers now builds it from an account title somebody typed
+        // — see `Setup.signInScript` and the Add form behind it. A `"` in a
+        // custom account's name would otherwise end the string and hand the
+        // rest of the sentence to the shell as commands.
+        let said = announcing.replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+            .replacingOccurrences(of: "$", with: "\\$")
+            .replacingOccurrences(of: "`", with: "\\`")
         let script = """
         #!/bin/sh
-        \(preamble)echo "\(announcing)"
+        \(preamble)echo "\(said)"
         echo "When it's done, go back to Honeycode."
         echo
         exec \(command)

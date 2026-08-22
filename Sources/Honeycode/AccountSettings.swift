@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 /// The subscriptions this app didn't ship knowing about.
 ///
@@ -17,6 +18,15 @@ struct AccountSettings: View {
     /// A local mirror of which accounts are switched on, so a toggle redraws.
     /// The value on disk is written the moment it changes — see `Account.isEnabled`.
     @State private var enabled: [String: Bool] = [:]
+
+    /// Whether each of these can actually run, and the button that fixes the
+    /// ones that can't. The same object setup uses — see `AccountReady` for why
+    /// both places ask, and why they had better agree.
+    @StateObject private var ready = AccountReady()
+
+    private func on(_ account: Account) -> Bool {
+        enabled[account.id] ?? account.isEnabled
+    }
 
     /// Whether this account appears anywhere you choose one.
     ///
@@ -40,8 +50,21 @@ struct AccountSettings: View {
                 set: { Account.setClaudeDirectory($0, for: account) })
     }
 
-    private func exists(_ account: Account) -> Bool {
-        FileManager.default.fileExists(atPath: Account.claudeDirectory(account))
+    /// Whether this account can run, and the one button that fixes it if not.
+    ///
+    /// The same rule setup uses: a row switched off keeps its state, so you can
+    /// see what you would be switching on, and loses its button — installing
+    /// something you have just said you don't pay for is not a step anybody is
+    /// on.
+    @ViewBuilder
+    private func step(_ account: Account) -> some View {
+        if let state = ready.state(of: account) {
+            if on(account) {
+                AccountStep(ready: ready, state: state)
+            } else {
+                AccountStatus(state: state, muted: true)
+            }
+        }
     }
 
     var body: some View {
@@ -70,13 +93,14 @@ struct AccountSettings: View {
                         TextField("", text: claudeDirectory(account),
                                   prompt: Text("~/.claude"))
                             .font(Theme.monoSmall)
-                            .frame(width: 210)
-                        Image(systemName: exists(account) ? "checkmark.circle"
-                                                          : "exclamationmark.triangle")
-                            .font(.system(size: 11))
-                            .foregroundStyle(exists(account) ? AnyShapeStyle(.tertiary)
-                                                             : AnyShapeStyle(Color.orange))
-                            .help(exists(account) ? "Found" : "No such directory yet")
+                            .frame(width: 190)
+                        // Was a checkmark meaning "that directory exists",
+                        // which is a weaker claim than it looked: `claude`
+                        // makes the directory the first time it runs for any
+                        // reason, so the tick appeared for a sign-in somebody
+                        // had cancelled. This says whether there is a login in
+                        // there, and offers the one click that puts one there.
+                        step(account)
                     }
                 }
                 ForEach([Account.kimi, Account.copilot], id: \.self) { account in
@@ -85,10 +109,19 @@ struct AccountSettings: View {
                             .labelsHidden()
                             .controlSize(.mini)
                         Circle().fill(account.accent).frame(width: 7, height: 7)
-                        Text(account.title)
+                        VStack(alignment: .leading, spacing: Theme.s1) {
+                            Text(account.title)
+                            Text(account.agentName)
+                                .font(Theme.label)
+                                .foregroundStyle(.tertiary)
+                        }
                         Spacer()
-                        Text(account.agentName)
-                            .foregroundStyle(.tertiary)
+                        // These two said nothing about themselves at all — the
+                        // right-hand side was the CLI's name, which is on the
+                        // row above it now. A page for deciding which
+                        // subscriptions you have was the one place that
+                        // wouldn't say whether they worked.
+                        step(account)
                     }
                 }
             } header: {
@@ -99,8 +132,10 @@ struct AccountSettings: View {
                      + "existing conversations stay where they are. Claude accounts "
                      + "are then switched by CLAUDE_CONFIG_DIR: the directory is the "
                      + "account. With one Claude login, point both at ~/.claude or "
-                     + "just use the one. Kimi and Copilot keep their own credentials "
-                     + "and are signed in through their own CLIs.")
+                     + "just use the one. Kimi and Copilot keep their own credentials, "
+                     + "so all this can see is that they're installed — the button "
+                     + "beside them opens a terminal to sign in with if they turn "
+                     + "out not to be.")
                     .font(Theme.label)
                     .foregroundStyle(.tertiary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -159,6 +194,15 @@ struct AccountSettings: View {
         .onAppear {
             enabled = Dictionary(uniqueKeysWithValues:
                 Account.allCases.map { ($0.id, $0.isEnabled) })
+        }
+        .task { await ready.refresh() }
+        // Installing a CLI and signing one in both happen in a terminal, which
+        // means leaving this window and coming back. Re-reading on the way back
+        // is what turns that into a tick appearing rather than a step you have
+        // to know to repeat.
+        .onReceive(NotificationCenter.default.publisher(
+            for: NSApplication.didBecomeActiveNotification)) { _ in
+            Task { await ready.refresh() }
         }
         .sheet(item: $editing) { draft in
             AccountEditor(draft: draft, existing: accounts) { saved in

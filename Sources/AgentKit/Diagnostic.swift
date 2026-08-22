@@ -93,39 +93,110 @@ struct AccountReadiness: Equatable, Sendable, Identifiable {
     let account: Account
     /// The CLI exists and is executable.
     let hasCLI: Bool
-    /// A config directory with something in it. Only meaningful for the Claude
-    /// accounts, which are the two that can be installed and not logged in —
-    /// the ACP agents keep their credentials elsewhere and report a sign-in
-    /// problem when they start, which is the only place it can be seen.
+    /// The config directory holds an actual login. Only meaningful for the
+    /// Claude accounts, which are the two whose credentials this app knows
+    /// where to look for. Nil for anything speaking ACP, and nil means
+    /// *unknown* rather than *no*: those CLIs keep their credentials
+    /// somewhere private to each of them, and guessing at a path would mean
+    /// telling somebody who is perfectly well signed in that they aren't.
     let hasLogin: Bool?
 
     var id: String { account.id }
 
     var isReady: Bool { hasCLI && hasLogin != false }
 
+    /// The one thing to do next about this account.
+    ///
+    /// A single value rather than a handful of booleans for each caller to
+    /// unpick, because there is only ever one next step and three places were
+    /// quietly deriving their own answer to it: setup had a ladder of `if`s,
+    /// `remedy` had another, and `tools/doctor.sh` a third that disagreed with
+    /// both about what counts as a login. The button on a row is this value,
+    /// rendered — so the app can now *do* the next step rather than describe
+    /// it, and there is one place to be right about what it is.
+    enum Step: Equatable, Sendable {
+        /// Not on this Mac. The string is the command that installs it.
+        case install(String)
+        /// Installed, and its config directory holds no login.
+        case signIn
+        /// Installed, and whether it is signed in cannot be seen from here —
+        /// every ACP agent, for the reason `hasLogin` gives. Not a problem,
+        /// just not a promise.
+        case unknownLogin
+        /// Nothing left to do.
+        case ready
+        /// An added account with no command yet. Nothing to install, because
+        /// nobody has said what it is.
+        case configure
+    }
+
+    var next: Step {
+        guard hasCLI else {
+            if case .custom = account { return .configure }
+            return .install(Self.installCommand(account))
+        }
+        switch hasLogin {
+        case .some(false): return .signIn
+        case .some(true):  return .ready
+        case .none:        return .unknownLogin
+        }
+    }
+
+    /// The line that installs an account's CLI, in the form somebody would
+    /// paste.
+    ///
+    /// One copy of it. Setup printed an `npm install` line, `remedy` said
+    /// "Install Claude Code — claude.com/claude-code", and `tools/doctor.sh`
+    /// printed a project URL: three answers to one question, which was
+    /// survivable while all the app did was show them. `Setup.installScript`
+    /// now *runs* this, so it had better be the true one and there had better
+    /// be one — and `tools/doctor.sh` prints these, so a machine the doctor
+    /// clears is a machine the button would have made.
+    static func installCommand(_ account: Account) -> String {
+        switch account {
+        case .personal, .work: return "npm install -g @anthropic-ai/claude-code"
+        case .kimi:            return "npm install -g @moonshotai/kimi-cli"
+        case .copilot:         return "npm install -g @github/copilot"
+        // Whatever an added account runs, somebody else installed. There is no
+        // command this could name that wouldn't be a guess.
+        case .custom:          return ""
+        }
+    }
+
     /// One short phrase. Not a sentence — this sits in a row beside three
     /// others, and a paragraph per account is a wall rather than a status.
     var summary: String {
-        if !hasCLI { return "not installed" }
-        if hasLogin == false { return "not signed in" }
-        return "ready"
+        switch next {
+        case .install:      return "not installed"
+        case .signIn:       return "not signed in"
+        case .configure:    return "no command set"
+        // Deliberately not "ready", which is what this said before and was the
+        // most misleading word in the app: for Kimi and Copilot it meant "the
+        // binary is on disk", and it was read as "this works" right up until
+        // the first message failed to send.
+        case .unknownLogin: return "installed"
+        case .ready:        return "ready"
+        }
     }
 
     /// What actually fixes it, for the tooltip.
+    ///
+    /// Nil when there is nothing wrong — and `unknownLogin` counts as nothing
+    /// wrong. A tooltip telling you to go and sign in, on a row showing a tick,
+    /// is the app second-guessing a state it has already admitted it cannot
+    /// see. Setup offers the sign-in there as an option; everywhere else it
+    /// would be a warning about nothing.
     var remedy: String? {
-        if !hasCLI {
-            switch account {
-            case .personal, .work: return "Install Claude Code — claude.com/claude-code"
-            case .kimi:            return "npm install -g @moonshotai/kimi-cli"
-            case .copilot:         return "npm install -g @github/copilot"
-            case .custom:          return "Set this account's command in Settings ▸ Accounts"
-            }
-        }
-        if hasLogin == false {
+        switch next {
+        case .install(let command): return command
+        case .signIn:
             return "Run `claude` once in a terminal with CLAUDE_CONFIG_DIR set to "
                 + (account.configDir ?? "this account's directory")
+        case .configure:
+            return "Set this account's command in Settings ▸ Accounts"
+        case .unknownLogin, .ready:
+            return nil
         }
-        return nil
     }
 }
 
@@ -161,13 +232,21 @@ extension Diagnostic {
         }
         let hasCLI = candidates.contains { manager.isExecutableFile(atPath: $0) }
 
-        // A directory that exists but holds nothing is a directory somebody
-        // made by hand, or one this app created and never logged into. Both
-        // read as "not signed in", which is what they are.
+        // A directory is not a login, and this used to accept one that held
+        // anything at all. Two things put a file in there that isn't a
+        // credential: `Setup.claudeLoginScript` runs `mkdir -p` before handing
+        // over, so a sign-in you started and cancelled leaves a directory
+        // behind; and the CLI writes settings of its own the first time it is
+        // run for any reason. Both read as signed in, and the tick they earned
+        // was the last thing the app said before the first message failed.
+        //
+        // These are the two `tools/doctor.sh` looks for, which is the point of
+        // choosing them: a doctor that clears a machine the app then fails on
+        // is worse than no doctor at all.
         var hasLogin: Bool?
         if let directory = account.configDir {
-            let contents = (try? manager.contentsOfDirectory(atPath: directory)) ?? []
-            hasLogin = !contents.isEmpty
+            hasLogin = manager.fileExists(atPath: directory + "/.credentials.json")
+                    || manager.fileExists(atPath: directory + "/projects")
         }
         return AccountReadiness(account: account, hasCLI: hasCLI, hasLogin: hasLogin)
     }

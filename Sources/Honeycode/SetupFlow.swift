@@ -43,7 +43,9 @@ struct SetupFlow: View {
     /// kind of run this was after that has happened.
     @State private var isFirstRun = false
 
-    @State private var readiness: [AccountReadiness] = []
+    /// Which accounts can run, and the button that fixes the ones that can't.
+    /// Shared with Settings ▸ Accounts — see `AccountReady`.
+    @StateObject private var ready = AccountReady()
     /// Local mirrors of what is in preferences, so a toggle redraws.
     ///
     /// Written through immediately rather than gathered and applied at the
@@ -111,7 +113,7 @@ struct SetupFlow: View {
                 Account.allCases.map { ($0.id, $0.isEnabled) })
             featuresOn = Dictionary(uniqueKeysWithValues:
                 Feature.allCases.map { ($0, Features.isOn($0)) })
-            await refresh()
+            await ready.refresh()
         }
         // Installing a CLI and signing an account in both happen in a terminal,
         // which means leaving this window and coming back. Re-reading on the
@@ -119,14 +121,8 @@ struct SetupFlow: View {
         // you have to redo.
         .onReceive(NotificationCenter.default.publisher(
             for: NSApplication.didBecomeActiveNotification)) { _ in
-            Task { await refresh() }
+            Task { await ready.refresh() }
         }
-    }
-
-    private func refresh() async {
-        readiness = await Task.detached(priority: .utility) {
-            Diagnostic.readinessOfAll()
-        }.value
     }
 
     // MARK: Chrome
@@ -267,17 +263,34 @@ struct SetupFlow: View {
 
     private var accounts: some View {
         VStack(alignment: .leading, spacing: Theme.s5) {
-            ForEach(readiness) { state in
+            // A Mac with none of the CLIs installed seeds every switch off —
+            // see `Setup.seedDefaults`, which is right not to assume you pay
+            // for something it cannot see. What it leaves behind is this step
+            // opening on four dimmed rows and no obvious move, which was the
+            // one place the flow could still strand somebody.
+            if !ready.readiness.isEmpty,
+               ready.readiness.allSatisfy({ !isOn($0.account) }) {
+                Text("Nothing is switched on yet. Switch on the subscriptions you "
+                     + "pay for and Honeycode will install and sign in whatever "
+                     + "they need.")
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(Theme.stateHeld)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            ForEach(ready.readiness) { state in
                 accountRow(state)
-                if state.id != readiness.last?.id {
+                if state.id != ready.readiness.last?.id {
                     Divider().overlay(Theme.rule)
                 }
             }
 
-            Text("Switching one off hides it from every menu, mention list and "
-                 + "roster — it doesn't delete anything, and conversations you "
-                 + "already have on it stay in the sidebar. Add a CLI of your own "
-                 + "later in Settings ▸ Accounts.")
+            Text("A button here opens a terminal, because a terminal is where "
+                 + "these CLIs install and sign in — this window watches for it to "
+                 + "finish. Switching an account off hides it from every menu, "
+                 + "mention list and roster; it doesn't delete anything, and "
+                 + "conversations you already have on it stay in the sidebar. Add "
+                 + "a CLI of your own later in Settings ▸ Accounts.")
                 .font(.system(size: 11))
                 .foregroundStyle(.tertiary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -287,6 +300,7 @@ struct SetupFlow: View {
 
     private func accountRow(_ state: AccountReadiness) -> some View {
         let account = state.account
+        let on = isOn(account)
         return VStack(alignment: .leading, spacing: Theme.s4) {
             HStack(spacing: Theme.s4) {
                 Toggle("", isOn: accountBinding(account))
@@ -304,93 +318,49 @@ struct SetupFlow: View {
                 }
 
                 Spacer(minLength: Theme.s4)
-                status(state)
+                // A row switched off keeps its state, so you can see what you
+                // would be switching on, and loses its button. Installing
+                // something you have just said you don't pay for is not a step
+                // anybody is on.
+                if on {
+                    AccountStep(ready: ready, state: state)
+                } else {
+                    AccountStatus(state: state, muted: true)
+                }
             }
 
-            // Only for the account you said you have, and only when there is
-            // something to do about it. A remedy under a row switched off is an
-            // instruction for a problem nobody has.
-            if isOn(account), !state.isReady {
-                remedy(state)
-                    .padding(.leading, Theme.s8)
-            }
             // The directory *is* the Claude account — see `Account.configDir`.
-            // Shown here rather than only in Settings because on a Mac with one
-            // Claude login this field is the whole of the second account's
-            // configuration, and the failure it prevents reads as an auth bug.
-            if isOn(account), account == .personal || account == .work {
-                claudeDirectoryField(account)
+            //
+            // Only at the step where it is the question. Before the CLI is
+            // installed it is a field about a program that isn't there, and
+            // once the account is signed in it is a working detail — and a
+            // form that shows you its working details is one you have to read
+            // before you can trust it. Settings ▸ Accounts keeps it on screen
+            // permanently, which is the right place for a thing you go looking
+            // for rather than one you are being walked past.
+            if on, state.next == .signIn {
+                claudeDirectory(account)
                     .padding(.leading, Theme.s8)
             }
         }
-        .opacity(isOn(account) ? 1 : 0.55)
+        .opacity(on ? 1 : 0.55)
     }
 
+    /// Where this Claude account's login lives, and the one-click answer to the
+    /// question that raises.
+    ///
+    /// `CLAUDE_CONFIG_DIR` is the whole of Claude account switching, and the
+    /// two defaults assume two logins: Enterprise in `~/.claude`, where the CLI
+    /// puts one, and Personal in `~/.claude-personal`, which exists only on a
+    /// machine that has two and moved one out of the way. Most people have one.
+    /// The route for them was to read the README, work out that the second
+    /// account *is* a directory, and type the first one's path in by hand — or,
+    /// far more often, to press Sign in and put the same subscription in twice
+    /// under two names.
     @ViewBuilder
-    private func status(_ state: AccountReadiness) -> some View {
-        HStack(spacing: Theme.s2) {
-            Image(systemName: state.isReady ? "checkmark.circle.fill"
-                                            : "exclamationmark.circle")
-                .font(.system(size: 11))
-                .foregroundStyle(state.isReady ? AnyShapeStyle(Theme.stateDone)
-                                               : AnyShapeStyle(Theme.stateHeld))
-            Text(state.summary)
-                .font(Theme.label)
-                .foregroundStyle(.secondary)
-        }
-    }
-
-    /// What fixes it, as something you can act on rather than read.
-    @ViewBuilder
-    private func remedy(_ state: AccountReadiness) -> some View {
-        if !state.hasCLI {
-            HStack(spacing: Theme.s4) {
-                Text(installCommand(state.account))
-                    .font(Theme.monoSmall)
-                    .textSelection(.enabled)
-                    .padding(.horizontal, Theme.s4)
-                    .padding(.vertical, Theme.s3)
-                    .background(Theme.codeGround,
-                                in: RoundedRectangle(cornerRadius: Theme.cornerField))
-                Button("Copy") {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(installCommand(state.account), forType: .string)
-                }
-                .buttonStyle(.link)
-                Spacer(minLength: 0)
-            }
-        } else if state.hasLogin == false {
-            HStack(spacing: Theme.s4) {
-                Text("Installed, but this directory holds no login yet.")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                Button("Sign in…") {
-                    guard let script = Setup.claudeLoginScript(for: state.account) else { return }
-                    NSWorkspace.shared.open(script)
-                }
-                .buttonStyle(.link)
-                .help("Opens a terminal running `claude` with CLAUDE_CONFIG_DIR set "
-                      + "to this account's directory.")
-                Spacer(minLength: 0)
-            }
-        }
-    }
-
-    /// The install line, in the form somebody would actually paste.
-    /// `AccountReadiness.remedy` says the same thing as a sentence for a
-    /// tooltip; this needs the command on its own.
-    private func installCommand(_ account: Account) -> String {
-        switch account {
-        case .personal, .work: return "npm install -g @anthropic-ai/claude-code"
-        case .kimi:            return "npm install -g @moonshotai/kimi-cli"
-        case .copilot:         return "npm install -g @github/copilot"
-        case .custom:          return "Set this account's command in Settings ▸ Accounts"
-        }
-    }
-
-    private func claudeDirectoryField(_ account: Account) -> some View {
+    private func claudeDirectory(_ account: Account) -> some View {
         HStack(spacing: Theme.s4) {
-            Text("Config directory")
+            Text("Login directory")
                 .font(Theme.label)
                 .foregroundStyle(.tertiary)
             TextField("", text: Binding(
@@ -398,9 +368,30 @@ struct SetupFlow: View {
                 set: { Account.setClaudeDirectory($0, for: account) }),
                       prompt: Text("~/.claude"))
                 .font(Theme.monoSmall)
-                .frame(width: 240)
+                .frame(width: 200)
+            if let other = signedInSibling(of: account) {
+                Button("Use \(other.shortTitle)'s") {
+                    Account.setClaudeDirectory(Account.claudeDirectory(other),
+                                               for: account)
+                    Task { await ready.refresh() }
+                }
+                .buttonStyle(.link)
+                .help("One Claude subscription, both accounts pointed at it. They "
+                      + "then share a login and a history, which is what having "
+                      + "one subscription means.")
+            }
             Spacer(minLength: 0)
         }
+    }
+
+    /// The other Claude account, when it is signed in and this one is not
+    /// already pointed at the same place.
+    private func signedInSibling(of account: Account) -> Account? {
+        let other: Account = account == .personal ? .work : .personal
+        guard ready.state(of: other)?.next == .ready,
+              Account.claudeDirectory(other) != Account.claudeDirectory(account)
+        else { return nil }
+        return other
     }
 
     // MARK: Features

@@ -66,10 +66,32 @@ Then, once:
 
 ```sh
 ./tools/signing-identity.sh    # optional, and you want it — see below
-./build.sh                     # build/Honeycode.app
+./build.sh --install           # /Applications/Honeycode.app
 ./build-ai.sh                  # build/ai
-open build/Honeycode.app
+open -a Honeycode
 ```
+
+### Installing it
+
+`--install` is the flag; everything else about it is already true. Nothing in
+the bundle knows where it sits — resources come out of `Bundle.main`,
+preferences are keyed on the bundle identifier, and every session, transcript
+and setting is in Application Support or your home directory — so the .app runs
+from /Applications, from `build/`, or from anywhere else you drop it. The
+signature covers the bundle's contents rather than its path, so moving one
+can't break it.
+
+Without the flag `./build.sh` writes `build/Honeycode.app` and leaves
+/Applications alone. **With a copy already installed, every build refreshes it,
+flag or no flag.** That is the one piece of behaviour worth knowing, and it
+exists because the alternative is worse: once Honeycode is in /Applications
+that's the copy the Dock, Spotlight and `open -a` launch, and a build that
+quietly rewrote only `build/` would leave you staring at the old binary
+wondering why your change didn't take.
+
+If /Applications or the installed bundle isn't yours to write — a bundle put
+there with `sudo` is the usual reason — the build stops and prints the two
+commands that fix it rather than half-replacing an app.
 
 ### The first run
 
@@ -396,7 +418,7 @@ Sources/ai/           the terminal client
 Tests/                one main.swift per suite, no framework
 Resources/            Info.plist, entitlements, icon, syntax themes
 tools/                doctor.sh, signing-identity.sh, crewlab.sh, crewscore.py
-build.sh              → build/Honeycode.app
+build.sh              → build/Honeycode.app, or --install to /Applications
 build-ai.sh           → build/ai
 test.sh               everything; --typecheck for a fast loop
 ```

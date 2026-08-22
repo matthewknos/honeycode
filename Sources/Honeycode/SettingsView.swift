@@ -73,17 +73,23 @@ struct SettingsPane: View {
     /// job, and the app having two ideas of what a tab looks like is how the
     /// last review found four ideas of what a shadow looks like.
     ///
-    /// Six labels need about 640pt, and the pane is 660 with the sidebar out at
-    /// the window's minimum width — too close to call it fits. So below that
-    /// the strip keeps the label on the *selected* tab and drops the other
-    /// five to glyphs: five icons and one named place still says where you are,
-    /// which a row of six identical-weight glyphs does not.
+    /// All six labels or none, which is the workbench's rule and not a
+    /// coincidence: keeping the label on the selected tab and dropping the
+    /// other five was tried, and one named place beside five anonymous glyphs
+    /// reads as a strip that failed to draw rather than as a strip that
+    /// adapted.
+    ///
+    /// In practice the labels always fit — six of them need about 640pt, the
+    /// window's minimum is 900, and the sidebar is 240 at its widest, so the
+    /// pane is never narrower than 660. The guard is here for the cases that
+    /// arithmetic doesn't cover: a longer translation, or accessibility text
+    /// sizes.
     private var strip: some View {
         GeometryReader { geometry in
-            let wide = geometry.size.width >= 700
+            let labelled = geometry.size.width >= 640
             HStack(spacing: Theme.s2) {
                 ForEach(SettingsTab.allCases) { candidate in
-                    button(candidate, labelled: wide || candidate == tab)
+                    button(candidate, labelled: labelled)
                 }
                 Spacer(minLength: Theme.s3)
                 Button {

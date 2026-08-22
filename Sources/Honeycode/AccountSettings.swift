@@ -15,6 +15,9 @@ struct AccountSettings: View {
     @State private var accounts: [CustomAccount] = CustomAccounts.all
     @State private var editing: CustomAccount?
     @State private var confirming: CustomAccount?
+    /// The catalogue, which is now the front door — see `AgentPicker`. The form
+    /// is still behind it for anything the registry has never heard of.
+    @State private var picking = false
     /// A local mirror of which accounts are switched on, so a toggle redraws.
     /// The value on disk is written the moment it changes — see `Account.isEnabled`.
     @State private var enabled: [String: Bool] = [:]
@@ -170,11 +173,14 @@ struct AccountSettings: View {
                     Text("Added")
                     Spacer()
                     Button {
-                        editing = CustomAccount(title: "", handle: "", command: "")
+                        picking = true
                     } label: {
                         Label("Add", systemImage: "plus")
                     }
                     .buttonStyle(.link)
+                    .help("\(AgentCatalogue.all.count) agents that speak the "
+                          + "Agent Client Protocol, or a form for one that isn't "
+                          + "in the list.")
                 }
             } footer: {
                 // Said here because it is the question this page raises and the
@@ -204,11 +210,33 @@ struct AccountSettings: View {
             for: NSApplication.didBecomeActiveNotification)) { _ in
             Task { await ready.refresh() }
         }
+        .sheet(isPresented: $picking) {
+            AgentPicker(existing: accounts) { outcome in
+                picking = false
+                switch outcome {
+                case .add(let account):
+                    CustomAccounts.save(account)
+                    Account.setEnabled(true, for: .custom(account.id))
+                    accounts = CustomAccounts.all
+                    enabled[account.id] = true
+                    Task { await ready.refresh() }
+                // A beat: two sheets on one view, and SwiftUI drops the second
+                // if it is asked for while the first is still dismissing.
+                case .freeform:
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                        editing = CustomAccount(title: "", handle: "", command: "")
+                    }
+                case .cancel:
+                    break
+                }
+            }
+        }
         .sheet(item: $editing) { draft in
             AccountEditor(draft: draft, existing: accounts) { saved in
                 if let saved { CustomAccounts.save(saved) }
                 accounts = CustomAccounts.all
                 editing = nil
+                Task { await ready.refresh() }
             }
         }
         .alert("Remove \(confirming?.title ?? "")?", isPresented: .init(
@@ -229,7 +257,14 @@ struct AccountSettings: View {
 
 // MARK: - The sheet
 
-private struct AccountEditor: View {
+/// Six fields for an agent nobody has published.
+///
+/// Reachable from `AgentPicker` as **Something else…** rather than being the
+/// front door, now that the catalogue answers the common case. Internal rather
+/// than file-private because the setup flow opens it too — the moment somebody
+/// is deciding which subscriptions they have is the moment they remember the
+/// in-house one.
+struct AccountEditor: View {
     @State var draft: CustomAccount
     let existing: [CustomAccount]
     let done: (CustomAccount?) -> Void

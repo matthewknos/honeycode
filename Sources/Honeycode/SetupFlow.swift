@@ -56,6 +56,15 @@ struct SetupFlow: View {
     @State private var accountsOn: [String: Bool] = [:]
     @State private var featuresOn: [Feature: Bool] = [:]
 
+    /// The catalogue, and the form behind it.
+    ///
+    /// Here rather than only in Settings because "which subscriptions do you
+    /// have" is exactly the moment somebody knows they have a Gemini CLI, and
+    /// sending them away to find out whether this app supports it is how a
+    /// setup flow ends with four accounts and a shrug.
+    @State private var picking = false
+    @State private var editing: CustomAccount?
+
     @AppStorage("agent.skipPermissions") private var skipPermissions = true
     @AppStorage("tenancy.gateDelegation") private var gateDelegation = true
     @AppStorage("usage.monthlyCap") private var monthlyCap: Double = 500
@@ -123,6 +132,41 @@ struct SetupFlow: View {
             for: NSApplication.didBecomeActiveNotification)) { _ in
             Task { await ready.refresh() }
         }
+        .sheet(isPresented: $picking) {
+            AgentPicker(existing: CustomAccounts.all) { outcome in
+                picking = false
+                switch outcome {
+                case .add(let account): save(account)
+                // A beat, for the same reason `finish` needs one: two sheets on
+                // one view, and SwiftUI drops the second if it is asked for
+                // while the first is still going.
+                case .freeform:
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                        editing = CustomAccount(title: "", handle: "", command: "")
+                    }
+                case .cancel: break
+                }
+            }
+        }
+        .sheet(item: $editing) { draft in
+            AccountEditor(draft: draft, existing: CustomAccounts.all) { saved in
+                editing = nil
+                guard let saved else { return }
+                save(saved)
+            }
+        }
+    }
+
+    /// Store it, switch it on, and make its row appear.
+    ///
+    /// Switched on rather than left for you to find, because you added it — the
+    /// switch answers "do you have this", and pressing Add is that answer.
+    private func save(_ account: CustomAccount) {
+        CustomAccounts.save(account)
+        let added = Account.custom(account.id)
+        Account.setEnabled(true, for: added)
+        accountsOn[added.id] = true
+        Task { await ready.refresh() }
     }
 
     // MARK: Chrome
@@ -285,17 +329,42 @@ struct SetupFlow: View {
                 }
             }
 
+            addRow
+
             Text("A button here opens a terminal, because a terminal is where "
                  + "these CLIs install and sign in — this window watches for it to "
                  + "finish. Switching an account off hides it from every menu, "
                  + "mention list and roster; it doesn't delete anything, and "
-                 + "conversations you already have on it stay in the sidebar. Add "
-                 + "a CLI of your own later in Settings ▸ Accounts.")
+                 + "conversations you already have on it stay in the sidebar.")
                 .font(.system(size: 11))
                 .foregroundStyle(.tertiary)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, Theme.s2)
         }
+    }
+
+    /// The way in to everything this app can drive that isn't one of the four.
+    ///
+    /// A row rather than a line of prose, and above the footnote rather than
+    /// inside it, because it is a thing to press. The count is on it on
+    /// purpose: "add an agent" is an offer nobody takes up without knowing
+    /// whether there is anything on the other side of it.
+    private var addRow: some View {
+        HStack(spacing: Theme.s4) {
+            Button {
+                picking = true
+            } label: {
+                Label("Add an agent", systemImage: "plus")
+                    .font(.system(size: 12.5))
+            }
+            .buttonStyle(.link)
+            Text("Gemini, Codex, Cline, OpenCode, Cursor — "
+                 + "\(AgentCatalogue.all.count) that speak the same protocol.")
+                .font(Theme.label)
+                .foregroundStyle(.tertiary)
+            Spacer(minLength: 0)
+        }
+        .padding(.top, Theme.s2)
     }
 
     private func accountRow(_ state: AccountReadiness) -> some View {

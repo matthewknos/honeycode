@@ -165,6 +165,24 @@ struct AccountStep: View {
                           + "in, this is where.")
                 }
 
+            case .get:
+                // Nothing this app can run. An added agent that ships its own
+                // binary gets a link to where it lives; an `npx` one that
+                // reports itself missing has nothing wrong with it at all —
+                // the machine has no Node — and its tooltip says so.
+                if let site = state.account.custom?.site,
+                   let url = URL(string: site) {
+                    HStack(spacing: Theme.s4) {
+                        AccountStatus(state: state)
+                        Button("Get…") { NSWorkspace.shared.open(url) }
+                            .buttonStyle(.link)
+                            .help(state.remedy ?? "")
+                    }
+                } else {
+                    AccountStatus(state: state)
+                        .help(state.remedy ?? "")
+                }
+
             case .ready, .configure:
                 AccountStatus(state: state)
             }
@@ -247,7 +265,7 @@ struct AccountStatus: View {
             return ("checkmark.circle.fill", AnyShapeStyle(Theme.stateDone))
         case .unknownLogin:
             return nil
-        case .install, .signIn, .configure:
+        case .install, .signIn, .get, .configure:
             return ("exclamationmark.circle", AnyShapeStyle(Theme.stateHeld))
         }
     }

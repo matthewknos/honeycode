@@ -134,14 +134,16 @@ enum Account: Hashable, Identifiable, Codable {
 
     /// The CLI behind this account, for the one-line blurb beside its name.
     var agentName: String {
-        switch protocolKind {
-        case .claudeStreamJSON: return "Claude Code"
-        case .acp(let agent):
-            switch agent.id {
-            case "kimi":    return "Kimi Code"
-            case "copilot": return "GitHub Copilot"
-            default:        return agent.command
-            }
+        switch self {
+        case .personal, .work: return "Claude Code"
+        case .kimi:            return "Kimi Code"
+        case .copilot:         return "GitHub Copilot"
+        case .custom:
+            guard let custom else { return "removed" }
+            // The command is a poor label for anything added from the
+            // catalogue: every agent `npx` fetches has the command "npx", so a
+            // roster of them would be four rows all claiming to be npx.
+            return custom.catalogueEntry?.name ?? custom.command
         }
     }
 

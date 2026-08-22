@@ -125,6 +125,10 @@ struct AccountReadiness: Equatable, Sendable, Identifiable {
         case unknownLogin
         /// Nothing left to do.
         case ready
+        /// Not on this Mac, and there is no line this app could run to change
+        /// that — an added agent that ships its own binary, or one whose
+        /// runner (`npx`, `uvx`) isn't installed. `remedy` says where to go.
+        case get
         /// An added account with no command yet. Nothing to install, because
         /// nobody has said what it is.
         case configure
@@ -132,7 +136,13 @@ struct AccountReadiness: Equatable, Sendable, Identifiable {
 
     var next: Step {
         guard hasCLI else {
-            if case .custom = account { return .configure }
+            // An added account has no install line of its own. It has either a
+            // command nobody has typed yet, or a command that isn't here — and
+            // those are different problems with different sentences.
+            if case .custom = account {
+                let command = account.custom?.command.trimmingCharacters(in: .whitespaces)
+                return (command?.isEmpty ?? true) ? .configure : .get
+            }
             return .install(Self.installCommand(account))
         }
         switch hasLogin {
@@ -167,15 +177,15 @@ struct AccountReadiness: Equatable, Sendable, Identifiable {
     /// others, and a paragraph per account is a wall rather than a status.
     var summary: String {
         switch next {
-        case .install:      return "not installed"
-        case .signIn:       return "not signed in"
-        case .configure:    return "no command set"
+        case .install, .get: return "not installed"
+        case .signIn:        return "not signed in"
+        case .configure:     return "no command set"
         // Deliberately not "ready", which is what this said before and was the
         // most misleading word in the app: for Kimi and Copilot it meant "the
         // binary is on disk", and it was read as "this works" right up until
         // the first message failed to send.
-        case .unknownLogin: return "installed"
-        case .ready:        return "ready"
+        case .unknownLogin:  return "installed"
+        case .ready:         return "ready"
         }
     }
 
@@ -189,6 +199,24 @@ struct AccountReadiness: Equatable, Sendable, Identifiable {
     var remedy: String? {
         switch next {
         case .install(let command): return command
+        // Whatever this account needs, in the order somebody would want it.
+        // The runners are worth naming: an `npx` agent that reports itself
+        // missing has nothing wrong with it at all — the machine has no Node.
+        case .get:
+            if let site = account.custom?.site { return "Get it from \(site)" }
+            switch account.custom?.command {
+            case "npx":
+                return "`npx` comes with Node.js. Install Node and this works — "
+                     + "there is nothing else to install, npx fetches the agent."
+            case "uvx":
+                return "`uvx` comes with uv — docs.astral.sh/uv. There is nothing "
+                     + "else to install; uvx fetches the agent."
+            case let command?:
+                return "`\(command)` isn't in ~/.local/bin, Homebrew, or your nvm "
+                     + "versions, which is everywhere this app looks."
+            case nil:
+                return nil
+            }
         case .signIn:
             return "Run `claude` once in a terminal with CLAUDE_CONFIG_DIR set to "
                 + (account.configDir ?? "this account's directory")

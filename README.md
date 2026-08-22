@@ -43,7 +43,7 @@ replace them — it never talks to a model endpoint directly.
 | `@kimi` Kimi Code | `kimi` | [MoonshotAI/kimi-cli](https://github.com/MoonshotAI/kimi-cli) (Node) |
 | `@copilot` GitHub Copilot | `copilot` | [github/copilot-cli](https://github.com/github/copilot-cli) |
 
-You can add others — see [Adding your own account](#adding-your-own-account).
+The rest of the ACP registry is one click away in **Settings ▸ Accounts ▸ Add** — Gemini, Codex, Cursor, OpenCode, Cline, goose and the rest. See [Adding another agent](#adding-another-agent).
 
 ---
 
@@ -202,12 +202,39 @@ Honeycode cannot see whether these two are signed in, only that they are
 installed, so that is all it claims: the row says *installed*, with no tick.
 A green tick here would be a promise about a file this app has never looked at.
 
-### Adding your own account
+### Adding another agent
 
-**Settings ▸ Accounts ▸ Add** takes any CLI that speaks ACP — the Agent Client
-Protocol, newline-delimited JSON-RPC 2.0 over stdio. A Gemini CLI, a second Kimi
-seat on a different key, an in-house agent, a Claude Code pointed at a proxy. You
-give it:
+Four accounts ship. Any CLI that speaks ACP — the Agent Client Protocol,
+newline-delimited JSON-RPC 2.0 over stdio — can be a fifth, and most of the ones
+worth having are already in the list.
+
+**Settings ▸ Accounts ▸ Add**, or **Add an agent** on the second step of setup,
+opens the catalogue: Gemini CLI, Codex, Cursor, OpenCode, Cline, goose, Qwen
+Code, Amp, Devin, Factory Droid and the rest, each with its command,
+arguments and environment already filled in. One click adds it, picks a handle
+that isn't taken and a colour that isn't in use, and switches it on.
+
+Most of them need nothing installed: the entry runs `npx -y <package>`, which
+fetches the agent the first time you send a message. The ones that ship their
+own binary are marked **installs itself** and their row carries a **Get…** link
+to where it lives.
+
+The list is generated from the protocol's own registry by
+`tools/acp-catalogue.py`, which writes `Sources/AgentKit/AgentCatalogue+Generated.swift`.
+Re-run it to pick up new agents:
+
+```sh
+./tools/acp-catalogue.py
+```
+
+The app itself never fetches it — nothing here makes a network request of its
+own, and a list of names is not worth breaking that for.
+
+#### Anything not in the list
+
+**Something else…** in that sheet opens the form — for an in-house agent, a
+second Kimi seat on a different key, a Claude Code pointed at a proxy. You give
+it:
 
 - a **name**, a **handle** (`@gemini`) and a colour;
 - the **command** and its **arguments** (`kimi acp`, `copilot --acp`);

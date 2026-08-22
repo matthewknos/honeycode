@@ -49,12 +49,26 @@ struct CustomAccount: Codable, Identifiable, Hashable {
     /// that anything you run can read.
     var secretNames: [String]
 
+    /// Which `AgentCatalogue` entry this came from, for one that was added from
+    /// the list rather than typed into the form.
+    ///
+    /// The id and nothing else. The name, the description and where to get it
+    /// all live in the catalogue, and copying them here would be storing a
+    /// snapshot of a list that is regenerated — so an account added in March
+    /// would still be showing March's description of somebody else's tool.
+    ///
+    /// Optional, and that is also how every account saved before this decodes:
+    /// a missing key for an optional is nil, which is exactly right for one
+    /// that was written by hand.
+    var catalogue: String?
+
     init(id: String = UUID().uuidString, title: String, shortTitle: String? = nil,
          handle: String, tint: Tint = .teal, command: String,
          arguments: [String] = [], isNode: Bool = true,
          dialect: ACPAgent.Dialect = .standard,
          usageReports: ACPAgent.UsageKind = .none,
-         environment: [String: String] = [:], secretNames: [String] = []) {
+         environment: [String: String] = [:], secretNames: [String] = [],
+         catalogue: String? = nil) {
         self.id = id
         self.title = title
         self.shortTitle = shortTitle ?? title
@@ -67,7 +81,17 @@ struct CustomAccount: Codable, Identifiable, Hashable {
         self.usageReports = usageReports
         self.environment = environment
         self.secretNames = secretNames
+        self.catalogue = catalogue
     }
+
+    /// The catalogue entry behind it, if there is one.
+    var catalogueEntry: CatalogueAgent? { AgentCatalogue.entry(catalogue) }
+
+    /// Where to get it, for an agent that ships a binary rather than being
+    /// fetched by `npx`. Nil for anything with nothing to install, and for
+    /// anything added by hand — this app has no idea where somebody's in-house
+    /// agent comes from and should not invent a link.
+    var site: String? { catalogueEntry?.site }
 
     /// A colour, chosen from a list rather than a picker.
     ///

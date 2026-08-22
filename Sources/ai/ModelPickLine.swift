@@ -18,8 +18,12 @@ extension ModelPick {
         } else {
             price = ""
         }
-        let name = model.title.padding(toLength: max(28, model.title.count),
-                                       withPad: " ", startingAt: 0)
-        return "  \(mark) \(name)\(price.padding(toLength: 7, withPad: " ", startingAt: 0))\(Console.dim(model.id))"
+        let column = max(28, model.title.count)
+        let name = model.title.padding(toLength: column, withPad: " ", startingAt: 0)
+        // The id is the one part that can be given up. On a narrow window it is
+        // also the longest thing on the line, and the title beside it already
+        // says which model this is.
+        let id = Console.fit(model.id, to: max(8, Console.width - column - 11))
+        return "  \(mark) \(name)\(price.padding(toLength: 7, withPad: " ", startingAt: 0))\(Console.dim(id))"
     }
 }

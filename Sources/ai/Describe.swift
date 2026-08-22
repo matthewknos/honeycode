@@ -82,6 +82,7 @@ enum Describe {
 
     private struct Report: Encodable {
         let tool: String
+        let version: String
         let summary: String
         let invocation: [String]
         let grammar: Grammar
@@ -173,6 +174,7 @@ enum Describe {
     private static func emit(_ accounts: [AccountReport]) {
         let report = Report(
             tool: "ai",
+            version: version,
             summary: "Runs several AI subscriptions as one crew. Name them in the "
                    + "message with @handles; the first one named leads.",
             invocation: [
@@ -180,6 +182,7 @@ enum Describe {
                 "ai -p \"<message>\"       one message, printed, then exit",
                 "ai --models [account]   what an account can run, and what it is on",
                 "ai --describe           this",
+                "anything on stdin is appended to the message",
             ],
             grammar: grammar(),
             accounts: accounts

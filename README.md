@@ -316,6 +316,55 @@ button counts the files edited so far.
 Who you're signed in to GitHub and Azure as sits at the foot of the sidebar,
 and switches from there.
 
+### The terminal
+
+```
+$ ai
+ai  0.1  ·  ~/proj
+  @claude-p  @claude-w  @kimi
+  the first one named leads · tab completes · /help
+
+> a landing page for a dentist @claude-p @kimi
+```
+
+The same engine, no window. It opens on the accounts you actually have — that
+list is detected the first time `ai` runs on a machine, so a fresh Mac is not
+offered three subscriptions it has no CLI for, and a Mac with none is told what
+to install rather than left to find out one failed mention at a time.
+
+**Tab completes the things you can't guess.** Handles, the `:model` and
+`:effort` qualifiers behind them, slash commands, and file paths in the folder
+you started from. Up and down walk back through what you have asked before,
+kept in `~/Library/Application Support/Honeycode/ai-history` and readable only
+by you. Ctrl-A, ctrl-E, ctrl-W, ctrl-K, ctrl-U and alt-arrow do what they do
+everywhere else. Ctrl-C clears the line, or leaves if the line is already
+empty and you press it twice.
+
+| | |
+|---|---|
+| `/help` | all of the above |
+| `/accounts` | who is here, and what each still needs |
+| `/models [account]` | what an account can run |
+| `/cost` | what this month has come to |
+| `/cwd` | the folder the work happens in |
+| `/clear` | clear the screen |
+| `/quit` | leave |
+
+It composes with the shell it is sitting in. Anything piped in is added to the
+message, which is the whole of the integration story for a coding agent that is
+already in a terminal:
+
+```sh
+ai -p "a landing page for a dentist @claude-p @kimi"   # one message, then exit
+git diff | ai -p "review this @claude-w"               # stdin is appended
+ai --models copilot                                    # what it can run
+ai --describe                                          # all of it, as JSON
+```
+
+`ai --describe` is the one for other programs: capabilities, grammar and the
+model catalogue per account, so something driving `ai -p` can find out what is
+available instead of guessing.
+
 ### Mentions
 
 ```
@@ -401,6 +450,7 @@ something unparseable blocks the assignment.
 | | |
 |---|---|
 | Sessions, artifacts, crew scratch directories | `~/Library/Application Support/Honeycode/` (0700) |
+| What you have typed at `ai` | `~/Library/Application Support/Honeycode/ai-history` (0600), last 500 lines |
 | Preferences, model catalogues, spend totals | `com.matthewquigley.honeycode` — one domain shared by the app and `ai` |
 | Custom account API keys | login Keychain, `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly` |
 | Agent credentials | wherever each agent CLI keeps them; Honeycode never copies them |
@@ -442,6 +492,16 @@ compiled against the real sources rather than a copy of their logic. There's no
 test framework for the same reason there's no package manifest: a target is one
 `swiftc` invocation, and a second tool would be more machinery than the thing it
 tests.
+
+Most of them cover `AgentKit`. `CLI` is the exception and covers the terminal
+client — what Tab offers, what a slash command parses to, what the up-arrow
+remembers. It names the files it compiles rather than taking all of
+`Sources/ai`, because `main.swift` *is* a main and two of those don't link. The
+line editor itself isn't in there: it's a loop over `read(2)` against a tty in
+raw mode, there is no tty in a test run, and a fake one would be a test of the
+fake. So the editor is kept thin — it decodes a keypress and calls something
+else — and the something elses are pure functions of a line, a cursor and a
+directory.
 
 `test.sh` writes nothing into `build/` and never stops a running app, so it's
 safe to run while you're using the thing it's testing. `build.sh` does quit

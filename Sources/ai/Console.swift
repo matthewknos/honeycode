@@ -66,6 +66,36 @@ enum Console {
         if midLine { write("\n") }
     }
 
+    /// The cursor is at the start of a line, and this didn't put it there.
+    ///
+    /// `LineEditor` writes through `Terminal` rather than through here, because
+    /// what it writes is mostly cursor movement and counting that as text is
+    /// how you get a stray blank line above every prompt. It still ends each
+    /// line properly, and this is how it says so.
+    static func markFresh() { midLine = false }
+
+    // MARK: Room
+
+    /// How wide to lay things out.
+    ///
+    /// Everything that truncates asks this rather than carrying a number.
+    /// Three places used to carry their own — 90, 110 and 28 — which on a wide
+    /// window threw away most of what would have fitted and on a narrow one
+    /// wrapped every line of a plan into two.
+    static var width: Int { Terminal.columns }
+
+    /// Cut to fit, with an ellipsis when there was more.
+    ///
+    /// Counts characters, so an escape sequence inside `text` would be counted
+    /// as the dozen characters it is. Nothing here passes one: this is for the
+    /// plain strings — a task, a message, a path — that go *into* a painted
+    /// line rather than for the line itself.
+    static func fit(_ text: String, to room: Int) -> String {
+        let flat = text.replacingOccurrences(of: "\n", with: " ")
+        guard room > 1, flat.count > room else { return flat }
+        return String(flat.prefix(room - 1)) + "…"
+    }
+
     /// `▸ claude-p`, `▸ kimi#2` — who is about to speak.
     ///
     /// Tinted by account, named by seat: two instances of one subscription are

@@ -103,7 +103,11 @@ final class Progress {
             let mark = row.done ? "✓" : "·"
             let name = Console.paint("\(mark) \(row.seat.mention)",
                                      Console.tint(row.seat.account))
-            out += "  \(name)  \(Console.dim(row.state))\n"
+            // A live line that wraps is a live line that can't be erased: the
+            // cursor walk that takes this block down counts rows, and a wrapped
+            // row is two of them.
+            let state = Console.fit(row.state, to: Console.width - row.seat.mention.count - 7)
+            out += "  \(name)  \(Console.dim(state))\n"
         }
         out += "  " + Console.dim("\(elapsed)s") + "\n"
         Console.write(out)

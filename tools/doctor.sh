@@ -70,10 +70,11 @@ ARCH="$(uname -m)"
 if [[ "$ARCH" == "arm64" ]]; then
   ok "Apple silicon ($ARCH)"
 else
-  fail "Apple silicon required — this is $ARCH"
-  note "Both build scripts target arm64-apple-macos26.0. On an Intel Mac you"
-  note "would need to change TARGET in build.sh and build-ai.sh, and nothing"
-  note "here has been tested that way."
+  warn "$ARCH — this will build for it, and nobody has ever tried"
+  note "The build scripts take the architecture from uname rather than"
+  note "hardcoding arm64, so this attempts a real build instead of quietly"
+  note "producing a binary that cannot execute. Whether it compiles is the"
+  note "open question, and the compiler is the only thing that can answer it."
 fi
 
 VERSION="$(sw_vers -productVersion)"
@@ -81,9 +82,15 @@ MAJOR="${VERSION%%.*}"
 if (( MAJOR >= 26 )); then
   ok "macOS $VERSION"
 else
-  fail "macOS 26 or later required — this is $VERSION"
-  note "LSMinimumSystemVersion in Resources/Info.plist, and the deployment"
-  note "target both build scripts compile against."
+  warn "macOS $VERSION — the default deployment target is 26.0"
+  note "That 26 is what this was built against, not a floor anybody measured:"
+  note "there is not one @available in the whole source, so nothing in it has"
+  note "ever declared needing a version of anything. Try"
+  note ""
+  note "    HONEYCODE_DEPLOY=$MAJOR.0 ./build.sh"
+  note ""
+  note "and read what the compiler rejects. Every rejection names an API and a"
+  note "version, which between them is the real floor."
 fi
 
 # ------------------------------------------------------------- the toolchain
@@ -227,7 +234,7 @@ if (( FATAL > 0 )); then
 fi
 
 if (( WARNED > 0 )); then
-  printf '  Builds fine. %d thing(s) above limit what you can use.\n' "$WARNED"
+  printf '  %d thing(s) above are worth reading first.\n' "$WARNED"
 else
   printf '  %sEverything Honeycode needs is here.%s\n' "$GREEN" "$RESET"
 fi

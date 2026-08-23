@@ -29,7 +29,7 @@ Both link `AgentKit`, which is the engine and has no UI in it.
 
 | | |
 |---|---|
-| **Mac** | Apple silicon, macOS 26 or later |
+| **Mac** | Apple silicon on macOS 26 is what it is developed and used on. The build follows whatever Mac you run it on — see [Older Macs](#older-macs). |
 | **Toolchain** | Xcode Command Line Tools (`xcode-select --install`). Full Xcode is not required and there is no `.xcodeproj` — each target is one `swiftc` invocation. |
 | **At least one agent CLI** | See below. The app is useful with one; it is interesting with three. |
 
@@ -93,6 +93,87 @@ If /Applications or the installed bundle isn't yours to write — a bundle put
 there with `sudo` is the usual reason — the build stops and prints the two
 commands that fix it rather than half-replacing an app.
 
+### Older Macs
+
+Apple silicon on macOS 26 is what this is developed on, and the only combination
+anybody has run it on. As far as anything in the source is concerned it is not a
+requirement:
+
+```sh
+./build.sh                        # takes the architecture from uname -m
+HONEYCODE_DEPLOY=14.0 ./build.sh  # and see what the compiler says
+HONEYCODE_ARCH=x86_64 ./build.sh  # if you need to be explicit
+```
+
+Both build scripts read the architecture from `uname -m` and the deployment
+target from `HONEYCODE_DEPLOY`, which defaults to 26.0. `build.sh` writes
+whatever it actually compiled for into the bundle's `LSMinimumSystemVersion`, so
+the plist and the linker can't disagree — that particular mistake produces an app
+that builds cleanly and then refuses to open.
+
+There is not one `@available` in the whole source, so nothing in it has ever
+declared needing a version of anything — 26.0 is what it was built against, not
+a floor somebody measured. `./tools/availability.py` works out what it *would*
+be, by reading Apple's own availability data for every symbol the app uses:
+
+```
+$ ./tools/availability.py --floor 14.0
+
+  ── above macOS 14.0 ──────────────────────────────────────
+     glassEffect              macOS 26.0   swiftui/view/glasseffect(_:in:)
+     onScrollGeometryChange   macOS 15.0   swiftui/view/onscrollgeometrychange(…)
+     WindowDragGesture        macOS 15.0   swiftui/windowdraggesture
+     ScrollPosition           macOS 15.0   swiftui/scrollposition
+```
+
+Seven call sites across three files stood between this and macOS 14. **Five are
+now behind `#available`:**
+
+| | | |
+|---|---|---|
+| `Chrome.swift` | `.glassEffect(.regular, in:)` ×4 | macOS 26 → **gated**, `View.glassy(in:)` |
+| `PopOut.swift` | `WindowDragGesture` | macOS 15 → **gated**, `View.windowDraggable()` |
+| `TranscriptView.swift` 57, 280 | `ScrollPosition`, `onScrollGeometryChange` | macOS 15 → **open** |
+
+So the believed floor is **macOS 15**, which matters more than one number
+usually does: Sequoia runs on a 2018-and-later MacBook Pro, so the Intel
+machines this was written off for are reachable by a free update rather than a
+new laptop.
+
+The two that are left are deliberately left. `TranscriptView` drives its scroll
+through `ScrollPosition` alone, and the comment above it records why: it used to
+be bound *and* driven through a `ScrollViewReader` proxy, the binding read the
+proxy's own scroll as a user scroll, and following switched itself off after the
+first drag. A `ScrollViewReader` fallback re-creates exactly that arrangement, in
+the view that renders every streamed token, and that is not a change to make
+without a compiler and a real transcript to scroll. It is the one remaining step
+from 15 to 14.
+
+Re-run the tool after any of this: it skips symbols already behind an
+`#available`, so the report gets shorter as the work gets done rather than
+repeating itself.
+
+One known false positive: `Context` resolves to `PreviewModifier.Context`
+(macOS 15) when the source means `NSViewRepresentable.Context`, which is
+ancient. A name that means two things is only as old as the oldest one the tool
+can find, and it cannot find that one.
+
+That is a *lower bound*, not a clearance. The tool resolves what it can name,
+125 symbols went unresolved, and an unresolved symbol is one it could not ask
+about rather than one it cleared. `swiftc` at a lower target is still the only
+authority; this just means nobody has to start from nothing.
+
+Of the two targets, `ai` is the better bet. `build-ai.sh` compiles `AgentKit`
+and `Sources/ai` and links no UI framework at all, so it has none of the SwiftUI
+surface that a deployment target usually gets rejected over.
+
+The animated **flux** background is the one thing that will definitely be slow
+on integrated graphics — a `WKWebView` drawing a couple of hundred scaled strips
+per frame behind the entire window. You don't have to know that: **Motion** in
+Settings ▸ Features starts off on an Intel build, and everything else in the
+background picker is a still image that costs nothing. Switch it on if the Mac
+turns out to cope.
+
 ### The first run
 
 The first time the window opens it asks four questions, in the order they
@@ -134,6 +215,14 @@ greying them out:
 | **Preview** | the workbench's browser |
 | **Dictation** | the mic in the composer |
 | **Notifications** | a banner when a turn finishes somewhere you aren't looking |
+| **Motion** | the animated background — starts off on a Mac with integrated graphics |
+
+**Motion** is the other one that doesn't start on for everybody: it is off by
+default on an Intel build, because the animated background is a `WKWebView`
+drawing a couple of hundred scaled strips per frame behind the whole window and
+integrated graphics feel every one of them. The background stays *selected* —
+switch motion back on and it comes straight back, because somebody who chose it
+on one Mac hasn't changed their mind by opening it on another.
 
 Notifications start **off**, and switching them on is what raises the system's
 permission dialog — rather than raising it four seconds into a first launch,
@@ -491,7 +580,8 @@ Sources/Honeycode/    the app (SwiftUI/AppKit)
 Sources/ai/           the terminal client
 Tests/                one main.swift per suite, no framework
 Resources/            Info.plist, entitlements, icon, syntax themes
-tools/                doctor.sh, signing-identity.sh, crewlab.sh, crewscore.py
+tools/                doctor.sh, signing-identity.sh, availability.py,
+                      acp-catalogue.py, crewlab.sh, crewscore.py
 build.sh              → build/Honeycode.app, or --install to /Applications
 build-ai.sh           → build/ai
 test.sh               everything; --typecheck for a fast loop

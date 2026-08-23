@@ -5,7 +5,25 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP="$ROOT/build/Honeycode.app"
 INSTALLED="/Applications/Honeycode.app"
-TARGET="arm64-apple-macos26.0"
+# What to build for.
+#
+# Both of these were a string literal — `arm64-apple-macos26.0` — and neither
+# was a requirement anybody measured. The architecture was the machine this was
+# written on, and on any other one it produces a binary that cannot execute and
+# no hint as to why. The deployment target is the version it happened to be
+# built against: there is not a single `@available` in the source, so nothing
+# in it has ever declared needing 26.
+#
+# So both follow this Mac, and both can be overridden. Lowering the floor is
+# the experiment:
+#
+#     HONEYCODE_DEPLOY=14.0 ./build.sh
+#
+# and read what the compiler rejects. Whatever it accepts, it accepts — a
+# deployment target is checked, not guessed at.
+ARCH="${HONEYCODE_ARCH:-$(uname -m)}"
+DEPLOY="${HONEYCODE_DEPLOY:-26.0}"
+TARGET="$ARCH-apple-macos$DEPLOY"
 
 CONFIGURATION=release
 INSTALL=false
@@ -51,6 +69,14 @@ fi
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
+
+# LaunchServices reads this, the linker reads $DEPLOY, and if they disagree you
+# get a bundle that built cleanly and refuses to open. The file carries the
+# default; the build writes whatever it actually compiled for.
+/usr/libexec/PlistBuddy -c "Set :LSMinimumSystemVersion $DEPLOY" \
+  "$APP/Contents/Info.plist" >/dev/null
+
+echo "==> Target $TARGET"
 
 # Vendored Highlightr looks these up with `Bundle(for:)`, which for a class
 # compiled into the app is the main bundle — so they must sit flat in

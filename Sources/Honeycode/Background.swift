@@ -381,11 +381,25 @@ struct PaneBackground: View {
     /// without being so large that mid-slider positions all look identical.
     private static let maxBlur: CGFloat = 60
 
+    /// Which background to actually draw.
+    ///
+    /// Nil for coding mode, and nil for `flux` on a Mac that has motion
+    /// switched off. That second one is a decision about the machine rather
+    /// than about taste: the choice stays selected and comes straight back the
+    /// moment the switch does, because somebody who picked this background on
+    /// one Mac has not changed their mind by opening it on another.
+    private var shown: BackgroundKind? {
+        guard !(honoursCodingMode && terminal) else { return nil }
+        let kind = store.selected?.backgroundKind
+        guard kind != .flux || Features.isOn(.motion) else { return nil }
+        return kind
+    }
+
     var body: some View {
         ZStack {
             Theme.canvas
 
-            switch (honoursCodingMode && terminal) ? nil : store.selected?.backgroundKind {
+            switch shown {
             case .flux:
                 // The veil goes *into* the animation rather than over it.
                 //

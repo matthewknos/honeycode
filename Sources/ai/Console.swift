@@ -58,8 +58,25 @@ enum Console {
         midLine = !text.hasSuffix("\n")
     }
 
+    /// How many blank lines have just gone out. Only `paragraph` reads it.
+    private static var blankRun = 1
+
     static func line(_ text: String = "") {
         write(text + "\n")
+        blankRun = text.isEmpty ? blankRun + 1 : 0
+    }
+
+    /// A blank line, unless the last thing printed was already one.
+    ///
+    /// The prompt asks for this. Everything that prints before it ends
+    /// differently — a plan closes on a blank, `/models` closes on a row, a
+    /// reply closes wherever the model stopped — and a prompt that always
+    /// added a newline would leave two blanks after some of them and a prompt
+    /// that never did would jam against the rest. Neither is a thing you can
+    /// fix at the call sites, because the call sites don't know what ran
+    /// before them.
+    static func paragraph() {
+        if blankRun == 0 { line() }
     }
 
     static func breakLine() {
@@ -72,7 +89,10 @@ enum Console {
     /// what it writes is mostly cursor movement and counting that as text is
     /// how you get a stray blank line above every prompt. It still ends each
     /// line properly, and this is how it says so.
-    static func markFresh() { midLine = false }
+    static func markFresh() {
+        midLine = false
+        blankRun = 0
+    }
 
     // MARK: Room
 
@@ -94,6 +114,30 @@ enum Console {
         let flat = text.replacingOccurrences(of: "\n", with: " ")
         guard room > 1, flat.count > room else { return flat }
         return String(flat.prefix(room - 1)) + "…"
+    }
+
+    /// Break at spaces to fit, each line carrying its own indent.
+    ///
+    /// For the few places where cutting is the wrong answer — an instruction
+    /// somebody is going to follow, rather than a task or a message where the
+    /// substance is somewhere else and the line is only a reminder that it
+    /// exists.
+    static func wrap(_ text: String, to room: Int, indent: String) -> [String] {
+        guard room > 8 else { return [indent + text] }
+        var lines: [String] = []
+        var current = ""
+        for word in text.split(separator: " ") {
+            if current.isEmpty {
+                current = String(word)
+            } else if current.count + 1 + word.count <= room {
+                current += " " + word
+            } else {
+                lines.append(indent + current)
+                current = String(word)
+            }
+        }
+        if !current.isEmpty { lines.append(indent + current) }
+        return lines
     }
 
     /// `▸ claude-p`, `▸ kimi#2` — who is about to speak.

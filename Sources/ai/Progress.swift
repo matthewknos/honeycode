@@ -99,6 +99,10 @@ final class Progress {
 
         var out = ""
         for _ in 0..<drawn { out += "\u{1B}[1A\u{1B}[2K" }
+        // A blank line of its own, and counted below, so the live block reads
+        // as a block rather than as two more rows of whatever was printed above
+        // it — which for a crew run is the delegates talking to each other.
+        out += "\n"
         for row in rows {
             let mark = row.done ? "✓" : "·"
             let name = Console.paint("\(mark) \(row.seat.mention)",
@@ -111,6 +115,6 @@ final class Progress {
         }
         out += "  " + Console.dim("\(elapsed)s") + "\n"
         Console.write(out)
-        drawn = rows.count + 1
+        drawn = rows.count + 2
     }
 }

@@ -131,9 +131,9 @@ final class Program {
             Console.failure("nothing is ready to run")
         }
         Console.line()
-        for state in Diagnostic.readinessOfAll() {
-            report(state, indent: "  ")
-        }
+        let all = Diagnostic.readinessOfAll()
+        let width = column(of: all)
+        for state in all { report(state, indent: "  ", column: width) }
         Console.line()
         Console.line(Console.dim("  ./tools/doctor.sh checks the same things in more detail."))
         return false
@@ -141,20 +141,39 @@ final class Program {
 
     /// One account, as a line and — when there is something to do about it —
     /// the line that does it.
-    private func report(_ state: AccountReadiness, indent: String) {
-        let name = Console.paint("@" + AgentMention.handle(state.account),
-                                 Console.tint(state.account), bold: true)
+    ///
+    /// - Parameter column: how wide the widest handle in this roster is, so the
+    ///   summaries line up. Four accounts whose states each start at a
+    ///   different column is a list you have to read rather than scan, and
+    ///   scanning it is the entire reason it is printed.
+    private func report(_ state: AccountReadiness, indent: String, column: Int) {
+        let handle = "@" + AgentMention.handle(state.account)
+        let name = Console.paint(handle, Console.tint(state.account), bold: true)
         let mark = state.isReady ? "✓" : "·"
         let off = state.account.isEnabled ? "" : "  (switched off)"
-        Console.line(indent + mark + " " + name + Console.dim("  " + state.summary + off))
-        if let remedy = state.remedy {
-            Console.line(indent + "    " + Console.dim(remedy))
+        let pad = String(repeating: " ", count: max(0, column - handle.count))
+        Console.line(indent + mark + " " + name + pad
+                     + Console.dim("  " + state.summary + off))
+        // Wrapped rather than cut. A remedy is the one line here somebody is
+        // going to act on — `npx comes with Node.js…` runs to about a hundred
+        // and thirty characters — and half of an instruction is worse than a
+        // second line of one.
+        guard let remedy = state.remedy else { return }
+        for text in Console.wrap(remedy, to: Console.width - indent.count - 4,
+                                 indent: indent + "    ") {
+            Console.line(Console.dim(text))
         }
+    }
+
+    /// The width to align a roster's summaries to.
+    private func column(of roster: [AccountReadiness]) -> Int {
+        roster.map { AgentMention.handle($0.account).count + 1 }.max() ?? 0
     }
 
     // MARK: - The prompt
 
     private func prompt() {
+        Console.paragraph()
         // Read on the main actor and handed to the queue as a value. The editor
         // is not main-actor state and must not be reached through `self` from
         // another queue, which is the same reason the old code unwrapped its
@@ -234,7 +253,8 @@ final class Program {
             DispatchQueue.main.async {
                 guard let self else { return }
                 Console.line()
-                for state in roster { self.report(state, indent: "  ") }
+                let width = self.column(of: roster)
+                for state in roster { self.report(state, indent: "  ", column: width) }
                 finish()
             }
         }
@@ -298,8 +318,10 @@ final class Program {
                 let shown = argument.isEmpty
                     ? models.filter { $0.id == current }
                     : models
+                let column = shown.map(\.title.count).max() ?? 0
                 for model in shown {
-                    Console.line(ModelPick.describe(model, current: model.id == current))
+                    Console.line(ModelPick.describe(model, current: model.id == current,
+                                                    column: column))
                 }
                 if argument.isEmpty && models.count > 1 {
                     Console.line(Console.dim("    /models \(AgentMention.handle(account)) for the rest"))

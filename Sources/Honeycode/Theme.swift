@@ -64,6 +64,21 @@ enum Theme {
     static let gapTurn = s8 - s1   // 30 — between turns
     static let pane = s7           // transcript inset
 
+    // What counts as "on the scale", since the three above are not `sN`.
+    //
+    // A sum or difference of scale values is on it: `gapBlock` is `s5 + s1`
+    // and `gapTurn` is `s8 - s1`, and both are still expressed in the only
+    // units this file has. A bare number is not, however carefully it was
+    // chosen by eye — that is the case the rule is for, because a literal
+    // records the answer and loses the question.
+    //
+    // `Theme.sN ± 1` — a nudge by one point, not by a scale value — is the
+    // in-between case and appears in about twenty places. It is almost always
+    // a control reaching for a hit-target height rather than a gap between two
+    // things, which is a different measurement wearing the spacing scale's
+    // clothes. Left as it is deliberately; the fix is to name the heights, not
+    // to round the nudges away.
+
     // MARK: Layout
 
     /// Maximum width of the text column — roughly 80 characters at 13.5pt.

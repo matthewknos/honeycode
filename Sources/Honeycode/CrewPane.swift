@@ -124,7 +124,13 @@ struct CrewPane: View {
                 .fill(account.accent)
                 .opacity(state.isReady ? 1 : 0.3)
                 .frame(width: 7, height: 7)
-                .padding(.top, 5)
+                // Nudging the dot down onto the title's cap height, not a gap
+                // between two things — but it was a bare 5, and the scale does
+                // not have one. What this is reaching for is a baseline
+                // alignment guide; that wants measuring against real type on a
+                // real screen, and a 1pt shift onto the scale is the honest
+                // version until somebody does.
+                .padding(.top, Theme.s3)
 
             VStack(alignment: .leading, spacing: Theme.s2) {
                 HStack(spacing: Theme.s3) {

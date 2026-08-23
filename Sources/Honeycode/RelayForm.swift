@@ -104,7 +104,7 @@ struct RelayForm: View {
     /// conversations and a Send button, and nothing at all about the material.
     private func summary(_ ready: Relay.Payload) -> some View {
         Text(ready.label)
-            .font(.system(size: 11.5))
+            .font(Theme.note)
             .foregroundStyle(.secondary)
             .lineLimit(2)
             .padding(.horizontal, Theme.s5)
@@ -113,9 +113,9 @@ struct RelayForm: View {
     private func refusal(_ error: Error) -> some View {
         VStack(alignment: .leading, spacing: Theme.s4) {
             Text("Can't send this")
-                .font(.system(size: 13, weight: .medium))
+                .font(.system(size: Theme.t4, weight: .medium))
             Text((error as? Relay.Refusal)?.message ?? error.localizedDescription)
-                .font(.system(size: 11.5))
+                .font(Theme.note)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -127,7 +127,7 @@ struct RelayForm: View {
     private var list: some View {
         if targets.isEmpty {
             Text("There's nowhere to send this — it's the only session open.")
-                .font(.system(size: 11.5))
+                .font(Theme.note)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, Theme.s5)
@@ -163,7 +163,7 @@ struct RelayForm: View {
         TextField("Optional — e.g. remove company PII",
                   text: $instruction, axis: .vertical)
             .textFieldStyle(.plain)
-            .font(.system(size: 12))
+            .font(Theme.row)
             .lineLimit(1...4)
             .padding(.horizontal, Theme.s5)
             .padding(.vertical, Theme.s4)
@@ -179,7 +179,7 @@ struct RelayForm: View {
         HStack {
             Text(instruction.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                  ? "Sent as-is" : "\(source.account.shortTitle) transforms it first")
-                .font(.system(size: 10.5))
+                .font(Theme.caption)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
             Spacer(minLength: Theme.s4)

@@ -197,12 +197,12 @@ struct PopoverRow: View {
                 if disclosure == .leading { chevron("chevron.left") }
                 VStack(alignment: .leading, spacing: Theme.s1) {
                     Text(title)
-                        .font(.system(size: 13))
+                        .font(Theme.sidebarRow)
                         .foregroundStyle(destructive ? AnyShapeStyle(Color.diffDelText)
                                                      : AnyShapeStyle(.primary))
                     if let blurb, !blurb.isEmpty {
                         Text(blurb)
-                            .font(.system(size: 11))
+                            .font(Theme.note)
                             .foregroundStyle(.secondary)
                     }
                 }

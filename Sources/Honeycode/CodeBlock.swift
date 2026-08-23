@@ -29,7 +29,7 @@ struct ArtifactButtons: View {
             VStack(spacing: 0) {
                 HStack {
                     Text(artifact.label)
-                        .font(.system(size: 13, weight: .medium))
+                        .font(.system(size: Theme.t4, weight: .medium))
                         .foregroundStyle(.secondary)
                     Spacer()
                     ZoomControl(zoom: $zoom)
@@ -149,10 +149,10 @@ struct CodeBlock: View {
             Image(systemName: "chevron.left.forwardslash.chevron.right")
                 .font(.system(size: 9.5))
             Text(language.isEmpty ? "code" : language.lowercased())
-                .font(.system(size: 10.5, weight: .medium))
+                .font(Theme.captionStrong)
             Text("·")
             Text("\(lines.count) line\(lines.count == 1 ? "" : "s")")
-                .font(.system(size: 10.5))
+                .font(Theme.caption)
                 .monospacedDigit()
         }
         .foregroundStyle(.tertiary)
@@ -181,7 +181,7 @@ struct CodeBlock: View {
             VStack(spacing: 0) {
                 HStack {
                     Text(language.isEmpty ? "Artifact" : language)
-                        .font(.system(size: 13, weight: .medium))
+                        .font(.system(size: Theme.t4, weight: .medium))
                         .foregroundStyle(.secondary)
                     Spacer()
                     ZoomControl(zoom: $zoom)
@@ -249,7 +249,7 @@ struct CodeBlock: View {
                 .font(.system(size: 9.5))
                 .foregroundStyle(.tertiary)
             Text(language.isEmpty ? "text" : language)
-                .font(.system(size: 10.5, weight: .medium))
+                .font(Theme.captionStrong)
                 .foregroundStyle(.tertiary)
 
             Spacer(minLength: 8)
@@ -288,7 +288,7 @@ struct CodeBlock: View {
                     Image(systemName: copied ? "checkmark" : "doc.on.doc")
                         .font(.system(size: 9, weight: .semibold))
                     Text(copied ? "Copied" : "Copy")
-                        .font(.system(size: 10.5, weight: .medium))
+                        .font(Theme.captionStrong)
                 }
                 .foregroundStyle(copied ? AnyShapeStyle(Color.diffAddText)
                                         : AnyShapeStyle(.tertiary))
@@ -308,13 +308,13 @@ struct CodeBlock: View {
                 // their number aligned to the first visual row.
                 HStack(alignment: .firstTextBaseline, spacing: 0) {
                     Text("\(index + 1)")
-                        .font(.system(size: 10.5 * scale, design: .monospaced))
+                        .font(.system(size: Theme.t1 * scale, design: .monospaced))
                         .monospacedDigit()
                         .foregroundStyle(.tertiary)
                         .frame(width: gutterWidth, alignment: .trailing)
                         .padding(.trailing, 8)
                     text(for: line, at: index)
-                        .font(.system(size: 12 * scale, design: .monospaced))
+                        .font(.system(size: Theme.t3 * scale, design: .monospaced))
                         .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity, alignment: .leading)

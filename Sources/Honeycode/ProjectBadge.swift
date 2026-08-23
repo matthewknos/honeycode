@@ -63,7 +63,7 @@ struct ProjectBadge: View {
                     .font(.system(size: compact ? 13 : 10, weight: .medium))
                 if !compact {
                     Text(Self.shorten(text))
-                        .font(.system(size: 11.5, weight: .medium))
+                        .font(Theme.label)
                         .lineLimit(1)
                 }
             }

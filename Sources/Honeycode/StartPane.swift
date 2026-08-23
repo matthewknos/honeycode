@@ -67,7 +67,7 @@ struct StartPane<Composer: View>: View {
                  + "named plans the work and hands out the pieces. "
                  + "Type **@** for a file, **/** for a command."
                  : "Type **@** for a file, **/** for a command.")
-                .font(.system(size: 11.5))
+                .font(Theme.note)
                 .foregroundStyle(.tertiary)
                 .fixedSize(horizontal: false, vertical: true)
         }

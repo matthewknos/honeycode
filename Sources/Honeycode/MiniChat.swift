@@ -174,7 +174,7 @@ struct MiniChat: View {
         HStack(spacing: Theme.s3) {
             AccountDot(session.account)
             Text(session.name)
-                .font(.system(size: 12, weight: .medium))
+                .font(Theme.rowStrong)
                 .lineLimit(1)
 
             if session.isRunning {

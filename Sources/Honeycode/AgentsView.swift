@@ -36,7 +36,7 @@ struct AgentList: View {
 
             if store.agents.isEmpty && store.setup == nil {
                 Text("No agents yet.\nThe + above opens a conversation that makes one.")
-                    .font(.system(size: 12))
+                    .font(Theme.row)
                     .foregroundStyle(.tertiary)
                     .padding(.horizontal, Theme.s3)
                     .padding(.top, Theme.s4)
@@ -55,7 +55,7 @@ struct AgentList: View {
             Spacer(minLength: 0)
             if let count, count > 1 {
                 Text("\(count)")
-                    .font(.system(size: 11))
+                    .font(Theme.note)
                     .foregroundStyle(.secondary)
             }
         }
@@ -130,7 +130,7 @@ private struct AgentRow: View {
                         .opacity(hovering ? 0 : 1)
                 } else if !agent.schedule.shortTitle.isEmpty {
                     Text(agent.schedule.shortTitle)
-                        .font(.system(size: 11))
+                        .font(Theme.note)
                         .foregroundStyle(.secondary)
                         .opacity(hovering ? 0 : 1)
                 }
@@ -232,7 +232,7 @@ struct AgentsPane: View {
     private var empty: some View {
         VStack(spacing: Theme.s2) {
             Text("No agent")
-                .font(.system(size: 15, weight: .medium))
+                .font(Theme.display(Theme.t6))
             Text("Press + to describe one.")
                 .font(Theme.body)
                 .foregroundStyle(.tertiary)
@@ -319,7 +319,7 @@ struct AgentDetail: View {
                         Text("last ran \(Self.relative(last))")
                     }
                 }
-                .font(.system(size: 12))
+                .font(Theme.row)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
             }
@@ -397,7 +397,7 @@ struct AgentDetail: View {
                     HStack(spacing: Theme.s3) {
                         AccountDot(account, dimmed: on ? 1 : 0.45)
                         Text(account.title)
-                            .font(.system(size: 12.5, weight: on ? .medium : .regular))
+                            .font(.system(size: Theme.t3, weight: on ? .medium : .regular))
                     }
                     .foregroundStyle(on ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
                     .padding(.horizontal, Theme.s5)
@@ -433,7 +433,7 @@ struct AgentDetail: View {
                 if panel.runModal() == .OK, let url = panel.url { editing.path = url.path }
             }
             .buttonStyle(.link)
-            .font(.system(size: 12))
+            .font(Theme.row)
         }
     }
 
@@ -499,7 +499,7 @@ struct AgentDetail: View {
                         }
                     }
                     .buttonStyle(.link)
-                    .font(.system(size: 12))
+                    .font(Theme.row)
                 }
             }
         }
@@ -513,7 +513,7 @@ struct AgentDetail: View {
                         editing.autonomy = option
                     }
                     Text(option.blurb)
-                        .font(.system(size: 12))
+                        .font(Theme.row)
                         .foregroundStyle(.tertiary)
                 }
             }
@@ -523,7 +523,7 @@ struct AgentDetail: View {
                 // this is the real thing.
                 Text("Runs unattended with full tool access in \(editing.subtitle). "
                      + "Isolation is the only limit that holds.")
-                    .font(.system(size: 11.5))
+                    .font(Theme.note)
                     .foregroundStyle(.secondary)
                     .padding(.leading, Theme.s6)
             }
@@ -533,7 +533,7 @@ struct AgentDetail: View {
     private var isolationRow: some View {
         Toggle(isOn: $editing.isolated) {
             Text("Confine to \(editing.subtitle)")
-                .font(.system(size: 12.5))
+                .font(Theme.row)
         }
         .toggleStyle(.checkbox)
         .help("Nothing above or beside this folder is readable.")
@@ -579,7 +579,7 @@ struct AgentDetail: View {
                 Spacer(minLength: 0)
                 if !runs.isEmpty {
                     Text("keeping the last \(AgentStore.runsKept)")
-                        .font(.system(size: 11))
+                        .font(Theme.note)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -587,7 +587,7 @@ struct AgentDetail: View {
 
             if runs.isEmpty {
                 Text("Nothing yet.")
-                    .font(.system(size: 12.5))
+                    .font(Theme.row)
                     .foregroundStyle(.tertiary)
                     .padding(.vertical, Theme.s4)
             } else {
@@ -618,7 +618,7 @@ struct AgentDetail: View {
 
     private func chip(_ text: String) -> some View {
         HStack(spacing: Theme.s2) {
-            Text(text).font(.system(size: 12.5))
+            Text(text).font(Theme.row)
             Image(systemName: "chevron.down")
                 .font(.system(size: 8, weight: .semibold))
                 .foregroundStyle(.tertiary)
@@ -638,7 +638,7 @@ struct AgentDetail: View {
                     .font(.system(size: 12))
                     .foregroundStyle(on ? AnyShapeStyle(Color.accentColor)
                                         : AnyShapeStyle(.tertiary))
-                Text(title).font(.system(size: 12.5)).foregroundStyle(.primary)
+                Text(title).font(Theme.row).foregroundStyle(.primary)
             }
             .contentShape(Rectangle())
         }
@@ -691,11 +691,11 @@ private struct RunRow: View {
                 state
                     .frame(width: 12)
                 Text(run.startedAt.map(Self.clock) ?? "—")
-                    .font(.system(size: 12.5).monospacedDigit())
+                    .font(Theme.row.monospacedDigit())
                     .foregroundStyle(.secondary)
                     .frame(width: 44, alignment: .leading)
                 Text(summary)
-                    .font(.system(size: 12.5))
+                    .font(Theme.row)
                     .foregroundStyle(run.items.isEmpty ? AnyShapeStyle(.tertiary)
                                                        : AnyShapeStyle(.primary))
                     .lineLimit(1)
@@ -810,10 +810,10 @@ struct AgentSetup: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: Theme.s4) {
                 AccountDot(agent.account)
-                Text(agent.name).font(.system(size: 13.5, weight: .medium))
+                Text(agent.name).font(Theme.display(Theme.t5))
                 Spacer(minLength: 0)
                 Text(session.isRunning ? "DRAFT" : "READY")
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(.system(size: Theme.t1, weight: .semibold))
                     .foregroundStyle(.tertiary)
             }
             .padding(.horizontal, Theme.s5)
@@ -837,7 +837,7 @@ struct AgentSetup: View {
                 Text(agent.autonomy == .act
                      ? "Runs unattended with full tool access."
                      : "Won't write anything until you say so.")
-                    .font(.system(size: 11.5))
+                    .font(Theme.note)
                     .foregroundStyle(.tertiary)
                 Spacer(minLength: Theme.s4)
                 Button("Cancel") { store.endSetup() }
@@ -860,7 +860,7 @@ struct AgentSetup: View {
                 .foregroundStyle(.tertiary)
                 .frame(width: 62, alignment: .leading)
             Text(value)
-                .font(.system(size: 12.5))
+                .font(Theme.row)
                 .lineLimit(2)
             Spacer(minLength: 0)
         }

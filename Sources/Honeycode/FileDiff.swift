@@ -217,7 +217,7 @@ struct FileDiffView: View {
             }
             Image(systemName: state.isDeclined ? "slash.circle"
                   : state.isFailed ? "exclamationmark.triangle" : "doc.text")
-                .font(.system(size: 10.5))
+                .font(Theme.caption)
                 .foregroundStyle(state.isDeclined || state.isFailed
                                  ? AnyShapeStyle(Color.diffDelText) : AnyShapeStyle(.tertiary))
             Text(file)
@@ -269,7 +269,7 @@ struct FileDiffView: View {
 
             if state.isDeclined || state.isFailed {
                 Text(state.isDeclined ? "Declined" : "Failed")
-                    .font(.system(size: 10.5, weight: .medium))
+                    .font(Theme.captionStrong)
                     .foregroundStyle(Color.diffDelText)
                     .help(state.message ?? "")
             } else {
@@ -283,7 +283,7 @@ struct FileDiffView: View {
                         Text("−\(tally.removed)").foregroundStyle(Color.diffDelText)
                     }
                 }
-                .font(.system(size: 11, design: .monospaced))
+                .font(Theme.monoSmall)
                 .monospacedDigit()
             }
         }
@@ -342,7 +342,7 @@ struct FileDiffView: View {
                 .foregroundStyle(.tertiary)
                 .frame(width: 14)
             text(for: row, at: index)
-                .font(.system(size: 12 * scale, design: .monospaced))
+                .font(.system(size: Theme.t3 * scale, design: .monospaced))
                 .foregroundStyle(row.kind == .context ? .secondary : .primary)
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
@@ -366,7 +366,7 @@ struct FileDiffView: View {
             wholeDiff = true
         } label: {
             Text("Show \(hidden) more line\(hidden == 1 ? "" : "s")")
-                .font(.system(size: 10.5, weight: .medium))
+                .font(Theme.captionStrong)
                 .foregroundStyle(.tertiary)
                 .padding(.horizontal, Theme.s5)
                 .padding(.vertical, 6)
@@ -393,7 +393,7 @@ struct FileDiffView: View {
 
     private func gutter(_ number: Int?) -> some View {
         Text(number.map(String.init) ?? "")
-            .font(.system(size: 10.5, design: .monospaced))
+            .font(Theme.monoCaption)
             .monospacedDigit()
             .foregroundStyle(.tertiary)
             .frame(width: 30, alignment: .trailing)

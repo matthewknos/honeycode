@@ -90,12 +90,12 @@ private struct SourceRow: View {
         } label: {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text(result.title)
-                    .font(.system(size: 12))
+                    .font(Theme.row)
                     .foregroundStyle(hovering ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
                     .lineLimit(1)
                 Text("·").foregroundStyle(.quaternary)
                 Text(result.url)
-                    .font(.system(size: 11, design: .monospaced))
+                    .font(Theme.monoSmall)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.tail)

@@ -401,7 +401,7 @@ struct ComposerView: View {
                 .scaleEffect(0.7)
                 .frame(width: 12, height: 12)
             Text("\(pending.from) is \(pending.verb) \(pending.label)…")
-                .font(.system(size: 11.5))
+                .font(Theme.note)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .truncationMode(.middle)
@@ -431,7 +431,7 @@ struct ComposerView: View {
                                 .font(.system(size: 9.5))
                                 .foregroundStyle(.tertiary)
                             Text(url.lastPathComponent)
-                                .font(.system(size: 11.5))
+                                .font(Theme.note)
                                 .lineLimit(1)
                         }
                         .contentShape(Rectangle())
@@ -552,7 +552,7 @@ struct ComposerView: View {
             focused = true
         } label: {
             Text(character)
-                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                .font(.system(size: Theme.t3, weight: .medium, design: .monospaced))
                 .foregroundStyle(.secondary)
                 .frame(width: 20, height: 24)
                 .contentShape(Rectangle())
@@ -577,7 +577,7 @@ struct ComposerView: View {
                             .font(.system(size: 8.5, weight: .semibold))
                             .foregroundStyle(.tertiary)
                         Text(text)
-                            .font(.system(size: 11.5))
+                            .font(Theme.note)
                             .foregroundStyle(.tertiary)
                             .lineLimit(1)
                             .truncationMode(.tail)
@@ -660,7 +660,7 @@ struct ComposerView: View {
     private var hintLine: some View {
         HStack(spacing: 0) {
             Text(hint)
-                .font(.system(size: 11))
+                .font(Theme.note)
                 .foregroundStyle(dictation.errorMessage != nil
                                  ? AnyShapeStyle(Color.diffDelText)
                                  : AnyShapeStyle(.tertiary))
@@ -675,7 +675,7 @@ struct ComposerView: View {
             // when you're only running one.
             if let subtitle {
                 Text(subtitle)
-                    .font(.system(size: 11))
+                    .font(Theme.note)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.middle)

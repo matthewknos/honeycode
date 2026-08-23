@@ -489,7 +489,7 @@ struct RootView: View {
 
                     if sessions.isEmpty {
                         Text("No sessions")
-                            .font(.system(size: 12.5))
+                            .font(Theme.row)
                             .foregroundStyle(.tertiary)
                             .padding(.horizontal, Theme.s5)
                             .padding(.vertical, Theme.s3)
@@ -588,7 +588,7 @@ struct RootView: View {
                             .font(Theme.sidebarRow)
                         Spacer(minLength: 0)
                         Text("⌘,")
-                            .font(.system(size: 11))
+                            .font(Theme.note)
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -677,7 +677,7 @@ struct RootView: View {
                 Image(systemName: value.symbol)
                     .font(.system(size: 10, weight: .medium))
                 Text(value.title)
-                    .font(.system(size: 11.5, weight: .medium))
+                    .font(Theme.label)
             }
             .foregroundStyle(on ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
             .frame(maxWidth: .infinity)
@@ -949,7 +949,7 @@ private struct EmptyDetail: View {
     var body: some View {
         VStack(spacing: Theme.s2) {
             Text("No session")
-                .font(.system(size: 15, weight: .medium))
+                .font(Theme.display(Theme.t6))
             Text("⌘N to add one.")
                 .font(Theme.body)
                 .foregroundStyle(.tertiary)

@@ -305,7 +305,7 @@ struct PopOutChat: View {
             AccountDot(session.account)
 
             Text(session.name)
-                .font(.system(size: 12, weight: .medium))
+                .font(Theme.rowStrong)
                 .lineLimit(1)
                 .truncationMode(.middle)
 
@@ -354,7 +354,7 @@ struct PopOutChat: View {
             HStack(spacing: Theme.s3) {
                 ProgressView().controlSize(.small).scaleEffect(0.5).frame(width: 12)
                 Text(Self.summarise(session.items))
-                    .font(.system(size: 11))
+                    .font(Theme.note)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -423,7 +423,7 @@ struct PoppedOutColumn: View {
             HStack(spacing: Theme.s3) {
                 AccountDot(session.account)
                 Text(session.name)
-                    .font(.system(size: 15, weight: .medium))
+                    .font(Theme.display(Theme.t6))
                     .lineLimit(1)
                     .truncationMode(.middle)
                 if session.isRunning {
@@ -437,7 +437,7 @@ struct PoppedOutColumn: View {
 
             Button("Bring It Back") { workspace.popIn() }
                 .buttonStyle(.borderless)
-                .font(.system(size: 12, weight: .medium))
+                .font(Theme.rowStrong)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         // The whole column, not just the button: this is a placeholder for a

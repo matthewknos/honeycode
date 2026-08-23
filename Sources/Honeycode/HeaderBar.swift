@@ -117,7 +117,7 @@ struct HeaderBar: View {
             AccountDot(session.account)
 
             Text(session.name)
-                .font(.system(size: 12.5, weight: .medium))
+                .font(Theme.rowStrong)
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .layoutPriority(1)
@@ -153,7 +153,7 @@ struct HeaderBar: View {
                     .frame(width: 12, height: 12)
             }
             Text(runLabel)
-                .font(.system(size: 11, weight: .medium))
+                .font(Theme.label)
                 .foregroundStyle(Theme.stateLive)
                 .lineLimit(1)
             if session.isRunning {
@@ -245,7 +245,7 @@ struct HeaderBar: View {
                     .font(.system(size: 11, weight: .medium))
                 if changed > 0 {
                     Text("\(changed)")
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(.system(size: Theme.t1, weight: .semibold))
                         .monospacedDigit()
                         .foregroundStyle(Theme.stateDone)
                 }
@@ -383,20 +383,20 @@ private struct LocationChip: View {
     var body: some View {
         HStack(spacing: Theme.s2 + 1) {
             Text(directory.lastPathComponent)
-                .font(.system(size: 11.5))
+                .font(Theme.note)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .truncationMode(.head)
 
             if let branch, !branch.isEmpty, Features.isOn(.git) {
                 Text("·")
-                    .font(.system(size: 11.5))
+                    .font(Theme.note)
                     .foregroundStyle(.quaternary)
                 Image(systemName: "arrow.triangle.branch")
                     .font(.system(size: 9))
                     .foregroundStyle(.tertiary)
                 Text(branch)
-                    .font(.system(size: 11.5))
+                    .font(Theme.note)
                     .foregroundStyle(.tertiary)
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -498,7 +498,7 @@ struct UsageMeter: View {
 
     private func readout(_ text: String, alarming: Bool, help: String) -> some View {
         Text(text)
-            .font(.system(size: 10.5, weight: .medium))
+            .font(Theme.captionStrong)
             .monospacedDigit()
             .foregroundStyle(alarming ? AnyShapeStyle(Theme.stateBad)
                                       : AnyShapeStyle(.tertiary))

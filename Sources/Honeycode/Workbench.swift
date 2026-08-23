@@ -128,11 +128,11 @@ struct Workbench: View {
                     .font(.system(size: 10.5, weight: .medium))
                 if labelled {
                     Text(tab.title)
-                        .font(.system(size: 11.5, weight: .medium))
+                        .font(Theme.label)
                 }
                 if let badge {
                     Text(badge)
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(.system(size: Theme.t1, weight: .semibold))
                         .monospacedDigit()
                         .foregroundStyle(tab == .run ? Theme.stateLive : Theme.stateDone)
                 }
@@ -242,7 +242,7 @@ private struct ChangesTab: View {
                     Text("−\(removed)").foregroundStyle(Color.diffDelText)
                 }
             }
-            .font(.system(size: 11, design: .monospaced))
+            .font(Theme.monoSmall)
             .monospacedDigit()
 
             Spacer(minLength: Theme.s4)
@@ -258,7 +258,7 @@ private struct ChangesTab: View {
             if Features.isOn(.git) && Features.isOn(.gitHub) {
                 Button("Pull Request…") { openingPullRequest = true }
                     .buttonStyle(.plain)
-                    .font(.system(size: 11.5, weight: .medium))
+                    .font(Theme.label)
                     .foregroundStyle(Color.accentColor)
             }
         }
@@ -314,7 +314,7 @@ private struct ChangesTab: View {
                             Text("−\(change.removed)").foregroundStyle(Color.diffDelText)
                         }
                     }
-                    .font(.system(size: 11, design: .monospaced))
+                    .font(Theme.monoSmall)
                     .monospacedDigit()
 
                     FileActionButtons(url: FileActions.resolve(change.file), style: .bare)
@@ -549,10 +549,10 @@ struct WorkbenchEmpty: View {
                 .font(.system(size: 20))
                 .foregroundStyle(.quaternary)
             Text(title)
-                .font(.system(size: 13, weight: .medium))
+                .font(.system(size: Theme.t4, weight: .medium))
                 .foregroundStyle(.secondary)
             Text(blurb)
-                .font(.system(size: 11.5))
+                .font(Theme.note)
                 .foregroundStyle(.tertiary)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)

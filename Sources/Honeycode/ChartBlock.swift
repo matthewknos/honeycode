@@ -185,7 +185,7 @@ struct ChartBlock: View {
             if !heading.isEmpty {
                 HStack(spacing: Theme.s4) {
                     Text(heading)
-                        .font(.system(size: 12.5, weight: .medium))
+                        .font(Theme.rowStrong)
                         .foregroundStyle(.secondary)
                     Spacer(minLength: Theme.s4)
                     if showingActions { actions }
@@ -284,7 +284,7 @@ private struct ExpandedChart: View {
         VStack(spacing: 0) {
             HStack {
                 Text(spec.title ?? "Chart")
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(Theme.heading)
                 Spacer()
                 Button("Done") { isPresented = false }
                     .keyboardShortcut(.defaultAction)
@@ -334,7 +334,7 @@ private struct ChartCanvas: View {
 
             if spec.series.count > 1, let shown = spec.series.first?.name {
                 Text("Showing “\(shown)” only — a pie chart can show one series.")
-                    .font(.system(size: 10))
+                    .font(Theme.caption)
                     .foregroundStyle(.tertiary)
             }
         }
@@ -379,7 +379,7 @@ private struct ChartCanvas: View {
                         Text(spec.formatted(number))
                     }
                 }
-                .font(.system(size: 9.5))
+                .font(Theme.caption)
                 .foregroundStyle(Self.ink)
             }
         }
@@ -390,7 +390,7 @@ private struct ChartCanvas: View {
                     if let number = value.as(Double.self) { Text(spec.formatted(number)) }
                     else if let name = value.as(String.self) { Text(name) }
                 }
-                .font(.system(size: 9.5))
+                .font(Theme.caption)
                 .foregroundStyle(Self.ink)
             }
         }
@@ -422,7 +422,7 @@ private struct ChartCanvas: View {
     private func readout(_ category: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(category)
-                .font(.system(size: 10, weight: .medium))
+                .font(Theme.captionStrong)
                 .foregroundStyle(.secondary)
             ForEach(spec.values(at: category), id: \.index) { entry in
                 HStack(spacing: Theme.s3 - 2) {
@@ -435,11 +435,11 @@ private struct ChartCanvas: View {
                             .fill(ChartPalette.colour(at: entry.index))
                             .frame(width: 5, height: 5)
                         Text(entry.name)
-                            .font(.system(size: 10))
+                            .font(Theme.caption)
                             .foregroundStyle(.secondary)
                     }
                     Text(spec.formatted(entry.value))
-                        .font(.system(size: 10.5, weight: .medium, design: .monospaced))
+                        .font(.system(size: Theme.t1, weight: .medium, design: .monospaced))
                         .monospacedDigit()
                 }
             }
@@ -476,7 +476,7 @@ private struct ChartCanvas: View {
                     .annotation(position: .top, spacing: 3) {
                         if spec.showsValueLabels && hovered == nil {
                             Text(spec.formatted(point.y))
-                                .font(.system(size: 9.5, design: .monospaced))
+                                .font(Theme.monoCaption)
                                 .foregroundStyle(.tertiary)
                         }
                     }

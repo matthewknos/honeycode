@@ -96,7 +96,7 @@ struct SettingsPane: View {
                     withAnimation(Motion.panel) { workspace.showingSettings = false }
                 } label: {
                     Text("Done")
-                        .font(.system(size: 11.5, weight: .medium))
+                        .font(Theme.label)
                         .foregroundStyle(.secondary)
                         .padding(.horizontal, Theme.s4)
                         .frame(height: 24)
@@ -122,7 +122,7 @@ struct SettingsPane: View {
                     .font(.system(size: 10.5, weight: .medium))
                 if labelled {
                     Text(candidate.title)
-                        .font(.system(size: 11.5, weight: .medium))
+                        .font(Theme.label)
                 }
             }
             .foregroundStyle(on ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
@@ -237,7 +237,7 @@ private struct FeatureSettings: View {
                      + "you have, what should be on screen, and what the agents are "
                      + "allowed to do. It sets the same switches as this pane — "
                      + "nothing is reset by opening it.")
-                    .font(.system(size: 11))
+                    .font(Theme.note)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -253,7 +253,7 @@ private struct FeatureSettings: View {
         VStack(alignment: .leading, spacing: Theme.s2) {
             Toggle(feature.title, isOn: binding(feature))
             Text(feature.blurb)
-                .font(.system(size: 11))
+                .font(Theme.note)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             // Only when it is actually missing. A line saying which tool a
@@ -367,7 +367,7 @@ private struct SkillSettings: View {
                      + "Copilot. Each session is told the name, the description and "
                      + "where the file is, and reads it when the work calls for it. "
                      + "An enabled skill is also a slash command: /branding.")
-                .font(.system(size: 11))
+                .font(Theme.note)
                 .foregroundStyle(.secondary)
             }
 
@@ -387,7 +387,7 @@ private struct SkillSettings: View {
                      + "Code uses, so one can be copied in or out without translation. "
                      + "Edit them here or in any editor; they're re-read each time a "
                      + "session starts.")
-                .font(.system(size: 11))
+                .font(Theme.note)
                 .foregroundStyle(.secondary)
             }
         }
@@ -401,7 +401,7 @@ private struct SkillSettings: View {
 
     private var empty: some View {
         Text("No shared skills yet.")
-            .font(.system(size: 12))
+            .font(Theme.row)
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.vertical, Theme.s3)
@@ -414,9 +414,9 @@ private struct SkillSettings: View {
                 .labelsHidden()
 
             VStack(alignment: .leading, spacing: Theme.s1) {
-                Text(skill.name).font(.system(size: 12.5))
+                Text(skill.name).font(Theme.row)
                 Text(skill.summary.isEmpty ? "/\(skill.slug)" : skill.summary)
-                    .font(.system(size: 11))
+                    .font(Theme.note)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
@@ -453,7 +453,7 @@ private struct SkillEditor: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.s5) {
-            Text("Edit Skill").font(.system(size: 14, weight: .semibold))
+            Text("Edit Skill").font(Theme.heading)
 
             Form {
                 TextField("Name:", text: $skill.name)
@@ -523,7 +523,7 @@ private struct CrewSettings: View {
                        + "there is no middle setting over its headless protocol."
                      : "Claude can read and search, but every edit is refused. "
                        + "Copilot still asks per action.")
-                    .font(.system(size: 11))
+                    .font(Theme.note)
                     .foregroundStyle(.tertiary)
                     .fixedSize(horizontal: false, vertical: true)
             } header: {
@@ -543,7 +543,7 @@ private struct CrewSettings: View {
                      : "Off. An Enterprise session hands work to the other "
                        + "agents unchecked, and they work in this project's "
                        + "directory with the same access everyone else has.")
-                    .font(.system(size: 11))
+                    .font(Theme.note)
                     .foregroundStyle(.tertiary)
                     .fixedSize(horizontal: false, vertical: true)
             } header: {
@@ -568,7 +568,7 @@ private struct CrewSettings: View {
                      + "the real number from your admin console and it accrues "
                      + "from there — setting it again just replaces it, so it "
                      + "can't double-count.")
-                    .font(.system(size: 11))
+                    .font(Theme.note)
                     .foregroundStyle(.tertiary)
                     .fixedSize(horizontal: false, vertical: true)
             } header: {
@@ -640,7 +640,7 @@ private struct ReadingSettings: View {
                 }
                 HStack {
                     Text("About \(measure) characters per line")
-                        .font(.system(size: 11))
+                        .font(Theme.note)
                         .foregroundStyle(measure > 85 || measure < 40
                                          ? AnyShapeStyle(Color.diffDelText)
                                          : AnyShapeStyle(.tertiary))
@@ -698,7 +698,7 @@ private struct ShortcutSettings: View {
     ///
     /// Stated once rather than five times, which is how it came to be five
     /// identical literals in one view.
-    private static let keyCap = Font.system(size: 12, weight: .medium)
+    private static let keyCap = Theme.rowStrong
 
     var body: some View {
         Form {
@@ -834,7 +834,7 @@ private struct BackgroundSettings: View {
                 // you're judging legibility rather than the photo.
                 VStack(spacing: Theme.s5) {
                     Text("Good afternoon")
-                        .font(.system(size: 17, weight: .medium))
+                        .font(Theme.display(17))
                     RoundedRectangle(cornerRadius: Theme.cornerCard * 2)
                         .fill(Theme.surface)
                         .overlay(
@@ -843,7 +843,7 @@ private struct BackgroundSettings: View {
                         .frame(width: 300, height: 52)
                         .overlay(alignment: .leading) {
                             Text("Message Personal…")
-                                .font(.system(size: 11))
+                                .font(Theme.note)
                                 .foregroundStyle(.tertiary)
                                 .padding(.leading, Theme.s5)
                                 .padding(.bottom, Theme.s6)
@@ -885,7 +885,7 @@ private struct BackgroundSettings: View {
             Text("How much the background is frosted. At zero the image is "
                  + "sharp; turn it up and it diffuses to colour, which is "
                  + "what keeps text over it readable.")
-                .font(.system(size: 11))
+                .font(Theme.note)
                 .foregroundStyle(.tertiary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -900,11 +900,11 @@ private struct BackgroundSettings: View {
             HStack {
                 VStack(alignment: .leading, spacing: Theme.s1) {
                     Text("Library")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(Theme.title)
                     Text(store.items.isEmpty
                          ? "Copied into Honeycode, so the originals can move or go"
                          : "\(store.items.count) image\(store.items.count == 1 ? "" : "s")")
-                        .font(.system(size: 11))
+                        .font(Theme.note)
                         .foregroundStyle(.tertiary)
                 }
                 Spacer()
@@ -920,7 +920,7 @@ private struct BackgroundSettings: View {
                 ForEach(store.categories, id: \.self) { category in
                     VStack(alignment: .leading, spacing: Theme.s4) {
                         Text(category)
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(.system(size: Theme.t2, weight: .semibold))
                             .foregroundStyle(.secondary)
                         LazyVGrid(columns: columns, spacing: Theme.gapBlock) {
                             ForEach(store.items(in: category)) { item in
@@ -948,7 +948,7 @@ private struct BackgroundSettings: View {
                 .foregroundStyle(.secondary)
             Text("Add images and Honeycode keeps its own copy, so you can tidy "
                  + "your Downloads folder afterwards.")
-                .font(.system(size: 11))
+                .font(Theme.note)
                 .foregroundStyle(.tertiary)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
@@ -1007,13 +1007,13 @@ private struct Thumbnail: View {
             if renaming {
                 TextField("", text: $draft)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 11.5))
+                    .font(Theme.note)
                     .focused($focused)
                     .onSubmit { onRename(draft); renaming = false }
                     .onExitCommand { renaming = false }
             } else {
                 Text(item.name)
-                    .font(.system(size: 11.5))
+                    .font(Theme.note)
                     .foregroundStyle(selected ? .primary : .secondary)
                     .lineLimit(1)
                     .truncationMode(.tail)

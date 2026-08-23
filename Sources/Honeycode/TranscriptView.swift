@@ -741,7 +741,7 @@ extension TranscriptView {
         private var clock: some View {
             if let sentAt, hovered {
                 Text(Self.relative.localizedString(for: sentAt, relativeTo: Date()))
-                    .font(.system(size: 9.5))
+                    .font(Theme.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .fixedSize()
@@ -892,7 +892,7 @@ private struct UserTurn: View {
             let parts = parts
             if !parts.prose.isEmpty {
                 Text(parts.prose)
-                    .font(.system(size: 14 * scale, weight: .medium))
+                    .font(.system(size: Theme.t6 * scale, weight: .medium))
                     .lineSpacing(Prose.leading(scale) - 1)
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
@@ -1085,7 +1085,7 @@ private struct ToolRow: View {
                             wholeBody = true
                         } label: {
                             Text("Show the rest — \(hidden / 1024 + 1)KB")
-                                .font(.system(size: 10.5, weight: .medium))
+                                .font(Theme.captionStrong)
                                 .foregroundStyle(.tertiary)
                                 .contentShape(Rectangle())
                         }
@@ -1184,7 +1184,7 @@ private struct CompactionMark: View {
                 Image(systemName: "arrow.down.right.and.arrow.up.left")
                     .font(.system(size: 9))
                 Text(label)
-                    .font(.system(size: 10.5, weight: .medium))
+                    .font(Theme.captionStrong)
             }
             .foregroundStyle(.tertiary)
             line
@@ -1214,7 +1214,7 @@ private struct Notice: View {
                 .font(.system(size: 10.5))
                 .padding(.top, Theme.s1)
             Text(text)
-                .font(.system(size: 12))
+                .font(Theme.row)
                 .lineSpacing(2)
                 .fixedSize(horizontal: false, vertical: true)
         }

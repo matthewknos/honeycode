@@ -20,17 +20,58 @@ import AppKit
 ///   rectangles with borders.
 enum Theme {
 
+    // MARK: Type scale
+
+    /// The whole scale, and the same rule as the spacing one: anything outside
+    /// it is a mistake, not a nuance.
+    ///
+    /// That rule was written down for spacing, enforced, and passed over the
+    /// app. Type never got the same treatment, and the result was 168 inline
+    /// sizes in twelve values — an unbroken half-point ramp from 9.5 to 13.5,
+    /// with 11 and 11.5 at thirty-odd sites each, used interchangeably for the
+    /// same kind of text. Nobody can see a half point. What it costs is the
+    /// ability to change the app's small type at all.
+    ///
+    /// Whole points, because `mono` and `monoSmall` already are, and in this
+    /// app proportional text sits beside monospaced constantly — a session name
+    /// next to its path, a label next to a number. Two runs of text on one line
+    /// should be the same size or visibly not.
+    ///
+    /// `t5` is the exception and is the only half point left: 13.5 is the
+    /// reading size, and the paragraph on `body` argues for it.
+    static let t1: CGFloat = 10    // a tally, a badge, a gutter
+    static let t2: CGFloat = 11    // small chrome — a label, a hint
+    static let t3: CGFloat = 12    // a row's own text
+    static let t4: CGFloat = 13    // sidebar rows, section titles
+    static let t5: CGFloat = 13.5  // prose
+    static let t6: CGFloat = 15    // a screen's or sheet's own name
+
     // MARK: Type
 
     /// Body prose. 13.5 sits between `.body` and `.callout` — slightly more
     /// generous without tipping into large-text territory.
-    static let body = Font.system(size: 13.5)
-    static let mono = Font.system(size: 12, design: .monospaced)
-    static let monoSmall = Font.system(size: 11, design: .monospaced)
-    static let label = Font.system(size: 11, weight: .medium)
-    static let title = Font.system(size: 13, weight: .semibold)
+    static let body = Font.system(size: t5)
+    static let mono = Font.system(size: t3, design: .monospaced)
+    static let monoSmall = Font.system(size: t2, design: .monospaced)
+    static let monoCaption = Font.system(size: t1, design: .monospaced)
+    static let label = Font.system(size: t2, weight: .medium)
+    static let title = Font.system(size: t4, weight: .semibold)
     /// Sidebar rows. Chrome, so a step below body.
-    static let sidebarRow = Font.system(size: 13)
+    static let sidebarRow = Font.system(size: t4)
+
+    /// The smallest type in the app: a count, a badge, a line-number gutter,
+    /// the second line of a dense row. Below this nothing is worth reading.
+    static let caption = Font.system(size: t1)
+    static let captionStrong = Font.system(size: t1, weight: .medium)
+    /// Chrome that is a sentence rather than a label — a hint under a control,
+    /// an empty state's blurb. `label` is the same size in medium, for the ones
+    /// that are a word or two naming the thing beside them.
+    static let note = Font.system(size: t2)
+    /// A row's own text: a session name, an account title, a mention.
+    static let row = Font.system(size: t3)
+    static let rowStrong = Font.system(size: t3, weight: .medium)
+    /// The name of a screen, a sheet or an empty state.
+    static let heading = Font.system(size: t6, weight: .semibold)
 
     /// Display type, used once per screen at most.
     ///
@@ -38,6 +79,11 @@ enum Theme {
     /// as borrowed rather than native, and SF at display size with a lighter
     /// weight than the usual semibold gets the same calm without leaving the
     /// system's own voice.
+    ///
+    /// The one exemption from the scale, and the exemption is what the "once
+    /// per screen" is for: a greeting on a wallpaper preview and a heading over
+    /// an agent's transcript are answering a question about *that* screen, not
+    /// taking a step on a ladder shared with every row in the app.
     static func display(_ size: CGFloat) -> Font {
         .system(size: size, weight: .medium)
     }

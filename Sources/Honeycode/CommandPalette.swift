@@ -131,7 +131,7 @@ struct CommandPalette: View {
                                  : "Jump to a session, or search what was said…",
                           text: $query)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 15))
+                    .font(.system(size: Theme.t6))
                     .focused($focused)
                     .onSubmit(activate)
             }
@@ -232,7 +232,7 @@ struct CommandPalette: View {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: Theme.s4) {
                     Text(session.name)
-                        .font(.system(size: 13.5))
+                        .font(Theme.body)
                     if hit.excerpt == nil {
                         Text(session.subtitle)
                             .font(Theme.monoSmall)
@@ -242,14 +242,14 @@ struct CommandPalette: View {
                     }
                     Spacer(minLength: Theme.s4)
                     Text(session.account.title)
-                        .font(.system(size: 10.5, weight: .medium))
+                        .font(Theme.captionStrong)
                         .foregroundStyle(.secondary)
                 }
                 // The matched line, so you can tell which of four hits is the
                 // one you meant without opening all four.
                 if let excerpt = hit.excerpt {
                     Text(excerpt)
-                        .font(.system(size: 11.5))
+                        .font(Theme.note)
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)

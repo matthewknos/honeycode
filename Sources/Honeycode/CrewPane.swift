@@ -69,7 +69,7 @@ struct CrewPane: View {
                         HStack(spacing: Theme.s3) {
                             AccountDot(session.account)
                             Text(session.name)
-                                .font(.system(size: 12.5, weight: .medium))
+                                .font(Theme.rowStrong)
                             Text(session.directory.lastPathComponent)
                                 .font(Theme.monoSmall)
                                 .foregroundStyle(.tertiary)
@@ -130,7 +130,7 @@ struct CrewPane: View {
             VStack(alignment: .leading, spacing: Theme.s2) {
                 HStack(spacing: Theme.s3) {
                     Text(account.title)
-                        .font(.system(size: 12.5, weight: .medium))
+                        .font(Theme.rowStrong)
                     Text(account.agentName)
                         .font(Theme.label)
                         .foregroundStyle(.tertiary)
@@ -148,7 +148,7 @@ struct CrewPane: View {
                 if state.isReady {
                     if let allowance = allowance(account) {
                         Text(allowance)
-                            .font(.system(size: 11, weight: .medium))
+                            .font(Theme.label)
                             .monospacedDigit()
                             .foregroundStyle(.secondary)
                     } else {
@@ -214,7 +214,7 @@ struct CrewPane: View {
                 Text("Runs when the delegates finish and before the lead puts "
                      + "their work together, in **\(session.directory.lastPathComponent)**. "
                      + "The lead sees the result.")
-                    .font(.system(size: 11.5))
+                    .font(Theme.note)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
 
@@ -277,7 +277,7 @@ struct CrewPane: View {
                 Text("None yet. Assemble a crew in a session's **Team** control "
                      + "and save it there, and it will be here for every session "
                      + "afterwards.")
-                    .font(.system(size: 11.5))
+                    .font(Theme.note)
                     .foregroundStyle(.tertiary)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
@@ -298,7 +298,7 @@ struct CrewPane: View {
         HStack(spacing: Theme.s5) {
             VStack(alignment: .leading, spacing: Theme.s1) {
                 Text(team.name)
-                    .font(.system(size: 12.5, weight: .medium))
+                    .font(Theme.rowStrong)
                 Text(TeamStore.summary(of: team))
                     .font(Theme.monoSmall)
                     .foregroundStyle(.tertiary)
@@ -341,7 +341,7 @@ struct CrewPane: View {
 
     private func heading(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: 15, weight: .medium))
+            .font(Theme.display(Theme.t6))
     }
 }
 

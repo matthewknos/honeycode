@@ -191,7 +191,7 @@ struct BrowserPanel: View {
                 Image(systemName: "shield.slash")
                     .font(.system(size: 10, weight: .medium))
                 Text("\(web.blocked.count)")
-                    .font(.system(size: 10.5, weight: .medium))
+                    .font(Theme.captionStrong)
                     .monospacedDigit()
             }
             .foregroundStyle(Color.diffDelText)
@@ -219,7 +219,7 @@ struct BrowserPanel: View {
             Text("This page asked other servers for parts of itself. The preview "
                  + "only reaches this machine, so those requests never left — "
                  + "which is usually what a blank or half-drawn page here means.")
-                .font(.system(size: 11.5))
+                .font(Theme.note)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, Theme.s5)
@@ -246,7 +246,7 @@ struct BrowserPanel: View {
             VStack(alignment: .leading, spacing: Theme.s4) {
                 Text("The agent that wrote this page can fix it — or open it in your "
                      + "browser, which has no sandbox.")
-                    .font(.system(size: 11))
+                    .font(Theme.note)
                     .foregroundStyle(.tertiary)
                     .fixedSize(horizontal: false, vertical: true)
                 HStack(spacing: Theme.s4) {
@@ -408,10 +408,10 @@ struct BrowserPanel: View {
                 .foregroundStyle(.quaternary)
             VStack(spacing: Theme.s2) {
                 Text("Nothing loaded")
-                    .font(.system(size: 14, weight: .medium))
+                    .font(Theme.display(Theme.t6))
                 Text("Type a URL above, open a file from disk, or open the dev "
                      + "server this session started.")
-                    .font(.system(size: 11.5))
+                    .font(Theme.note)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: 260)
@@ -433,14 +433,14 @@ struct BrowserPanel: View {
                         .buttonStyle(.borderedProminent)
                         .controlSize(.small)
                     Text("No dev server detected yet")
-                        .font(.system(size: 11))
+                        .font(Theme.note)
                         .foregroundStyle(.secondary)
                     // A manual re-read, for when a server was announced in a
                     // turn that finished before this feature existed — or in
                     // any shape the pattern didn't catch.
                     Button("Look again") { session.scanForDevServer() }
                         .buttonStyle(.link)
-                        .font(.system(size: 11))
+                        .font(Theme.note)
                 }
             }
         }

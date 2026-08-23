@@ -104,5 +104,30 @@ check("the two that depend on nothing are always offered",
       WorkbenchTab.available.contains(.changes)
           && WorkbenchTab.available.contains(.files))
 
+// --- the one switch that is about the Mac rather than about what's installed ---
+//
+// Every other default answers "is the tool here". Motion answers "can this
+// machine afford to redraw a surface behind the window sixty times a second",
+// which nothing on disk can be asked about — so it is the architecture that
+// decides, and it is the one default that would silently stop being checked if
+// somebody folded it back into `isAvailable`.
+
+check("motion is a window feature, not a tool", Feature.motion.group == .window)
+check("its default is the graphics rather than the toolchain — "
+      + "on this build, \(Machine.hasFastGraphics ? "on" : "off")",
+      Feature.motion.initialValue == Machine.hasFastGraphics)
+
+check("a fresh install decides it either way", {
+    let fresh = "com.matthewquigley.honeycode.tests.motion"
+    let store = UserDefaults(suiteName: fresh)!
+    store.removePersistentDomain(forName: fresh)
+    let previous = Setup.store
+    Setup.store = store
+    defer { Setup.store = previous; store.removePersistentDomain(forName: fresh) }
+    Setup.seedDefaults()
+    return store.object(forKey: Setup.featureKey(.motion)) as? Bool
+        == Machine.hasFastGraphics
+}())
+
 print(failures == 0 ? "Setup: all ok" : "Setup: \(failures) failed")
 exit(failures == 0 ? 0 : 1)

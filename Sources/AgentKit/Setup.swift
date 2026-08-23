@@ -38,6 +38,9 @@ enum Feature: String, CaseIterable, Identifiable, Sendable {
     case dictation
     /// A banner when a turn finishes in a session you aren't looking at.
     case notifications
+    /// The animated background, and anything else that redraws when nothing
+    /// has happened.
+    case motion
 
     var id: String { rawValue }
 
@@ -63,7 +66,8 @@ enum Feature: String, CaseIterable, Identifiable, Sendable {
     var group: Group {
         switch self {
         case .git, .gitHub, .azure: return .tools
-        case .crew, .agents, .preview, .dictation, .notifications: return .window
+        case .crew, .agents, .preview, .dictation, .notifications, .motion:
+            return .window
         }
     }
 
@@ -77,6 +81,7 @@ enum Feature: String, CaseIterable, Identifiable, Sendable {
         case .preview:       return "Preview"
         case .dictation:     return "Dictation"
         case .notifications: return "Notifications"
+        case .motion:        return "Motion"
         }
     }
 
@@ -108,6 +113,10 @@ enum Feature: String, CaseIterable, Identifiable, Sendable {
         case .notifications:
             return "A banner when a turn finishes in a session you aren't looking "
                  + "at. Never for the one in front of you."
+        case .motion:
+            return "The animated background. Starts off on a Mac with integrated "
+                 + "graphics, where a surface redrawing behind the window costs "
+                 + "more than it gives."
         }
     }
 
@@ -143,12 +152,21 @@ enum Feature: String, CaseIterable, Identifiable, Sendable {
     /// with no `az` should not open with an Azure row saying `az` isn't
     /// installed, because nobody asked it about Azure.
     ///
-    /// Notifications are the exception and are off until asked for. Switching
+    /// Notifications are an exception and are off until asked for. Switching
     /// them on is what triggers the system's permission prompt, and a prompt
     /// that arrives in the first four seconds of an app's life — before there
     /// is anything to be notified about — is the one people deny out of hand.
+    ///
+    /// Motion is the other one, and the question it asks is about the Mac
+    /// rather than about what is installed. `isAvailable` would say yes: there
+    /// is no tool to look for, and an animation is always *possible*. What it
+    /// isn't, on integrated graphics, is free.
     var initialValue: Bool {
-        self == .notifications ? false : isAvailable
+        switch self {
+        case .notifications: return false
+        case .motion:        return Machine.hasFastGraphics
+        default:             return isAvailable
+        }
     }
 }
 

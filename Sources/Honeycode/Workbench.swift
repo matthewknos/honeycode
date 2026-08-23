@@ -128,11 +128,11 @@ struct Workbench: View {
                     .font(.system(size: 10.5, weight: .medium))
                 if labelled {
                     Text(tab.title)
-                        .font(.system(size: 11.5, weight: .medium))
+                        .font(Theme.label)
                 }
                 if let badge {
                     Text(badge)
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(.system(size: Theme.t1, weight: .semibold))
                         .monospacedDigit()
                         .foregroundStyle(tab == .run ? Theme.stateLive : Theme.stateDone)
                 }
@@ -140,7 +140,8 @@ struct Workbench: View {
             .foregroundStyle(on ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
             .padding(.horizontal, Theme.s4)
             .frame(height: 24)
-            .background(on ? Theme.well : .clear, in: RoundedRectangle(cornerRadius: 7))
+            .background(on ? Theme.well : .clear,
+                        in: RoundedRectangle(cornerRadius: Theme.cornerChip))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -241,7 +242,7 @@ private struct ChangesTab: View {
                     Text("−\(removed)").foregroundStyle(Color.diffDelText)
                 }
             }
-            .font(.system(size: 11, design: .monospaced))
+            .font(Theme.monoSmall)
             .monospacedDigit()
 
             Spacer(minLength: Theme.s4)
@@ -257,7 +258,7 @@ private struct ChangesTab: View {
             if Features.isOn(.git) && Features.isOn(.gitHub) {
                 Button("Pull Request…") { openingPullRequest = true }
                     .buttonStyle(.plain)
-                    .font(.system(size: 11.5, weight: .medium))
+                    .font(Theme.label)
                     .foregroundStyle(Color.accentColor)
             }
         }
@@ -302,7 +303,7 @@ private struct ChangesTab: View {
                     if change.edits.count > 1 {
                         Text("\(change.edits.count) edits")
                             .font(Theme.label)
-                            .foregroundStyle(.quaternary)
+                            .foregroundStyle(.secondary)
                     }
                     Spacer(minLength: Theme.s4)
                     HStack(spacing: Theme.s3) {
@@ -313,7 +314,7 @@ private struct ChangesTab: View {
                             Text("−\(change.removed)").foregroundStyle(Color.diffDelText)
                         }
                     }
-                    .font(.system(size: 11, design: .monospaced))
+                    .font(Theme.monoSmall)
                     .monospacedDigit()
 
                     FileActionButtons(url: FileActions.resolve(change.file), style: .bare)
@@ -394,7 +395,7 @@ private struct DirectoryRows: View {
             if truncated > 0 {
                 Text("+\(truncated) more")
                     .font(Theme.label)
-                    .foregroundStyle(.quaternary)
+                    .foregroundStyle(.secondary)
                     .padding(.leading, indent(for: depth) + Theme.s6)
                     .padding(.vertical, Theme.s2)
             }
@@ -422,7 +423,9 @@ private struct DirectoryRows: View {
                 // A file opens in Preview, which is the tab that already knows
                 // how to render one safely — and is why the two are in the same
                 // panel rather than in two places that don't know about each
-                // other.
+                // other. It is also why `WorkbenchTab.files` hangs off the
+                // Preview switch: with nowhere to open a file, this row has
+                // nothing to do and the tab has no reason to be in the strip.
                 session.open(file: entry.url)
                 session.workbenchTab = .preview
             }
@@ -546,10 +549,10 @@ struct WorkbenchEmpty: View {
                 .font(.system(size: 20))
                 .foregroundStyle(.quaternary)
             Text(title)
-                .font(.system(size: 13, weight: .medium))
+                .font(.system(size: Theme.t4, weight: .medium))
                 .foregroundStyle(.secondary)
             Text(blurb)
-                .font(.system(size: 11.5))
+                .font(Theme.note)
                 .foregroundStyle(.tertiary)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)

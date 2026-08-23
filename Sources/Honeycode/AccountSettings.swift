@@ -85,7 +85,7 @@ struct AccountSettings: View {
                         Toggle("", isOn: inUse(account))
                             .labelsHidden()
                             .controlSize(.mini)
-                        Circle().fill(account.accent).frame(width: 7, height: 7)
+                        AccountDot(account)
                         VStack(alignment: .leading, spacing: Theme.s1) {
                             Text(account.title)
                             Text(account.agentName)
@@ -111,7 +111,7 @@ struct AccountSettings: View {
                         Toggle("", isOn: inUse(account))
                             .labelsHidden()
                             .controlSize(.mini)
-                        Circle().fill(account.accent).frame(width: 7, height: 7)
+                        AccountDot(account)
                         VStack(alignment: .leading, spacing: Theme.s1) {
                             Text(account.title)
                             Text(account.agentName)
@@ -154,7 +154,7 @@ struct AccountSettings: View {
                         Toggle("", isOn: inUse(.custom(account.id)))
                             .labelsHidden()
                             .controlSize(.mini)
-                        Circle().fill(account.tint.colour).frame(width: 7, height: 7)
+                        AccountDot(colour: account.tint.colour)
                         VStack(alignment: .leading, spacing: Theme.s1) {
                             Text(account.title)
                             Text("@\(account.handle) · \(account.command)")
@@ -364,13 +364,18 @@ struct AccountEditor: View {
             }
             .formStyle(.grouped)
 
-            Divider()
+            Divider().overlay(Theme.rule)
 
             HStack {
                 if let objection {
                     Text(objection)
                         .font(Theme.label)
-                        .foregroundStyle(Color.red.opacity(0.9))
+                        // `Theme.stateBad`, not `Color.red` — the pattern
+                        // Theme's State section says was removed. Raw red is
+                        // the same value in both appearances; this one is
+                        // darkened for light mode, which matters most in the
+                        // one place in a form where legibility does.
+                        .foregroundStyle(Theme.stateBad)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer()

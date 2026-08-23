@@ -741,8 +741,8 @@ extension TranscriptView {
         private var clock: some View {
             if let sentAt, hovered {
                 Text(Self.relative.localizedString(for: sentAt, relativeTo: Date()))
-                    .font(.system(size: 9.5))
-                    .foregroundStyle(.quaternary)
+                    .font(Theme.caption)
+                    .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .fixedSize()
                     .help(Self.absolute.string(from: sentAt))
@@ -892,7 +892,7 @@ private struct UserTurn: View {
             let parts = parts
             if !parts.prose.isEmpty {
                 Text(parts.prose)
-                    .font(.system(size: 14 * scale, weight: .medium))
+                    .font(.system(size: Theme.t6 * scale, weight: .medium))
                     .lineSpacing(Prose.leading(scale) - 1)
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
@@ -910,7 +910,7 @@ private struct UserTurn: View {
             // a column that only wants one. Extending the *background* past the
             // measure keeps your words on the same line as the agent's.
             .background(alignment: .center) {
-                RoundedRectangle(cornerRadius: 10)
+                RoundedRectangle(cornerRadius: Theme.cornerCard)
                     .fill(accent.opacity(0.11))
                     .padding(.horizontal, -Theme.s5 * scale)
             }
@@ -1085,7 +1085,7 @@ private struct ToolRow: View {
                             wholeBody = true
                         } label: {
                             Text("Show the rest — \(hidden / 1024 + 1)KB")
-                                .font(.system(size: 10.5, weight: .medium))
+                                .font(Theme.captionStrong)
                                 .foregroundStyle(.tertiary)
                                 .contentShape(Rectangle())
                         }
@@ -1136,9 +1136,7 @@ private struct OpinionCard: View {
 
             VStack(alignment: .leading, spacing: Theme.s4) {
                 HStack(spacing: Theme.s3 - 1) {
-                    Circle()
-                        .fill(tint)
-                        .frame(width: 5, height: 5)
+                    AccountDot(colour: tint)
                     if done {
                         Text(agent)
                             .font(Theme.label)
@@ -1186,7 +1184,7 @@ private struct CompactionMark: View {
                 Image(systemName: "arrow.down.right.and.arrow.up.left")
                     .font(.system(size: 9))
                 Text(label)
-                    .font(.system(size: 10.5, weight: .medium))
+                    .font(Theme.captionStrong)
             }
             .foregroundStyle(.tertiary)
             line
@@ -1216,7 +1214,7 @@ private struct Notice: View {
                 .font(.system(size: 10.5))
                 .padding(.top, Theme.s1)
             Text(text)
-                .font(.system(size: 12))
+                .font(Theme.row)
                 .lineSpacing(2)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -1306,7 +1304,7 @@ struct Cluster: View, Equatable {
             HStack(spacing: Theme.s3) {
                 Image(systemName: "chevron.down")
                     .font(.system(size: 8, weight: .semibold))
-                    .foregroundStyle(.quaternary)
+                    .foregroundStyle(.tertiary)
                     .rotationEffect(.degrees(expanded ? 0 : -90))
                 Text(summary)
                     .font(Theme.label)

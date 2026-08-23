@@ -445,14 +445,23 @@ enum WorkbenchTab: String, CaseIterable, Identifiable, Codable, Sendable {
         }
     }
 
-    /// The switch this tab depends on. Changes and Files depend on nothing —
-    /// they are the session's own edits and the session's own folder, and both
+    /// The switch this tab depends on.
+    ///
+    /// Changes depends on nothing — it is the session's own edits, and they
     /// exist whatever else is turned off.
+    ///
+    /// Files does, and this is the one that reads wrong. It lists the session's
+    /// own folder, which needs no feature; but the only thing a row in it *does*
+    /// is open that file in Preview, and there is no second way to show a file.
+    /// With Preview off it listed a directory in which every row silently
+    /// bounced you to Changes. That is the case the switches exist to prevent —
+    /// "where a control is the only route to a thing, the thing goes too" — so
+    /// Files goes with Preview rather than staying on as a list you cannot open.
     var feature: Feature? {
         switch self {
-        case .preview: return .preview
-        case .run:     return .crew
-        case .changes, .files: return nil
+        case .preview, .files: return .preview
+        case .run:             return .crew
+        case .changes:         return nil
         }
     }
 
@@ -1946,6 +1955,10 @@ final class Workspace: ObservableObject {
     /// wants a window around 1600pt; the layout works out how many actually
     /// fit and shows that many, so this is the ceiling rather than the count.
     static let maxColumns = 3
+    /// Also the width at which a header bar keeps its crew chips, so that the
+    /// narrowest column the layout will ever produce still has the one control
+    /// that can edit a team. Raise this and that follows; it reads the constant
+    /// rather than carrying a copy.
     static let minColumnWidth: CGFloat = 400
 
     var columnSessions: [Session] { columns.compactMap { id in sessions.first { $0.id == id } } }

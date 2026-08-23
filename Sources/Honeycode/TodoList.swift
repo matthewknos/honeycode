@@ -32,13 +32,13 @@ struct TodoListView: View {
                 Text("To-dos")
                     .font(Theme.label)
                 Text("\(done)/\(visible.count)")
-                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    .font(.system(size: Theme.t2, weight: .medium, design: .monospaced))
                     .monospacedDigit()
                     // The system's own numeric transition rolls the digits;
                     // hand-rolled digit animation is a lot of code for
                     // something AppKit already does better.
                     .contentTransition(.numericText())
-                    .foregroundStyle(.quaternary)
+                    .foregroundStyle(.tertiary)
                 Image(systemName: "chevron.down")
                     .font(.system(size: 8, weight: .semibold))
                     .rotationEffect(.degrees(collapsed ? -90 : 0))
@@ -84,9 +84,9 @@ struct TodoListView: View {
                         .foregroundStyle(tint(todo.status))
                         .frame(width: 13)
                     Text(todo.label)
-                        .font(.system(size: 12.5))
+                        .font(Theme.row)
                         .foregroundStyle(todo.status == .completed
-                                         ? AnyShapeStyle(.quaternary)
+                                         ? AnyShapeStyle(.tertiary)
                                          : todo.status == .in_progress
                                             ? AnyShapeStyle(.primary)
                                             : AnyShapeStyle(.secondary))
@@ -112,7 +112,7 @@ struct TodoListView: View {
         switch status {
         case .completed:   return AnyShapeStyle(Color.diffAddText.opacity(0.8))
         case .in_progress: return AnyShapeStyle(.secondary)
-        default:           return AnyShapeStyle(.quaternary)
+        default:           return AnyShapeStyle(.tertiary)
         }
     }
 }

@@ -197,12 +197,12 @@ struct PopoverRow: View {
                 if disclosure == .leading { chevron("chevron.left") }
                 VStack(alignment: .leading, spacing: Theme.s1) {
                     Text(title)
-                        .font(.system(size: 13))
+                        .font(Theme.sidebarRow)
                         .foregroundStyle(destructive ? AnyShapeStyle(Color.diffDelText)
                                                      : AnyShapeStyle(.primary))
                     if let blurb, !blurb.isEmpty {
                         Text(blurb)
-                            .font(.system(size: 11))
+                            .font(Theme.note)
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -258,7 +258,7 @@ struct SidebarFooterButton: ButtonStyle {
         let filled = selected || hovering || configuration.isPressed
         return configuration.label
             .background(filled ? Theme.well : .clear,
-                        in: RoundedRectangle(cornerRadius: 6))
+                        in: RoundedRectangle(cornerRadius: Theme.cornerChip))
             .animation(Motion.hover, value: hovering)
             .animation(Motion.hover, value: selected)
             .onHover { hovering = $0 }
@@ -346,5 +346,90 @@ struct PopoverMenu<Label: View>: View {
                 .padding(.vertical, Theme.s3)
                 .frame(width: width)
             }
+    }
+}
+
+/// The account identity dot.
+///
+/// `HeaderBar` states the rule it exists to keep: "Identity is the dot, and
+/// only ever the dot. Everything else in this bar that carries colour carries a
+/// *state* colour — so the two can never be confused." Twenty-eight call sites
+/// wrote `Circle().fill(account.accent).frame(width:height:)` out by hand, at
+/// four different sizes, and three files disagreed with themselves.
+///
+/// The `hollow` variant is not decoration either: a ring means the thing is
+/// real but provisional — a session that hasn't been kept, an agent that only
+/// runs when you ask it to. The sidebar and the agents list had both invented
+/// it separately, with the same 1.5pt stroke, which is a strong hint it wanted
+/// to be one thing.
+struct AccountDot: View {
+    let colour: Color
+    /// A ring rather than a fill: real, but provisional.
+    var hollow = false
+    /// Not ready, not enabled, not going anywhere by itself.
+    var dimmed: Double = 1
+    var size: CGFloat = Theme.dot
+    /// Some rows centre the dot in a fixed gutter so their text lines up
+    /// whether or not there is one. Nil leaves the dot its own width.
+    var gutter: CGFloat?
+
+    var body: some View {
+        Group {
+            if hollow {
+                Circle().strokeBorder(colour, lineWidth: 1.5)
+            } else {
+                Circle().fill(colour)
+            }
+        }
+        .frame(width: size, height: size)
+        .opacity(dimmed)
+        .frame(width: gutter, alignment: .center)
+    }
+}
+
+extension AccountDot {
+    init(_ account: Account, hollow: Bool = false, dimmed: Double = 1,
+         size: CGFloat = Theme.dot, gutter: CGFloat? = nil) {
+        self.init(colour: account.accent, hollow: hollow, dimmed: dimmed,
+                  size: size, gutter: gutter)
+    }
+}
+
+/// The bundle switches, as menu items.
+///
+/// Settings is where you find out what a bundle *is* — it has the room for a
+/// sentence explaining it, and for the line about what happens to your papers
+/// when it goes off. It is the wrong place to keep going back to. A bundle
+/// changes which halves of the sidebar exist, which is a thing you flip while
+/// looking at the sidebar, not a thing you open a settings pane for.
+///
+/// So the same switch appears in the View menu and in the pill's own context
+/// menu, and both are this — one definition, because a control that says one
+/// thing in two places is how the two stop agreeing.
+struct BundleToggles: View {
+    var body: some View {
+        ForEach(DLC.allCases) { dlc in
+            BundleToggle(dlc: dlc)
+        }
+    }
+}
+
+private struct BundleToggle: View {
+    let dlc: DLC
+    /// Read through `@AppStorage` and written through `DLCs.set`, which is not
+    /// a binding to the same value in both directions: switching one on also
+    /// installs its skills. Reading the store directly is what makes the tick
+    /// follow a change made from the Settings pane, or from the other menu.
+    @AppStorage private var on: Bool
+
+    init(dlc: DLC) {
+        self.dlc = dlc
+        _on = AppStorage(wrappedValue: dlc.initialValue,
+                         Setup.dlcKey(dlc), store: Setup.store)
+    }
+
+    var body: some View {
+        Toggle(dlc.title, isOn: Binding(get: { on }, set: { DLCs.set(dlc, $0) }))
+            .help(dlc.blurb)
     }
 }

@@ -22,6 +22,17 @@ struct MiniChat: View {
     @ObservedObject var workspace: Workspace
     /// The area it's floating over, so it can't be dragged off the edge.
     let bounds: CGSize
+    /// Something from the document underneath, put in front of the composer.
+    ///
+    /// The one thing this card could not do. It is the real `ComposerView`, so
+    /// `@` mentions and slash commands already work — but the surface it floats
+    /// over had no way to hand it anything, and a passage you highlighted was
+    /// something you retyped. Cleared as it is consumed, so the same quote
+    /// can't arrive twice and a second selection always lands.
+    ///
+    /// Nil everywhere but the library, where the thing underneath is a page of
+    /// somebody else's prose and quoting it is the entire interaction.
+    var quoted: Binding<String?>?
 
     @State private var draft = ""
     @State private var collapsed = false
@@ -82,11 +93,24 @@ struct MiniChat: View {
         // through the card's, which is unreadable at any level. A material
         // blurs what's behind first, so the page reads as texture and the
         // conversation stays crisp.
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
-        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Theme.rule, lineWidth: 1))
-        .shadow(color: .black.opacity(0.3), radius: 22, y: 8)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Theme.cornerFloat))
+        .overlay(RoundedRectangle(cornerRadius: Theme.cornerFloat)
+            .strokeBorder(Theme.rule, lineWidth: 1))
+        .modifier(Elevated(depth: .float))
         .offset(x: clampedX, y: clampedY)
         .animation(Motion.disclose, value: collapsed)
+        // Prepended rather than appended, and the draft is kept: you quote a
+        // passage and then say what you want to know about it, which is the
+        // order the two arrive in and the order they read in.
+        // `?? nil` flattens the `String??` that optional-chaining through an
+        // optional binding produces, so the guard below unwraps once and means
+        // what it looks like it means.
+        .onChange(of: quoted?.wrappedValue ?? nil) { _, incoming in
+            guard let incoming, !incoming.isEmpty else { return }
+            draft = incoming + draft
+            collapsed = false
+            quoted?.wrappedValue = nil
+        }
     }
 
     // MARK: Moving
@@ -171,11 +195,9 @@ struct MiniChat: View {
 
     private var header: some View {
         HStack(spacing: Theme.s3) {
-            Circle()
-                .fill(session.account.accent)
-                .frame(width: 6, height: 6)
+            AccountDot(session.account)
             Text(session.name)
-                .font(.system(size: 12, weight: .medium))
+                .font(Theme.rowStrong)
                 .lineLimit(1)
 
             if session.isRunning {

@@ -218,8 +218,8 @@ private struct HandoffForm: View {
     private var footer: some View {
         HStack {
             Text(summary)
-                .font(.system(size: 10.5))
-                .foregroundStyle(.quaternary)
+                .font(Theme.caption)
+                .foregroundStyle(.secondary)
                 .lineLimit(1)
             Spacer()
             Button("Ask") { ask() }

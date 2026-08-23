@@ -118,7 +118,7 @@ private struct ImageAttachment: View {
                     // conversation off screen.
                     .frame(maxWidth: 320 * scale, maxHeight: 240 * scale, alignment: .leading)
             } else {
-                RoundedRectangle(cornerRadius: 8)
+                RoundedRectangle(cornerRadius: Theme.cornerChip)
                     .fill(Theme.well)
                     .frame(width: 160 * scale, height: 100 * scale)
                     .overlay {
@@ -126,7 +126,7 @@ private struct ImageAttachment: View {
                         // one that's working, so it gives up and says so.
                         if failed {
                             Label("Couldn't read image", systemImage: "photo.badge.exclamationmark")
-                                .font(.system(size: 10.5))
+                                .font(Theme.caption)
                                 .foregroundStyle(.tertiary)
                         } else {
                             ProgressView().controlSize(.small)
@@ -134,8 +134,9 @@ private struct ImageAttachment: View {
                     }
             }
         }
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.rule, lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.cornerChip))
+        .overlay(RoundedRectangle(cornerRadius: Theme.cornerChip)
+            .strokeBorder(Theme.rule, lineWidth: 1))
         .overlay(alignment: .topTrailing) {
             HStack(spacing: Theme.s2) {
                 // A diagram at 320pt is a thumbnail of a diagram. Vectors
@@ -177,7 +178,7 @@ private struct FileChip: View {
                     .font(.system(size: 9.5))
                     .foregroundStyle(.tertiary)
                 Text(url.lastPathComponent)
-                    .font(.system(size: 11.5))
+                    .font(Theme.note)
                     .lineLimit(1)
             }
             .padding(.horizontal, Theme.s4)
@@ -377,7 +378,7 @@ private struct ExpandedImage: View {
         VStack(spacing: 0) {
             HStack {
                 Text(url.lastPathComponent)
-                    .font(.system(size: 12.5, weight: .medium))
+                    .font(Theme.rowStrong)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.middle)

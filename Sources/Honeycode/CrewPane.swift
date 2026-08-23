@@ -67,11 +67,9 @@ struct CrewPane: View {
                         workspace.reveal(session.id)
                     } label: {
                         HStack(spacing: Theme.s3) {
-                            Circle()
-                                .fill(session.account.accent)
-                                .frame(width: 6, height: 6)
+                            AccountDot(session.account)
                             Text(session.name)
-                                .font(.system(size: 12.5, weight: .medium))
+                                .font(Theme.rowStrong)
                             Text(session.directory.lastPathComponent)
                                 .font(Theme.monoSmall)
                                 .foregroundStyle(.tertiary)
@@ -120,23 +118,26 @@ struct CrewPane: View {
         let account = state.account
         let open = workspace.sessions(in: account).count
         return HStack(alignment: .top, spacing: Theme.s5) {
-            Circle()
-                .fill(account.accent)
-                .opacity(state.isReady ? 1 : 0.3)
-                .frame(width: 7, height: 7)
-                .padding(.top, 5)
+            AccountDot(account, dimmed: state.isReady ? 1 : 0.3)
+                // Nudging the dot down onto the title's cap height, not a gap
+                // between two things — but it was a bare 5, and the scale does
+                // not have one. What this is reaching for is a baseline
+                // alignment guide; that wants measuring against real type on a
+                // real screen, and a 1pt shift onto the scale is the honest
+                // version until somebody does.
+                .padding(.top, Theme.s3)
 
             VStack(alignment: .leading, spacing: Theme.s2) {
                 HStack(spacing: Theme.s3) {
                     Text(account.title)
-                        .font(.system(size: 12.5, weight: .medium))
+                        .font(Theme.rowStrong)
                     Text(account.agentName)
                         .font(Theme.label)
                         .foregroundStyle(.tertiary)
                 }
                 Text(modelSummary(account))
                     .font(Theme.monoSmall)
-                    .foregroundStyle(.quaternary)
+                    .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
@@ -147,7 +148,7 @@ struct CrewPane: View {
                 if state.isReady {
                     if let allowance = allowance(account) {
                         Text(allowance)
-                            .font(.system(size: 11, weight: .medium))
+                            .font(Theme.label)
                             .monospacedDigit()
                             .foregroundStyle(.secondary)
                     } else {
@@ -163,7 +164,7 @@ struct CrewPane: View {
                 }
                 Text(open == 1 ? "1 session" : "\(open) sessions")
                     .font(Theme.label)
-                    .foregroundStyle(.quaternary)
+                    .foregroundStyle(.secondary)
             }
         }
         .padding(.horizontal, Theme.s5)
@@ -213,7 +214,7 @@ struct CrewPane: View {
                 Text("Runs when the delegates finish and before the lead puts "
                      + "their work together, in **\(session.directory.lastPathComponent)**. "
                      + "The lead sees the result.")
-                    .font(.system(size: 11.5))
+                    .font(Theme.note)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
 
@@ -276,7 +277,7 @@ struct CrewPane: View {
                 Text("None yet. Assemble a crew in a session's **Team** control "
                      + "and save it there, and it will be here for every session "
                      + "afterwards.")
-                    .font(.system(size: 11.5))
+                    .font(Theme.note)
                     .foregroundStyle(.tertiary)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
@@ -297,7 +298,7 @@ struct CrewPane: View {
         HStack(spacing: Theme.s5) {
             VStack(alignment: .leading, spacing: Theme.s1) {
                 Text(team.name)
-                    .font(.system(size: 12.5, weight: .medium))
+                    .font(Theme.rowStrong)
                 Text(TeamStore.summary(of: team))
                     .font(Theme.monoSmall)
                     .foregroundStyle(.tertiary)
@@ -340,7 +341,7 @@ struct CrewPane: View {
 
     private func heading(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: 15, weight: .medium))
+            .font(Theme.display(Theme.t6))
     }
 }
 
@@ -375,10 +376,7 @@ struct CrewSidebar: View {
                     ForEach(live) { session in
                         Button { onOpenSession(session.id) } label: {
                             HStack(spacing: Theme.s3) {
-                                Circle()
-                                    .fill(session.account.accent)
-                                    .frame(width: 6, height: 6)
-                                    .frame(width: 12, alignment: .center)
+                                AccountDot(session.account, gutter: 12)
                                 Text(session.name)
                                     .font(Theme.sidebarRow)
                                     .lineLimit(1)

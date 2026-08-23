@@ -392,21 +392,18 @@ struct MentionList: View {
     /// is the entire point of the feature being discoverable at all.
     private func agentRow(_ account: Account, active: Bool) -> some View {
         HStack(spacing: Theme.s4) {
-            Circle()
-                .fill(account.accent)
-                .frame(width: 7, height: 7)
-                .frame(width: 12)
+            AccountDot(account, gutter: 12)
             Text("@" + AgentMention.handle(account))
-                .font(.system(size: 12.5))
+                .font(Theme.row)
                 .lineLimit(1)
             Text(account.title)
-                .font(.system(size: 11))
+                .font(Theme.note)
                 .foregroundStyle(.tertiary)
                 .lineLimit(1)
             Spacer(minLength: 0)
             Text("helps with this")
-                .font(.system(size: 10.5))
-                .foregroundStyle(.quaternary)
+                .font(Theme.caption)
+                .foregroundStyle(.secondary)
         }
         .padding(.horizontal, Theme.s4)
         .padding(.vertical, Theme.s3 - 1)
@@ -426,16 +423,16 @@ struct MentionList: View {
                 .foregroundStyle(.tertiary)
                 .frame(width: 12)
             Text(value.title)
-                .font(.system(size: 12.5))
+                .font(Theme.row)
                 .lineLimit(1)
             Text(value.detail)
-                .font(.system(size: 11))
+                .font(Theme.note)
                 .foregroundStyle(.tertiary)
                 .lineLimit(1)
             Spacer(minLength: Theme.s4)
             Text(":" + value.value)
                 .font(Theme.monoSmall)
-                .foregroundStyle(.quaternary)
+                .foregroundStyle(.secondary)
                 .lineLimit(1)
         }
         .padding(.horizontal, Theme.s4)
@@ -458,7 +455,7 @@ struct MentionList: View {
                 .foregroundStyle(.tertiary)
                 .frame(width: 12)
             Text(name)
-                .font(.system(size: 12.5))
+                .font(Theme.row)
                 .lineLimit(1)
             if !parent.isEmpty {
                 Text(parent)
@@ -486,7 +483,7 @@ struct CompletionPanel<Content: View>: View {
         VStack(alignment: .leading, spacing: 0) { content }
             .padding(Theme.s2)
             .modifier(RaisedSurface(glass: background.isGlassy, radius: Theme.cornerCard))
-            .shadow(color: .black.opacity(0.16), radius: 14, y: 5)
+            .modifier(Elevated(depth: .high))
     }
 }
 
@@ -515,11 +512,11 @@ struct CommandList: View {
                 .foregroundStyle(.tertiary)
                 .frame(width: 12)
             Text("/" + command.name)
-                .font(.system(size: 12.5))
+                .font(Theme.row)
                 .lineLimit(1)
             if !command.detail.isEmpty {
                 Text(command.detail)
-                    .font(.system(size: 11))
+                    .font(Theme.note)
                     .foregroundStyle(.tertiary)
                     .lineLimit(1)
                     .truncationMode(.tail)

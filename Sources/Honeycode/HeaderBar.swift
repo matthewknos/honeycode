@@ -61,7 +61,18 @@ struct HeaderBar: View {
     /// Width, and then whether a crew is a thing in this app at all. The Team
     /// control's only purpose is naming other accounts to run with; with Crew
     /// switched off there is nothing on the other side of it.
-    private var showsTeam: Bool { available >= 420 && Features.isOn(.crew) }
+    ///
+    /// The width is `Workspace.minColumnWidth` rather than a number of its own,
+    /// and that is the point. It was 420 against a column floor of 400, so the
+    /// chips — the thing this bar sheds *last*, because nothing else can edit a
+    /// team — were the only thing it shed in the case that matters most: three
+    /// conversations side by side, which is exactly when you want to put a crew
+    /// on one of them. Tying it to the floor is what stops the two drifting
+    /// apart again. The other two breakpoints are the bar's own measurements
+    /// and stay numbers.
+    private var showsTeam: Bool {
+        available >= Workspace.minColumnWidth && Features.isOn(.crew)
+    }
 
     var body: some View {
         HStack(spacing: Theme.s4) {
@@ -103,12 +114,10 @@ struct HeaderBar: View {
             // Identity is the dot, and only ever the dot. Everything else in
             // this bar that carries colour carries a *state* colour — see
             // `Theme.stateLive` — so the two can never be confused.
-            Circle()
-                .fill(session.account.accent)
-                .frame(width: 7, height: 7)
+            AccountDot(session.account)
 
             Text(session.name)
-                .font(.system(size: 12.5, weight: .medium))
+                .font(Theme.rowStrong)
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .layoutPriority(1)
@@ -144,7 +153,7 @@ struct HeaderBar: View {
                     .frame(width: 12, height: 12)
             }
             Text(runLabel)
-                .font(.system(size: 11, weight: .medium))
+                .font(Theme.label)
                 .foregroundStyle(Theme.stateLive)
                 .lineLimit(1)
             if session.isRunning {
@@ -236,7 +245,7 @@ struct HeaderBar: View {
                     .font(.system(size: 11, weight: .medium))
                 if changed > 0 {
                     Text("\(changed)")
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(.system(size: Theme.t1, weight: .semibold))
                         .monospacedDigit()
                         .foregroundStyle(Theme.stateDone)
                 }
@@ -253,12 +262,23 @@ struct HeaderBar: View {
               : "Workbench — \(changed) file\(changed == 1 ? "" : "s") edited")
     }
 
+    /// Which tab the panel opens on.
+    ///
+    /// Every answer here is checked against the tabs that are actually in the
+    /// row. Naming one that isn't lands on `Workbench.shownTab`'s clamp, which
+    /// drops you on Changes — so "opening lands on the tab with something in
+    /// it" became "opening lands on Changes with nothing in it" for anyone with
+    /// Preview switched off. The clamp is right; asking it to catch this was
+    /// not. Run is the one exception, and the same one `Workbench.available`
+    /// makes: a crew run in flight brings its tab back whatever the switch says.
     private func openingTab(changed: Int) -> WorkbenchTab {
+        let available = WorkbenchTab.available
         if session.crewRun != nil { return .run }
-        if session.browserHTML != nil || session.browserFile != nil
+        if available.contains(.preview),
+           session.browserHTML != nil || session.browserFile != nil
             || session.devServer != nil { return .preview }
         if changed > 0 { return .changes }
-        return session.workbenchTab
+        return available.contains(session.workbenchTab) ? session.workbenchTab : .changes
     }
 
     // MARK: Everything else about this conversation
@@ -363,20 +383,20 @@ private struct LocationChip: View {
     var body: some View {
         HStack(spacing: Theme.s2 + 1) {
             Text(directory.lastPathComponent)
-                .font(.system(size: 11.5))
+                .font(Theme.note)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .truncationMode(.head)
 
             if let branch, !branch.isEmpty, Features.isOn(.git) {
                 Text("·")
-                    .font(.system(size: 11.5))
+                    .font(Theme.note)
                     .foregroundStyle(.quaternary)
                 Image(systemName: "arrow.triangle.branch")
                     .font(.system(size: 9))
                     .foregroundStyle(.tertiary)
                 Text(branch)
-                    .font(.system(size: 11.5))
+                    .font(Theme.note)
                     .foregroundStyle(.tertiary)
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -478,7 +498,7 @@ struct UsageMeter: View {
 
     private func readout(_ text: String, alarming: Bool, help: String) -> some View {
         Text(text)
-            .font(.system(size: 10.5, weight: .medium))
+            .font(Theme.captionStrong)
             .monospacedDigit()
             .foregroundStyle(alarming ? AnyShapeStyle(Theme.stateBad)
                                       : AnyShapeStyle(.tertiary))

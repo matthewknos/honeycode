@@ -149,7 +149,7 @@ struct FilePreview: View {
                 // swept after a month, and a screenshot can be moved. Saying so
                 // beats a blank rectangle.
                 Text("This file is no longer there.")
-                    .font(.system(size: 12))
+                    .font(Theme.row)
                     .foregroundStyle(.secondary)
                     .frame(width: 420, height: 120, alignment: .topLeading)
             } else {
@@ -165,7 +165,7 @@ struct FilePreview: View {
         HStack(spacing: Theme.s4) {
             VStack(alignment: .leading, spacing: Theme.s1) {
                 Text(url.lastPathComponent)
-                    .font(.system(size: 12.5, weight: .medium))
+                    .font(Theme.rowStrong)
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Text(subtitle)

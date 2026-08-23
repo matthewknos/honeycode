@@ -219,7 +219,10 @@ struct ReadingPanel: View {
 /// the three-surfaces-at-once problem the glass column was meant to solve.
 struct InsetSurface: ViewModifier {
     @Environment(\.onGlass) private var onGlass
-    var radius: CGFloat = 8
+    /// A code block, a diff, a chart — a panel of content set into the pane,
+    /// which is what `cornerCard` means. It was a bare 8, which is the last
+    /// place a corner radius was hiding after the named ones were snapped.
+    var radius: CGFloat = Theme.cornerCard
 
     func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: radius)

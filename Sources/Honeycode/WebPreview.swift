@@ -592,7 +592,7 @@ struct ZoomControl: View {
             if abs(zoom - Zoom.normal) > 0.001 {
                 Button { zoom = Zoom.normal } label: {
                     Text(Zoom.label(zoom))
-                        .font(.system(size: 10.5, weight: .medium))
+                        .font(Theme.captionStrong)
                         .monospacedDigit()
                         .foregroundStyle(.secondary)
                         .padding(.horizontal, Theme.s3)
@@ -753,7 +753,7 @@ struct BlockedNote: View {
             Image(systemName: "shield.slash")
                 .font(.system(size: 9.5, weight: .medium))
             Text(label)
-                .font(.system(size: 10.5, weight: .medium))
+                .font(Theme.captionStrong)
         }
         .foregroundStyle(.white)
         .padding(.horizontal, Theme.s4)

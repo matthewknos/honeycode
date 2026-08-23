@@ -177,7 +177,7 @@ struct SetupFlow: View {
                 Text(step.title)
                     .font(Theme.display(step == .welcome ? 22 : 16))
                 Text(step.subtitle)
-                    .font(.system(size: 11.5))
+                    .font(Theme.note)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -195,6 +195,9 @@ struct SetupFlow: View {
     private var dots: some View {
         HStack(spacing: Theme.s3) {
             ForEach(Step.allCases) { candidate in
+                // Page indicators, not identity — no account, no accent, and
+                // the size answers "how far through am I" rather than "whose
+                // is this". `Theme.dot` deliberately does not apply.
                 Circle()
                     .fill(candidate == step ? AnyShapeStyle(.secondary)
                                             : AnyShapeStyle(.quaternary))
@@ -280,7 +283,7 @@ struct SetupFlow: View {
 
             Text("This takes about a minute. Every answer is also in Settings, "
                  + "so nothing here is decided for good.")
-                .font(.system(size: 11.5))
+                .font(Theme.note)
                 .foregroundStyle(.tertiary)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, Theme.s2)
@@ -294,9 +297,9 @@ struct SetupFlow: View {
                 .foregroundStyle(.secondary)
                 .frame(width: 22, alignment: .center)
             VStack(alignment: .leading, spacing: Theme.s2) {
-                Text(title).font(.system(size: 13, weight: .semibold))
+                Text(title).font(Theme.title)
                 Text(body)
-                    .font(.system(size: 12))
+                    .font(Theme.row)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -317,7 +320,7 @@ struct SetupFlow: View {
                 Text("Nothing is switched on yet. Switch on the subscriptions you "
                      + "pay for and Honeycode will install and sign in whatever "
                      + "they need.")
-                    .font(.system(size: 11.5))
+                    .font(Theme.note)
                     .foregroundStyle(Theme.stateHeld)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -336,7 +339,7 @@ struct SetupFlow: View {
                  + "finish. Switching an account off hides it from every menu, "
                  + "mention list and roster; it doesn't delete anything, and "
                  + "conversations you already have on it stay in the sidebar.")
-                .font(.system(size: 11))
+                .font(Theme.note)
                 .foregroundStyle(.tertiary)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, Theme.s2)
@@ -355,7 +358,7 @@ struct SetupFlow: View {
                 picking = true
             } label: {
                 Label("Add an agent", systemImage: "plus")
-                    .font(.system(size: 12.5))
+                    .font(Theme.row)
             }
             .buttonStyle(.link)
             Text("Gemini, Codex, Cline, OpenCode, Cursor — "
@@ -377,10 +380,10 @@ struct SetupFlow: View {
                     .toggleStyle(.switch)
                     .controlSize(.mini)
 
-                Circle().fill(account.accent).frame(width: 7, height: 7)
+                AccountDot(account)
 
                 VStack(alignment: .leading, spacing: Theme.s1) {
-                    Text(account.title).font(.system(size: 13))
+                    Text(account.title).font(Theme.sidebarRow)
                     Text("@\(AgentMention.handle(account)) · \(account.agentName)")
                         .font(Theme.label)
                         .foregroundStyle(.tertiary)
@@ -490,7 +493,7 @@ struct SetupFlow: View {
 
             VStack(alignment: .leading, spacing: Theme.s1) {
                 HStack(spacing: Theme.s3) {
-                    Text(feature.title).font(.system(size: 12.5))
+                    Text(feature.title).font(Theme.row)
                     // Said on the row rather than hidden behind the switch.
                     // Turning a feature on without its tool is allowed — you
                     // may be about to install it — and the app should say what
@@ -502,7 +505,7 @@ struct SetupFlow: View {
                     }
                 }
                 Text(feature.blurb)
-                    .font(.system(size: 11.5))
+                    .font(Theme.note)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -536,7 +539,7 @@ struct SetupFlow: View {
 
                 VStack(alignment: .leading, spacing: Theme.s3) {
                     HStack {
-                        Text("Monthly cap").font(.system(size: 12.5))
+                        Text("Monthly cap").font(Theme.row)
                         Spacer()
                         TextField("", value: $monthlyCap, format: .currency(code: "USD"))
                             .frame(width: 110)
@@ -545,7 +548,7 @@ struct SetupFlow: View {
                          + "app in a month. Honeycode counts only its own turns, so "
                          + "on a seat you also use from a terminal the figure reads "
                          + "low — the real one goes in Settings ▸ Crew & Safety.")
-                        .font(.system(size: 11.5))
+                        .font(Theme.note)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -555,12 +558,12 @@ struct SetupFlow: View {
 
             VStack(alignment: .leading, spacing: Theme.s2) {
                 Text("Where your work lives")
-                    .font(.system(size: 12.5, weight: .semibold))
+                    .font(.system(size: Theme.t3, weight: .semibold))
                 Text("Sessions, transcripts and anything an agent draws are kept in "
                      + "~/Library/Application Support/Honeycode. Agent logins stay "
                      + "wherever each CLI keeps them and are never copied. Nothing "
                      + "leaves this Mac except through the agent CLIs themselves.")
-                    .font(.system(size: 11.5))
+                    .font(Theme.note)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -575,9 +578,9 @@ struct SetupFlow: View {
             Toggle(title, isOn: isOn)
                 .toggleStyle(.switch)
                 .controlSize(.mini)
-                .font(.system(size: 12.5))
+                .font(Theme.row)
             Text(isOn.wrappedValue ? on : off)
-                .font(.system(size: 11.5))
+                .font(Theme.note)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }

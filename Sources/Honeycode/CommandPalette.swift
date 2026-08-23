@@ -131,7 +131,7 @@ struct CommandPalette: View {
                                  : "Jump to a session, or search what was said…",
                           text: $query)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 15))
+                    .font(.system(size: Theme.t6))
                     .focused($focused)
                     .onSubmit(activate)
             }
@@ -144,9 +144,10 @@ struct CommandPalette: View {
             }
         }
         .frame(width: 520)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Theme.rule, lineWidth: 1))
-        .shadow(color: .black.opacity(0.28), radius: 28, y: 10)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Theme.cornerFloat))
+        .overlay(RoundedRectangle(cornerRadius: Theme.cornerFloat)
+            .strokeBorder(Theme.rule, lineWidth: 1))
+        .modifier(Elevated(depth: .float))
         .onAppear {
             focused = true
             installKeyMonitor()
@@ -226,14 +227,12 @@ struct CommandPalette: View {
     private func row(_ hit: Hit, active: Bool) -> some View {
         let session = hit.session
         return HStack(alignment: .top, spacing: Theme.s4) {
-            Circle()
-                .fill(session.account.accent)
-                .frame(width: 6, height: 6)
-                .frame(width: 12, height: 18)
+            AccountDot(session.account, gutter: 12)
+                .frame(height: 18)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: Theme.s4) {
                     Text(session.name)
-                        .font(.system(size: 13.5))
+                        .font(Theme.body)
                     if hit.excerpt == nil {
                         Text(session.subtitle)
                             .font(Theme.monoSmall)
@@ -243,14 +242,14 @@ struct CommandPalette: View {
                     }
                     Spacer(minLength: Theme.s4)
                     Text(session.account.title)
-                        .font(.system(size: 10.5, weight: .medium))
-                        .foregroundStyle(.quaternary)
+                        .font(Theme.captionStrong)
+                        .foregroundStyle(.secondary)
                 }
                 // The matched line, so you can tell which of four hits is the
                 // one you meant without opening all four.
                 if let excerpt = hit.excerpt {
                     Text(excerpt)
-                        .font(.system(size: 11.5))
+                        .font(Theme.note)
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)

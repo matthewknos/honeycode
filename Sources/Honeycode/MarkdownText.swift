@@ -13,7 +13,10 @@ import SwiftUI
 /// column and too airy for a desktop transcript you scan rather than read, so
 /// this sits at 1.6.
 enum Prose {
-    static let base: CGFloat = 13.5
+    /// The same 13.5 as `Theme.body`, and read from there rather than repeated:
+    /// rendered prose and the app's own body text are the same size on purpose,
+    /// and a second literal is how they stop being.
+    static let base: CGFloat = Theme.t5
 
     /// Everything takes a scale factor.
     ///
@@ -50,7 +53,7 @@ enum Prose {
 
     /// Inline code — 0.85em mono on a muted chip.
     static func inlineCode(_ scale: CGFloat = 1) -> Font {
-        .system(size: 11.5 * scale, design: .monospaced)
+        .system(size: Theme.t2 * scale, design: .monospaced)
     }
 
     /// Marker ladder for nested bullets: disc, circle, square.
@@ -741,7 +744,7 @@ private struct TableBlock: View {
             ? table.alignment[column] : .leading
 
         return Text(MarkdownText.inline(value, scale: scale))
-            .font(header ? .system(size: 13.5 * scale, weight: .medium) : Prose.size(scale))
+            .font(header ? .system(size: Theme.t5 * scale, weight: .medium) : Prose.size(scale))
             .foregroundStyle(header ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
             .monospacedDigit()
             .lineSpacing(2)
@@ -803,7 +806,7 @@ private struct MarkdownImage: View {
                     Image(systemName: "photo")
                         .font(.system(size: 10))
                     Text(alt.isEmpty ? path : alt)
-                        .font(.system(size: 11.5))
+                        .font(Theme.note)
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }

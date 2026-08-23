@@ -20,17 +20,58 @@ import AppKit
 ///   rectangles with borders.
 enum Theme {
 
+    // MARK: Type scale
+
+    /// The whole scale, and the same rule as the spacing one: anything outside
+    /// it is a mistake, not a nuance.
+    ///
+    /// That rule was written down for spacing, enforced, and passed over the
+    /// app. Type never got the same treatment, and the result was 168 inline
+    /// sizes in twelve values — an unbroken half-point ramp from 9.5 to 13.5,
+    /// with 11 and 11.5 at thirty-odd sites each, used interchangeably for the
+    /// same kind of text. Nobody can see a half point. What it costs is the
+    /// ability to change the app's small type at all.
+    ///
+    /// Whole points, because `mono` and `monoSmall` already are, and in this
+    /// app proportional text sits beside monospaced constantly — a session name
+    /// next to its path, a label next to a number. Two runs of text on one line
+    /// should be the same size or visibly not.
+    ///
+    /// `t5` is the exception and is the only half point left: 13.5 is the
+    /// reading size, and the paragraph on `body` argues for it.
+    static let t1: CGFloat = 10    // a tally, a badge, a gutter
+    static let t2: CGFloat = 11    // small chrome — a label, a hint
+    static let t3: CGFloat = 12    // a row's own text
+    static let t4: CGFloat = 13    // sidebar rows, section titles
+    static let t5: CGFloat = 13.5  // prose
+    static let t6: CGFloat = 15    // a screen's or sheet's own name
+
     // MARK: Type
 
     /// Body prose. 13.5 sits between `.body` and `.callout` — slightly more
     /// generous without tipping into large-text territory.
-    static let body = Font.system(size: 13.5)
-    static let mono = Font.system(size: 12, design: .monospaced)
-    static let monoSmall = Font.system(size: 11, design: .monospaced)
-    static let label = Font.system(size: 11, weight: .medium)
-    static let title = Font.system(size: 13, weight: .semibold)
+    static let body = Font.system(size: t5)
+    static let mono = Font.system(size: t3, design: .monospaced)
+    static let monoSmall = Font.system(size: t2, design: .monospaced)
+    static let monoCaption = Font.system(size: t1, design: .monospaced)
+    static let label = Font.system(size: t2, weight: .medium)
+    static let title = Font.system(size: t4, weight: .semibold)
     /// Sidebar rows. Chrome, so a step below body.
-    static let sidebarRow = Font.system(size: 13)
+    static let sidebarRow = Font.system(size: t4)
+
+    /// The smallest type in the app: a count, a badge, a line-number gutter,
+    /// the second line of a dense row. Below this nothing is worth reading.
+    static let caption = Font.system(size: t1)
+    static let captionStrong = Font.system(size: t1, weight: .medium)
+    /// Chrome that is a sentence rather than a label — a hint under a control,
+    /// an empty state's blurb. `label` is the same size in medium, for the ones
+    /// that are a word or two naming the thing beside them.
+    static let note = Font.system(size: t2)
+    /// A row's own text: a session name, an account title, a mention.
+    static let row = Font.system(size: t3)
+    static let rowStrong = Font.system(size: t3, weight: .medium)
+    /// The name of a screen, a sheet or an empty state.
+    static let heading = Font.system(size: t6, weight: .semibold)
 
     /// Display type, used once per screen at most.
     ///
@@ -38,6 +79,11 @@ enum Theme {
     /// as borrowed rather than native, and SF at display size with a lighter
     /// weight than the usual semibold gets the same calm without leaving the
     /// system's own voice.
+    ///
+    /// The one exemption from the scale, and the exemption is what the "once
+    /// per screen" is for: a greeting on a wallpaper preview and a heading over
+    /// an agent's transcript are answering a question about *that* screen, not
+    /// taking a step on a ladder shared with every row in the app.
     static func display(_ size: CGFloat) -> Font {
         .system(size: size, weight: .medium)
     }
@@ -64,6 +110,21 @@ enum Theme {
     static let gapTurn = s8 - s1   // 30 — between turns
     static let pane = s7           // transcript inset
 
+    // What counts as "on the scale", since the three above are not `sN`.
+    //
+    // A sum or difference of scale values is on it: `gapBlock` is `s5 + s1`
+    // and `gapTurn` is `s8 - s1`, and both are still expressed in the only
+    // units this file has. A bare number is not, however carefully it was
+    // chosen by eye — that is the case the rule is for, because a literal
+    // records the answer and loses the question.
+    //
+    // `Theme.sN ± 1` — a nudge by one point, not by a scale value — is the
+    // in-between case and appears in about twenty places. It is almost always
+    // a control reaching for a hit-target height rather than a gap between two
+    // things, which is a different measurement wearing the spacing scale's
+    // clothes. Left as it is deliberately; the fix is to name the heights, not
+    // to round the nudges away.
+
     // MARK: Layout
 
     /// Maximum width of the text column — roughly 80 characters at 13.5pt.
@@ -73,12 +134,54 @@ enum Theme {
     /// the floating pill sits the same distance from the window edge as the
     /// View menu does on the other side.
     static let railWidth: CGFloat = 60
+    /// A panel of content sitting on the pane, and a control you type into.
+    ///
+    /// The same number, and deliberately: at this app's sizes a settings card
+    /// and a search field want the same corner, and two names for one value
+    /// costs nothing while letting a call site say which it means. If they ever
+    /// diverge it will be here, once, rather than at forty call sites.
     static let cornerCard: CGFloat = 10
     static let cornerField: CGFloat = 10
     /// A tab in a strip, and anything else the size of one. Tighter than a
     /// card because at 24pt tall a 10pt radius is most of the way to a capsule,
     /// and a row of capsules reads as segmented control rather than as tabs.
+    ///
+    /// This is the one that kept being reinvented — as 5, 6, 7 and 8, at
+    /// fifteen sites, for the same kind of small thing: a segment, a thumbnail,
+    /// an inline path, a tooltip over a plot. None of those differences were
+    /// decisions and none of them are visible; what they cost is the ability to
+    /// change the app's small corner at all.
     static let cornerChip: CGFloat = 7
+    /// A layer floating free of the document, with the whole window under it —
+    /// the command palette, the mini chat. Larger than a card because it is
+    /// larger *and* nearer: the same corner that reads as crisp on a panel in
+    /// the pane reads as sharp on something hanging in front of it.
+    static let cornerFloat: CGFloat = 12
+
+    /// One shape inside another, inset by `inset`, keeps the two curves
+    /// concentric: `cornerChip + Theme.s1` around a chip padded by `s1`. Worth
+    /// stating because the alternative reads as two unrelated numbers, and the
+    /// segmented pill in the View menu had exactly that — an inner 6 and an
+    /// outer 8, correct by arithmetic and unmaintainable by inspection.
+    static func corner(around inner: CGFloat, inset: CGFloat) -> CGFloat {
+        inner + inset
+    }
+
+    /// The account identity dot — see `AccountDot`, which draws it.
+    ///
+    /// Six, because the four-account palette was tuned at six: the comment
+    /// justifying those hues reasons about "dots six points across" and "a 6pt
+    /// dot ... against a near-white ground". It was then drawn at 4, 5, 6 and 7
+    /// across twenty-eight sites, so for a third of them the tuning was being
+    /// checked against a size it was never checked at.
+    static let dot: CGFloat = 6
+    /// The other dot: something in this account needs looking at.
+    ///
+    /// Deliberately smaller than `dot` rather than equal to it. Both are drawn
+    /// in the account's colour and the sidebar puts them on the same row, so if
+    /// they were the same size the row would read as having two identity dots —
+    /// which is a rendering fault, not a message.
+    static let dotAttention: CGFloat = 4
 
     /// The header bar above every column.
     static let headerHeight: CGFloat = 34
@@ -104,6 +207,12 @@ enum Theme {
     /// Recessed well — hover fills, chips, expanded detail.
     static var well: Color { Color(nsColor: .quaternarySystemFill) }
     /// Hairline rules. Quieter than a `.separator` border.
+    ///
+    /// For rules this app draws — `Divider().overlay(Theme.rule)`, and the
+    /// places that stroke one by hand. Not for a `Divider()` inside a `Menu` or
+    /// a `.contextMenu` builder: that is not a view, it is a request for a menu
+    /// separator, and AppKit draws it to the system's own metrics. Most of the
+    /// bare `Divider()`s a scan turns up are those, which is why they are bare.
     static var rule: Color { Color(nsColor: .separatorColor) }
 
     /// The ground under code blocks and diffs.
@@ -117,16 +226,52 @@ enum Theme {
 
     // MARK: Elevation
     //
-    // One shadow, at two depths, and nothing else. The app had grown four
+    // One shadow, at three depths, and nothing else. The app had grown four
     // ad-hoc shadows — a segmented pill's 1pt, a popover's, a card's — which is
     // how a window ends up with three different ideas of how far off the page
-    // anything is. A raised control uses `low`; a layer that floats over the
-    // document — the workbench, the pop-out, a floating card — uses `high`.
+    // anything is. It then grew four more, which is why there is a third depth
+    // here rather than a fourth round of snapping everything to `high`.
+    //
+    // A raised control uses `low`. A layer over the document — a completion
+    // panel, a tooltip over a plot — uses `high`. A layer over the *window*,
+    // with nothing of its own underneath, uses `float`: the command palette
+    // and the mini chat were both hand-tuned to roughly twice `high`, from
+    // opposite directions, and agreed closely enough that the disagreement was
+    // drift rather than a decision.
 
     static let shadowLow = (colour: Color.black.opacity(0.10),
                             radius: CGFloat(1.5), y: CGFloat(0.5))
     static let shadowHigh = (colour: Color.black.opacity(0.16),
                              radius: CGFloat(14), y: CGFloat(4))
+    static let shadowFloat = (colour: Color.black.opacity(0.28),
+                              radius: CGFloat(28), y: CGFloat(10))
+
+    // MARK: How faint anything is allowed to be
+    //
+    // The app leans on SwiftUI's hierarchy styles — `.secondary`, `.tertiary`,
+    // `.quaternary` — and those were never checked against the standard this
+    // file already applies to colour. `systemGreen` was called a legibility bug
+    // here at about 1.8:1. `.quaternary` is roughly 10% of the label colour,
+    // which on `canvas` lands near 1.2:1 — a tier *below* the thing already
+    // called a bug — and it was carrying real content at forty sites: a seat's
+    // model list, a session count, a slug shown precisely because it "isn't
+    // otherwise visible".
+    //
+    // So there is a floor, and it is stated rather than felt:
+    //
+    // - **`.secondary`** is where text bottoms out. Anything that is the only
+    //   place a piece of information appears is at least this.
+    // - **`.tertiary`** is for text that recedes on purpose and is not the only
+    //   copy of anything — a diff's line-number gutter, a completed to-do, an
+    //   8pt disclosure chevron — and for small glyphs that are affordances
+    //   rather than content.
+    // - **`.quaternary` is never text.** Separators, disabled controls, a large
+    //   empty-state symbol, a background fill. Things whose job is to be nearly
+    //   invisible, where being nearly invisible is not a failure.
+    //
+    // `.tertiary` is around 1.9:1 and is a floor rather than a comfortable
+    // place to sit; the reason it is still allowed is that everything using it
+    // is either duplicated elsewhere on screen or is not a word.
 
     // MARK: State
     //
@@ -153,11 +298,20 @@ enum Theme {
 
 /// One elevation, applied the same way everywhere.
 struct Elevated: ViewModifier {
-    var high = false
+    enum Depth { case low, high, float }
+
+    var depth = Depth.low
 
     func body(content: Content) -> some View {
-        let depth = high ? Theme.shadowHigh : Theme.shadowLow
-        return content.shadow(color: depth.colour, radius: depth.radius, y: depth.y)
+        let shadow: (colour: Color, radius: CGFloat, y: CGFloat) = {
+            switch depth {
+            case .low:   return Theme.shadowLow
+            case .high:  return Theme.shadowHigh
+            case .float: return Theme.shadowFloat
+            }
+        }()
+        return content.shadow(color: shadow.colour,
+                              radius: shadow.radius, y: shadow.y)
     }
 }
 

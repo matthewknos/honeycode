@@ -58,7 +58,7 @@ struct AgentPicker: View {
             Text("The Agent Client Protocol's own registry — "
                  + "\(AgentCatalogue.all.count) agents, each with the command it "
                  + "needs already filled in.")
-                .font(.system(size: 11.5))
+                .font(Theme.note)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
@@ -68,7 +68,7 @@ struct AgentPicker: View {
                     .foregroundStyle(.tertiary)
                 TextField("", text: $query, prompt: Text("Search"))
                     .textFieldStyle(.plain)
-                    .font(.system(size: 12.5))
+                    .font(Theme.row)
                     .focused($searching)
                 if !query.isEmpty {
                     Button {
@@ -95,7 +95,7 @@ struct AgentPicker: View {
         if matches.isEmpty {
             VStack(spacing: Theme.s4) {
                 Text("Nothing here answers to “\(query)”.")
-                    .font(.system(size: 12.5))
+                    .font(Theme.row)
                     .foregroundStyle(.secondary)
                 Button("Add it by hand") { done(.freeform) }
                     .buttonStyle(.link)
@@ -123,7 +123,7 @@ struct AgentPicker: View {
             VStack(alignment: .leading, spacing: Theme.s2) {
                 HStack(spacing: Theme.s3) {
                     Text(agent.name)
-                        .font(.system(size: 13))
+                        .font(Theme.sidebarRow)
                     Text("@\(agent.handle)")
                         .font(Theme.monoSmall)
                         .foregroundStyle(.tertiary)
@@ -141,7 +141,7 @@ struct AgentPicker: View {
                     }
                 }
                 Text(agent.blurb)
-                    .font(.system(size: 11.5))
+                    .font(Theme.note)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }

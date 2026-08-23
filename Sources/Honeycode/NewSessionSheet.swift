@@ -56,9 +56,9 @@ struct NewSessionSheet: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: Theme.s1) {
             Text("New session")
-                .font(.system(size: 15, weight: .semibold))
+                .font(Theme.heading)
             Text("A conversation with one agent, about one folder.")
-                .font(.system(size: 11.5))
+                .font(Theme.note)
                 .foregroundStyle(.secondary)
         }
         .padding(.horizontal, Theme.s6)
@@ -86,12 +86,9 @@ struct NewSessionSheet: View {
         let on = account == candidate
         return Button { account = candidate } label: {
             HStack(spacing: Theme.s3 - Theme.s1) {
-                Circle()
-                    .fill(candidate.accent)
-                    .opacity(usable ? 1 : 0.3)
-                    .frame(width: 6, height: 6)
+                AccountDot(candidate, dimmed: usable ? 1 : 0.3)
                 Text(candidate.shortTitle)
-                    .font(.system(size: 11.5, weight: .medium))
+                    .font(Theme.label)
             }
             .foregroundStyle(on ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
             .padding(.horizontal, Theme.s4)
@@ -117,10 +114,10 @@ struct NewSessionSheet: View {
                     .font(.system(size: 20))
                     .foregroundStyle(.quaternary)
                 Text("No recent folders")
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.system(size: Theme.t4, weight: .medium))
                     .foregroundStyle(.secondary)
                 Text("Choose one below. It will be here next time.")
-                    .font(.system(size: 11.5))
+                    .font(Theme.note)
                     .foregroundStyle(.tertiary)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -147,7 +144,7 @@ struct NewSessionSheet: View {
                     .foregroundStyle(.tertiary)
                 VStack(alignment: .leading, spacing: 0) {
                     Text(url.lastPathComponent)
-                        .font(.system(size: 12.5))
+                        .font(Theme.row)
                     Text(Self.shorten(url))
                         .font(Theme.monoSmall)
                         .foregroundStyle(.tertiary)

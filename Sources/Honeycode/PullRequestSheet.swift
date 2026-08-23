@@ -60,9 +60,9 @@ struct PullRequestSheet: View {
         HStack(spacing: Theme.s5) {
             VStack(alignment: .leading, spacing: Theme.s1) {
                 Text("Pull Request")
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(Theme.heading)
                 Text(subtitle)
-                    .font(.system(size: 11.5))
+                    .font(Theme.note)
                     .foregroundStyle(.secondary)
             }
             Spacer()
@@ -109,7 +109,7 @@ struct PullRequestSheet: View {
                     .font(.system(size: 24))
                     .foregroundStyle(.quaternary)
                 Text(reason.title)
-                    .font(.system(size: 14, weight: .medium))
+                    .font(Theme.display(Theme.t6))
                 Text(reason.detail)
                     .font(Theme.body)
                     .foregroundStyle(.secondary)
@@ -185,7 +185,7 @@ struct PullRequestSheet: View {
                 field("Title") {
                     TextField("", text: $title)
                         .textFieldStyle(.plain)
-                        .font(.system(size: 13.5, weight: .medium))
+                        .font(Theme.display(Theme.t5))
                         .padding(.horizontal, Theme.s5)
                         .padding(.vertical, Theme.s4)
                         .modifier(FormField())
@@ -213,7 +213,7 @@ struct PullRequestSheet: View {
                     }
                     Image(systemName: "arrow.right")
                         .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(.quaternary)
+                        .foregroundStyle(.tertiary)
                         .padding(.bottom, Theme.s5)
                     field("Into") {
                         TextField("", text: $base)
@@ -287,7 +287,7 @@ struct PullRequestSheet: View {
             // Markdown so the backticks in these lines render as code rather
             // than as backticks, which is what they'd otherwise be.
             Text((try? AttributedString(markdown: text)) ?? AttributedString(text))
-                .font(.system(size: 11.5))
+                .font(Theme.note)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
@@ -306,7 +306,7 @@ struct PullRequestSheet: View {
                 .foregroundStyle(Color.diffAddText)
             Text(opened.alreadyExisted ? "This branch already had a pull request"
                                        : "Pull request opened")
-                .font(.system(size: 14, weight: .medium))
+                .font(Theme.display(Theme.t6))
             Text(opened.url.absoluteString)
                 .font(Theme.monoSmall)
                 .foregroundStyle(.secondary)
@@ -342,7 +342,7 @@ struct PullRequestSheet: View {
                     .font(.system(size: 14))
                     .foregroundStyle(Color.diffDelText)
                 Text(failure.summary)
-                    .font(.system(size: 14, weight: .medium))
+                    .font(Theme.display(Theme.t6))
             }
             // The tool's own words, unedited. Paraphrasing git loses the half
             // of the message that tells you what to do about it.
@@ -358,7 +358,7 @@ struct PullRequestSheet: View {
 
             Text("Nothing was pushed past the step that failed. Your working tree is "
                  + "where the last successful step left it.")
-                .font(.system(size: 11.5))
+                .font(Theme.note)
                 .foregroundStyle(.tertiary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

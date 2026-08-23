@@ -56,9 +56,7 @@ struct TeamBar: View {
 
     private func chip(_ pick: AgentMention.Pick) -> some View {
         HStack(spacing: Theme.s3 - Theme.s1) {
-            Circle()
-                .fill(pick.account.accent)
-                .frame(width: 5, height: 5)
+            AccountDot(pick.account)
 
             // The handle, because that is what will be on the wire and what the
             // transcript will show. Nothing is hidden by the control.
@@ -144,7 +142,7 @@ struct TeamBar: View {
 
             checking
 
-            Divider()
+            Divider().overlay(Theme.rule)
 
             if let note {
                 Text(note)
@@ -180,7 +178,7 @@ struct TeamBar: View {
     @ViewBuilder
     private var saved: some View {
         if !teams.isEmpty || !session.team.isEmpty {
-            Divider()
+            Divider().overlay(Theme.rule)
             HStack {
                 Text("Saved teams")
                     .font(Theme.label)
@@ -272,7 +270,7 @@ struct TeamBar: View {
     /// thing it controls.
     @ViewBuilder
     private var checking: some View {
-        Divider()
+        Divider().overlay(Theme.rule)
         VStack(alignment: .leading, spacing: Theme.s2) {
             Text("Before assembling")
                 .font(Theme.label)
@@ -356,9 +354,7 @@ struct TeamBar: View {
     private func accountRow(_ account: Account) -> some View {
         let count = instances(of: account)
         return HStack(spacing: Theme.s4) {
-            Circle()
-                .fill(account.accent)
-                .frame(width: 6, height: 6)
+            AccountDot(account)
             Text(account.title)
                 .font(Theme.body)
             Spacer(minLength: Theme.s6)

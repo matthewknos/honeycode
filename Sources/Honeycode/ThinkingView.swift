@@ -81,7 +81,7 @@ struct ThinkingView: View {
     private var reasoning: some View {
         ScrollView(.vertical) {
             Text(visible)
-                .font(.system(size: 12.5))
+                .font(Theme.row)
                 .lineSpacing(3.5)
                 .foregroundStyle(.secondary)
                 .textSelection(.enabled)

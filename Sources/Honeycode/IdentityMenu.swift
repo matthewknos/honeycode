@@ -69,7 +69,7 @@ struct IdentityMenu: View {
                     if showsGitHub {
                         Text(activeGitHub?.login ?? (GitHubAuth.isInstalled
                                                      ? "Not signed in" : "gh not installed"))
-                            .font(.system(size: 12))
+                            .font(Theme.row)
                             .lineLimit(1)
                             .truncationMode(.middle)
                     }
@@ -86,14 +86,14 @@ struct IdentityMenu: View {
                             .truncationMode(.middle)
                     } else if !showsGitHub {
                         Text(AzureAuth.isInstalled ? "Not signed in" : "az not installed")
-                            .font(.system(size: 12))
+                            .font(Theme.row)
                             .lineLimit(1)
                     }
                 }
                 Spacer(minLength: 0)
                 Image(systemName: "chevron.up.chevron.down")
                     .font(.system(size: 8, weight: .semibold))
-                    .foregroundStyle(.quaternary)
+                    .foregroundStyle(.tertiary)
             }
         }
         .padding(.horizontal, compact ? 0 : Theme.s4)
@@ -215,7 +215,7 @@ struct IdentityMenu: View {
 
     private func note(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: 11))
+            .font(Theme.note)
             .foregroundStyle(.secondary)
             .padding(.horizontal, Theme.s5)
             .padding(.top, Theme.s2)

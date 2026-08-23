@@ -53,9 +53,9 @@ SWIFTC=(xcrun --sdk macosx swiftc -target "$TARGET" -swift-version 5 -Onone)
 # The same boundary build.sh guards, checked here too so a `--typecheck` loop
 # catches it at the same moment the real build would.
 echo "==> AgentKit stays free of UI frameworks"
-if grep -lE '^import (SwiftUI|AppKit|WebKit|Charts|Quartz)$' "$ROOT"/Sources/AgentKit/*.swift 2>/dev/null | grep -q .; then
+if grep -lE '^import (SwiftUI|AppKit|WebKit|Charts|Quartz|PDFKit)$' "$ROOT"/Sources/AgentKit/*.swift 2>/dev/null | grep -q .; then
   echo "==> AgentKit must not import UI frameworks:" >&2
-  grep -lE '^import (SwiftUI|AppKit|WebKit|Charts|Quartz)$' "$ROOT"/Sources/AgentKit/*.swift >&2
+  grep -lE '^import (SwiftUI|AppKit|WebKit|Charts|Quartz|PDFKit)$' "$ROOT"/Sources/AgentKit/*.swift >&2
   exit 1
 fi
 
@@ -64,7 +64,7 @@ echo "==> Typechecking Honeycode"
 "${SWIFTC[@]}" -typecheck \
   -framework AppKit -framework SwiftUI \
   -framework Speech -framework AVFoundation \
-  -framework Quartz \
+  -framework Quartz -framework PDFKit \
   $(find "$ROOT/Sources/AgentKit" "$ROOT/Sources/Honeycode" -name '*.swift' | sort)
 
 # shellcheck disable=SC2046
@@ -101,6 +101,7 @@ kit Checks
 kit Teams
 kit Changes
 kit Setup
+kit Library
 
 # The terminal client's own logic: what Tab offers, what a slash command parses
 # to, what the up-arrow remembers. Not the whole of Sources/ai — `main.swift`

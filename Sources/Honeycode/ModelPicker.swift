@@ -25,7 +25,7 @@ struct ModelPicker: View {
         Button { showing.toggle() } label: {
             HStack(spacing: Theme.s2 - 1) {
                 Text(session.model.title)
-                    .font(.system(size: 11.5, weight: .medium))
+                    .font(Theme.label)
                     .foregroundStyle(.secondary)
                 Image(systemName: "chevron.down")
                     .font(.system(size: 8, weight: .semibold))
@@ -108,8 +108,8 @@ struct ModelPicker: View {
             // Changing either is a process relaunch, so say so rather than
             // letting it look like it applied to the turn already running.
             Text("Applies from your next message.")
-                .font(.system(size: 10.5))
-                .foregroundStyle(.quaternary)
+                .font(Theme.caption)
+                .foregroundStyle(.secondary)
                 .padding(.horizontal, Theme.s5)
                 .padding(.top, Theme.s4)
                 .padding(.bottom, Theme.s2)

@@ -29,7 +29,7 @@ Both link `AgentKit`, which is the engine and has no UI in it.
 
 | | |
 |---|---|
-| **Mac** | Apple silicon, macOS 26 or later |
+| **Mac** | Apple silicon on macOS 26 is what it is developed and used on. The build follows whatever Mac you run it on — see [Older Macs](#older-macs). |
 | **Toolchain** | Xcode Command Line Tools (`xcode-select --install`). Full Xcode is not required and there is no `.xcodeproj` — each target is one `swiftc` invocation. |
 | **At least one agent CLI** | See below. The app is useful with one; it is interesting with three. |
 
@@ -92,6 +92,40 @@ wondering why your change didn't take.
 If /Applications or the installed bundle isn't yours to write — a bundle put
 there with `sudo` is the usual reason — the build stops and prints the two
 commands that fix it rather than half-replacing an app.
+
+### Older Macs
+
+Apple silicon on macOS 26 is what this is developed on, and the only combination
+anybody has run it on. As far as anything in the source is concerned it is not a
+requirement:
+
+```sh
+./build.sh                        # takes the architecture from uname -m
+HONEYCODE_DEPLOY=14.0 ./build.sh  # and see what the compiler says
+HONEYCODE_ARCH=x86_64 ./build.sh  # if you need to be explicit
+```
+
+Both build scripts read the architecture from `uname -m` and the deployment
+target from `HONEYCODE_DEPLOY`, which defaults to 26.0. `build.sh` writes
+whatever it actually compiled for into the bundle's `LSMinimumSystemVersion`, so
+the plist and the linker can't disagree — that particular mistake produces an app
+that builds cleanly and then refuses to open.
+
+**Whether it compiles lower is an open question and the compiler is the only
+thing that can answer it.** What is known is that there is not one `@available`
+in the whole source, so nothing in it has ever declared needing a version of
+anything: 26.0 is what it was built against, not a floor somebody measured. Every
+rejection names an API and a version, and between them those are the real floor.
+
+Of the two targets, `ai` is the better bet. `build-ai.sh` compiles `AgentKit`
+and `Sources/ai` and links no UI framework at all, so it has none of the SwiftUI
+surface that a deployment target usually gets rejected over.
+
+On a Mac with integrated graphics, the animated **flux** background is the one
+thing worth avoiding: it is a `WKWebView` drawing a couple of hundred scaled
+strips per frame behind the entire window. It already stops dead when the window
+is occluded or the app isn't frontmost, but while you are looking at it, it runs.
+Every other background in the picker costs nothing.
 
 ### The first run
 

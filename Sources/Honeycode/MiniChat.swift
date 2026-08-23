@@ -172,9 +172,7 @@ struct MiniChat: View {
 
     private var header: some View {
         HStack(spacing: Theme.s3) {
-            Circle()
-                .fill(session.account.accent)
-                .frame(width: 6, height: 6)
+            AccountDot(session.account)
             Text(session.name)
                 .font(.system(size: 12, weight: .medium))
                 .lineLimit(1)

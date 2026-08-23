@@ -114,9 +114,7 @@ struct HeaderBar: View {
             // Identity is the dot, and only ever the dot. Everything else in
             // this bar that carries colour carries a *state* colour — see
             // `Theme.stateLive` — so the two can never be confused.
-            Circle()
-                .fill(session.account.accent)
-                .frame(width: 7, height: 7)
+            AccountDot(session.account)
 
             Text(session.name)
                 .font(.system(size: 12.5, weight: .medium))

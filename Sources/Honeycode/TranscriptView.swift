@@ -1136,9 +1136,7 @@ private struct OpinionCard: View {
 
             VStack(alignment: .leading, spacing: Theme.s4) {
                 HStack(spacing: Theme.s3 - 1) {
-                    Circle()
-                        .fill(tint)
-                        .frame(width: 5, height: 5)
+                    AccountDot(colour: tint)
                     if done {
                         Text(agent)
                             .font(Theme.label)

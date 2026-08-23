@@ -85,7 +85,7 @@ struct AccountSettings: View {
                         Toggle("", isOn: inUse(account))
                             .labelsHidden()
                             .controlSize(.mini)
-                        Circle().fill(account.accent).frame(width: 7, height: 7)
+                        AccountDot(account)
                         VStack(alignment: .leading, spacing: Theme.s1) {
                             Text(account.title)
                             Text(account.agentName)
@@ -111,7 +111,7 @@ struct AccountSettings: View {
                         Toggle("", isOn: inUse(account))
                             .labelsHidden()
                             .controlSize(.mini)
-                        Circle().fill(account.accent).frame(width: 7, height: 7)
+                        AccountDot(account)
                         VStack(alignment: .leading, spacing: Theme.s1) {
                             Text(account.title)
                             Text(account.agentName)
@@ -154,7 +154,7 @@ struct AccountSettings: View {
                         Toggle("", isOn: inUse(.custom(account.id)))
                             .labelsHidden()
                             .controlSize(.mini)
-                        Circle().fill(account.tint.colour).frame(width: 7, height: 7)
+                        AccountDot(colour: account.tint.colour)
                         VStack(alignment: .leading, spacing: Theme.s1) {
                             Text(account.title)
                             Text("@\(account.handle) · \(account.command)")

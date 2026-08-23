@@ -348,3 +348,49 @@ struct PopoverMenu<Label: View>: View {
             }
     }
 }
+
+/// The account identity dot.
+///
+/// `HeaderBar` states the rule it exists to keep: "Identity is the dot, and
+/// only ever the dot. Everything else in this bar that carries colour carries a
+/// *state* colour — so the two can never be confused." Twenty-eight call sites
+/// wrote `Circle().fill(account.accent).frame(width:height:)` out by hand, at
+/// four different sizes, and three files disagreed with themselves.
+///
+/// The `hollow` variant is not decoration either: a ring means the thing is
+/// real but provisional — a session that hasn't been kept, an agent that only
+/// runs when you ask it to. The sidebar and the agents list had both invented
+/// it separately, with the same 1.5pt stroke, which is a strong hint it wanted
+/// to be one thing.
+struct AccountDot: View {
+    let colour: Color
+    /// A ring rather than a fill: real, but provisional.
+    var hollow = false
+    /// Not ready, not enabled, not going anywhere by itself.
+    var dimmed: Double = 1
+    var size: CGFloat = Theme.dot
+    /// Some rows centre the dot in a fixed gutter so their text lines up
+    /// whether or not there is one. Nil leaves the dot its own width.
+    var gutter: CGFloat?
+
+    var body: some View {
+        Group {
+            if hollow {
+                Circle().strokeBorder(colour, lineWidth: 1.5)
+            } else {
+                Circle().fill(colour)
+            }
+        }
+        .frame(width: size, height: size)
+        .opacity(dimmed)
+        .frame(width: gutter, alignment: .center)
+    }
+}
+
+extension AccountDot {
+    init(_ account: Account, hollow: Bool = false, dimmed: Double = 1,
+         size: CGFloat = Theme.dot, gutter: CGFloat? = nil) {
+        self.init(colour: account.accent, hollow: hollow, dimmed: dimmed,
+                  size: size, gutter: gutter)
+    }
+}

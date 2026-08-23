@@ -70,10 +70,7 @@ private struct SetupRow: View {
 
     var body: some View {
         HStack(spacing: Theme.s3) {
-            Circle()
-                .strokeBorder(Color.secondary, lineWidth: 1.5)
-                .frame(width: 6, height: 6)
-                .frame(width: 12, alignment: .center)
+            AccountDot(colour: .secondary, hollow: true, gutter: 12)
             Text(store.draft?.name ?? "New agent…")
                 .font(Theme.sidebarRow)
                 .foregroundStyle(.secondary)
@@ -108,16 +105,10 @@ private struct AgentRow: View {
             // and which credentials this runs under is precisely the thing you
             // want to see before letting it run unattended. Hollow for manual,
             // as it already means "doesn't happen on its own".
-            Group {
-                if agent.schedule.isManual {
-                    Circle().strokeBorder(agent.account.accent, lineWidth: 1.5)
-                } else {
-                    Circle().fill(agent.account.accent)
-                }
-            }
-            .frame(width: 6, height: 6)
-            .frame(width: 12, alignment: .center)
-            .opacity(agent.isEnabled ? 1 : 0.4)
+            AccountDot(agent.account,
+                       hollow: agent.schedule.isManual,
+                       dimmed: agent.isEnabled ? 1 : 0.4,
+                       gutter: 12)
 
             Text(agent.name)
                 .font(Theme.sidebarRow)
@@ -314,7 +305,7 @@ struct AgentDetail: View {
                     .font(Theme.display(22))
 
                 HStack(spacing: Theme.s3) {
-                    Circle().fill(editing.account.accent).frame(width: 6, height: 6)
+                    AccountDot(editing.account)
                     Text(editing.account.title)
                     Text("·").foregroundStyle(.quaternary)
                     Text(editing.subtitle)
@@ -404,9 +395,7 @@ struct AgentDetail: View {
                     if !account.hasEffort { editing.effort = .high }
                 } label: {
                     HStack(spacing: Theme.s3) {
-                        Circle().fill(account.accent)
-                            .frame(width: 6, height: 6)
-                            .opacity(on ? 1 : 0.45)
+                        AccountDot(account, dimmed: on ? 1 : 0.45)
                         Text(account.title)
                             .font(.system(size: 12.5, weight: on ? .medium : .regular))
                     }
@@ -733,10 +722,9 @@ private struct RunRow: View {
         if live {
             ProgressView().controlSize(.small).scaleEffect(0.5)
         } else if run.items.contains(where: { if case .assistant = $0 { return true }; return false }) {
-            Circle().fill(run.account.accent).frame(width: 7, height: 7)
+            AccountDot(run.account)
         } else {
-            Circle().strokeBorder(Color.secondary.opacity(0.5), lineWidth: 1.5)
-                .frame(width: 7, height: 7)
+            AccountDot(colour: .secondary.opacity(0.5), hollow: true)
         }
     }
 
@@ -821,7 +809,7 @@ struct AgentSetup: View {
     private func card(_ agent: AgentDefinition) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: Theme.s4) {
-                Circle().fill(agent.account.accent).frame(width: 7, height: 7)
+                AccountDot(agent.account)
                 Text(agent.name).font(.system(size: 13.5, weight: .medium))
                 Spacer(minLength: 0)
                 Text(session.isRunning ? "DRAFT" : "READY")

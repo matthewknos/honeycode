@@ -195,6 +195,9 @@ struct SetupFlow: View {
     private var dots: some View {
         HStack(spacing: Theme.s3) {
             ForEach(Step.allCases) { candidate in
+                // Page indicators, not identity — no account, no accent, and
+                // the size answers "how far through am I" rather than "whose
+                // is this". `Theme.dot` deliberately does not apply.
                 Circle()
                     .fill(candidate == step ? AnyShapeStyle(.secondary)
                                             : AnyShapeStyle(.quaternary))
@@ -377,7 +380,7 @@ struct SetupFlow: View {
                     .toggleStyle(.switch)
                     .controlSize(.mini)
 
-                Circle().fill(account.accent).frame(width: 7, height: 7)
+                AccountDot(account)
 
                 VStack(alignment: .leading, spacing: Theme.s1) {
                     Text(account.title).font(.system(size: 13))

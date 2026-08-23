@@ -227,10 +227,8 @@ struct CommandPalette: View {
     private func row(_ hit: Hit, active: Bool) -> some View {
         let session = hit.session
         return HStack(alignment: .top, spacing: Theme.s4) {
-            Circle()
-                .fill(session.account.accent)
-                .frame(width: 6, height: 6)
-                .frame(width: 12, height: 18)
+            AccountDot(session.account, gutter: 12)
+                .frame(height: 18)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: Theme.s4) {
                     Text(session.name)

@@ -59,7 +59,7 @@ private struct AccountHeader: View {
                 .foregroundStyle(.secondary)
 
             if hiddenAttention {
-                Circle().fill(account.accent).frame(width: 4, height: 4)
+                AccountDot(account, size: Theme.dotAttention)
             }
 
             Spacer(minLength: 0)
@@ -101,15 +101,7 @@ private struct SessionRow: View {
         HStack(spacing: Theme.s3) {
             // Hollow for a throwaway — same dot, one bit of difference, no
             // extra glyph or badge to explain.
-            Group {
-                if session.isEphemeral {
-                    Circle().strokeBorder(session.account.accent, lineWidth: 1.5)
-                } else {
-                    Circle().fill(session.account.accent)
-                }
-            }
-            .frame(width: 6, height: 6)
-            .frame(width: 12, alignment: .center)
+            AccountDot(session.account, hollow: session.isEphemeral, gutter: 12)
 
             if renaming {
                 TextField("", text: $draftName)
@@ -156,10 +148,9 @@ private struct SessionRow: View {
                     // Never on the selected row: it already carries an accent
                     // dot on the left as identity, and two dots on one row
                     // reads as a rendering fault rather than as unread.
-                    Circle()
-                        .fill(session.account.accent)
-                        .frame(width: 5, height: 5)
-                        .opacity(hovering && !renaming ? 0 : 1)
+                    AccountDot(session.account,
+                               dimmed: hovering && !renaming ? 0 : 1,
+                               size: Theme.dotAttention)
                 }
                 moreButton
                     .opacity(hovering && !renaming ? 1 : 0)

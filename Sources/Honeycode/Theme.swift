@@ -121,6 +121,22 @@ enum Theme {
         inner + inset
     }
 
+    /// The account identity dot — see `AccountDot`, which draws it.
+    ///
+    /// Six, because the four-account palette was tuned at six: the comment
+    /// justifying those hues reasons about "dots six points across" and "a 6pt
+    /// dot ... against a near-white ground". It was then drawn at 4, 5, 6 and 7
+    /// across twenty-eight sites, so for a third of them the tuning was being
+    /// checked against a size it was never checked at.
+    static let dot: CGFloat = 6
+    /// The other dot: something in this account needs looking at.
+    ///
+    /// Deliberately smaller than `dot` rather than equal to it. Both are drawn
+    /// in the account's colour and the sidebar puts them on the same row, so if
+    /// they were the same size the row would read as having two identity dots —
+    /// which is a rendering fault, not a message.
+    static let dotAttention: CGFloat = 4
+
     /// The header bar above every column.
     static let headerHeight: CGFloat = 34
     /// How narrow the workbench may be dragged. Below this its tab strip loses

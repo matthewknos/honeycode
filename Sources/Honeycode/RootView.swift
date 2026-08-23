@@ -456,10 +456,9 @@ struct RootView: View {
     /// something is happening without having to be expanded.
     private func railAgentDot(_ agent: AgentDefinition) -> some View {
         let running = agents.running[agent.id] != nil
-        return Circle()
-            .fill(agent.account.accent)
-            .frame(width: running ? 8 : 7, height: running ? 8 : 7)
-            .opacity(agent.isEnabled ? (running ? 1 : 0.55) : 0.25)
+        return AccountDot(agent.account,
+                          dimmed: agent.isEnabled ? (running ? 1 : 0.55) : 0.25,
+                          size: running ? Theme.dot + Theme.s1 : Theme.dot)
             .frame(width: 28, height: 22)
             .contentShape(Rectangle())
             .onHover { if $0 { railTarget = nil } }
@@ -475,10 +474,7 @@ struct RootView: View {
     private func railDot(_ account: Account) -> some View {
         let sessions = workspace.sessions(in: account)
 
-        return Circle()
-            .fill(account.accent)
-            .frame(width: 7, height: 7)
-            .opacity(sessions.isEmpty ? 0.3 : 1)
+        return AccountDot(account, dimmed: sessions.isEmpty ? 0.3 : 1)
             .frame(width: 28, height: 22)
             .contentShape(Rectangle())
             .onHover { if $0 { railTarget = .account(account) } }

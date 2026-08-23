@@ -143,10 +143,7 @@ private struct RowChrome: View {
             // Tinted by account, named by seat: two instances of one
             // subscription are the same colour on purpose, because what they
             // cost comes out of the same place.
-            Circle()
-                .fill(member.seat.account.accent)
-                .opacity(dimmed ? 0.35 : 1)
-                .frame(width: 6, height: 6)
+            AccountDot(member.seat.account, dimmed: dimmed ? 0.35 : 1)
                 .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 1 }
 
             Text(member.seat.mention)

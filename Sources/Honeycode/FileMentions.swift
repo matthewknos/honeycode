@@ -392,10 +392,7 @@ struct MentionList: View {
     /// is the entire point of the feature being discoverable at all.
     private func agentRow(_ account: Account, active: Bool) -> some View {
         HStack(spacing: Theme.s4) {
-            Circle()
-                .fill(account.accent)
-                .frame(width: 7, height: 7)
-                .frame(width: 12)
+            AccountDot(account, gutter: 12)
             Text("@" + AgentMention.handle(account))
                 .font(.system(size: 12.5))
                 .lineLimit(1)

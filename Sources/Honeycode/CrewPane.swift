@@ -67,9 +67,7 @@ struct CrewPane: View {
                         workspace.reveal(session.id)
                     } label: {
                         HStack(spacing: Theme.s3) {
-                            Circle()
-                                .fill(session.account.accent)
-                                .frame(width: 6, height: 6)
+                            AccountDot(session.account)
                             Text(session.name)
                                 .font(.system(size: 12.5, weight: .medium))
                             Text(session.directory.lastPathComponent)
@@ -120,10 +118,7 @@ struct CrewPane: View {
         let account = state.account
         let open = workspace.sessions(in: account).count
         return HStack(alignment: .top, spacing: Theme.s5) {
-            Circle()
-                .fill(account.accent)
-                .opacity(state.isReady ? 1 : 0.3)
-                .frame(width: 7, height: 7)
+            AccountDot(account, dimmed: state.isReady ? 1 : 0.3)
                 // Nudging the dot down onto the title's cap height, not a gap
                 // between two things — but it was a bare 5, and the scale does
                 // not have one. What this is reaching for is a baseline
@@ -381,10 +376,7 @@ struct CrewSidebar: View {
                     ForEach(live) { session in
                         Button { onOpenSession(session.id) } label: {
                             HStack(spacing: Theme.s3) {
-                                Circle()
-                                    .fill(session.account.accent)
-                                    .frame(width: 6, height: 6)
-                                    .frame(width: 12, alignment: .center)
+                                AccountDot(session.account, gutter: 12)
                                 Text(session.name)
                                     .font(Theme.sidebarRow)
                                     .lineLimit(1)

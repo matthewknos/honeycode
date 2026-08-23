@@ -86,10 +86,7 @@ struct NewSessionSheet: View {
         let on = account == candidate
         return Button { account = candidate } label: {
             HStack(spacing: Theme.s3 - Theme.s1) {
-                Circle()
-                    .fill(candidate.accent)
-                    .opacity(usable ? 1 : 0.3)
-                    .frame(width: 6, height: 6)
+                AccountDot(candidate, dimmed: usable ? 1 : 0.3)
                 Text(candidate.shortTitle)
                     .font(.system(size: 11.5, weight: .medium))
             }

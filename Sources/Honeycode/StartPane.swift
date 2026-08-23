@@ -86,10 +86,7 @@ struct StartPane<Composer: View>: View {
         HStack(spacing: Theme.s5) {
             ForEach(readiness) { state in
                 HStack(spacing: Theme.s3 - Theme.s1) {
-                    Circle()
-                        .fill(state.account.accent)
-                        .opacity(state.isReady ? 1 : 0.3)
-                        .frame(width: 5, height: 5)
+                    AccountDot(state.account, dimmed: state.isReady ? 1 : 0.3)
                     Text(state.account.shortTitle)
                         .font(Theme.label)
                         .foregroundStyle(state.isReady ? AnyShapeStyle(.secondary)

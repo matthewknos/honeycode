@@ -427,6 +427,10 @@ private struct ChartCanvas: View {
             ForEach(spec.values(at: category), id: \.index) { entry in
                 HStack(spacing: Theme.s3 - 2) {
                     if !spec.isSingleSeries {
+                        // Not an `AccountDot`: this is a series swatch keyed to
+                        // `ChartPalette`, and it is smaller than `Theme.dot`
+                        // on purpose — a legend inside a plot should not draw
+                        // the eye the way an identity dot in chrome does.
                         Circle()
                             .fill(ChartPalette.colour(at: entry.index))
                             .frame(width: 5, height: 5)

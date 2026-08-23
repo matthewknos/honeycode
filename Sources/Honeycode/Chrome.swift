@@ -56,6 +56,30 @@ enum Chrome {
     static let trafficLightClearance: CGFloat = 34
 }
 
+/// `glassEffect` where the OS has one, and the nearest older material where it
+/// doesn't.
+///
+/// Every call site already sits inside an `if glass` branch with an opaque
+/// alternative beside it — but that branch asks whether a background *photo* is
+/// set, which is a different question from whether the API exists. Answering
+/// both with one flag would put an opaque card over a photograph on an older
+/// Mac, which is the thing the background feature was there to avoid.
+///
+/// `.regularMaterial` is not Liquid Glass and doesn't pretend to be. It is the
+/// same job — a translucent surface that samples what is behind it — done by
+/// the API that predates it by four releases. It is also the one symbol that
+/// was holding the whole app at macOS 26: see `tools/availability.py`.
+extension View {
+    @ViewBuilder
+    func glassy(in shape: some Shape) -> some View {
+        if #available(macOS 26, *) {
+            glassEffect(.regular, in: shape)
+        } else {
+            background(.regularMaterial, in: shape)
+        }
+    }
+}
+
 /// The composer and the mention list, over whatever's behind them.
 ///
 /// Real `glassEffect` when a background photo is set, an opaque fill otherwise.
@@ -80,7 +104,7 @@ struct RaisedSurface: ViewModifier {
         let ring = tint ?? Color.accentColor
         if glass {
             content
-                .glassEffect(.regular, in: shape)
+                .glassy(in: shape)
                 // Glass carries its own edge, so the hairline would double it.
                 // Only the focus ring survives.
                 .overlay(shape.strokeBorder(
@@ -178,7 +202,7 @@ struct ReadingPanel: View {
         if glass {
             RoundedRectangle(cornerRadius: Self.corner)
                 .fill(Color.clear)
-                .glassEffect(.regular, in: RoundedRectangle(cornerRadius: Self.corner))
+                .glassy(in: RoundedRectangle(cornerRadius: Self.corner))
                 .frame(maxWidth: width + Theme.s6 * 2)
                 .padding(.vertical, Self.inset)
                 .frame(maxWidth: .infinity)
@@ -214,7 +238,7 @@ struct StatusSurface: ViewModifier {
     @ViewBuilder
     func body(content: Content) -> some View {
         if glass {
-            content.glassEffect(.regular, in: Capsule())
+            content.glassy(in: Capsule())
         } else {
             content
         }
@@ -232,7 +256,7 @@ struct RailSurface: ViewModifier {
             // provides the margin, and adding more here made the pill sit
             // closer to the edge on the left than the View menu does on the
             // right.
-            content.glassEffect(.regular, in: Capsule())
+            content.glassy(in: Capsule())
         } else {
             content
         }

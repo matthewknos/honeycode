@@ -126,19 +126,37 @@ $ ./tools/availability.py --floor 14.0
      ScrollPosition           macOS 15.0   swiftui/scrollposition
 ```
 
-**Seven call sites across three files** is what stands between this and macOS 14:
+Seven call sites across three files stood between this and macOS 14. **Five are
+now behind `#available`:**
 
-| | |
-|---|---|
-| `Chrome.swift` 83, 181, 217, 235 | `.glassEffect(.regular, in:)` — **macOS 26** |
-| `TranscriptView.swift` 57, 280 | `ScrollPosition` and `onScrollGeometryChange` — macOS 15 |
-| `PopOut.swift` 309 | `WindowDragGesture` — macOS 15 |
+| | | |
+|---|---|---|
+| `Chrome.swift` | `.glassEffect(.regular, in:)` ×4 | macOS 26 → **gated**, `View.glassy(in:)` |
+| `PopOut.swift` | `WindowDragGesture` | macOS 15 → **gated**, `View.windowDraggable()` |
+| `TranscriptView.swift` 57, 280 | `ScrollPosition`, `onScrollGeometryChange` | macOS 15 → **open** |
 
-Gate the four `glassEffect` calls and the floor is **macOS 15**; the app already
-has an opaque-fill branch beside each one for when no background photo is set,
-so there is somewhere obvious for an `#available` to land. Gate the other three
-— a `ScrollViewReader` and a `GeometryReader` do both jobs the older way — and
-it is **macOS 14**. Neither is a port. Both are afternoons.
+So the believed floor is **macOS 15**, which matters more than one number
+usually does: Sequoia runs on a 2018-and-later MacBook Pro, so the Intel
+machines this was written off for are reachable by a free update rather than a
+new laptop.
+
+The two that are left are deliberately left. `TranscriptView` drives its scroll
+through `ScrollPosition` alone, and the comment above it records why: it used to
+be bound *and* driven through a `ScrollViewReader` proxy, the binding read the
+proxy's own scroll as a user scroll, and following switched itself off after the
+first drag. A `ScrollViewReader` fallback re-creates exactly that arrangement, in
+the view that renders every streamed token, and that is not a change to make
+without a compiler and a real transcript to scroll. It is the one remaining step
+from 15 to 14.
+
+Re-run the tool after any of this: it skips symbols already behind an
+`#available`, so the report gets shorter as the work gets done rather than
+repeating itself.
+
+One known false positive: `Context` resolves to `PreviewModifier.Context`
+(macOS 15) when the source means `NSViewRepresentable.Context`, which is
+ancient. A name that means two things is only as old as the oldest one the tool
+can find, and it cannot find that one.
 
 That is a *lower bound*, not a clearance. The tool resolves what it can name,
 125 symbols went unresolved, and an unresolved symbol is one it could not ask

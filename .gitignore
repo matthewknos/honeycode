@@ -9,3 +9,8 @@ build/
 # Crew lab runs — real transcripts and whatever the crew built. Evidence,
 # not source, and some of it is large.
 runs/
+
+# Byte-compiled tools. `availability.py` gets imported by hand now and
+# then to poke at one of its functions; the cache that leaves behind is not
+# part of anything.
+__pycache__/

@@ -96,12 +96,44 @@ DECLARED = re.compile(
     r"([A-Za-z_][A-Za-z0-9_]*)", re.M)
 
 
+def guarded(text):
+    """Drop the body of every `if #available(…)`, keeping any `else`.
+
+    A symbol inside an availability guard is not a constraint on the
+    deployment target — that is the entire point of writing one. Without this
+    the report gets worse as the work gets done: gate `glassEffect`, re-run,
+    and be told `glassEffect` still holds the app at macOS 26.
+
+    Brace counting, which is enough here because comments and strings have
+    already gone and Swift has no other way to spell a block.
+    """
+    while True:
+        found = re.search(r"if\s+#available\s*\([^)]*\)\s*\{", text)
+        if not found:
+            return text
+        depth, index = 0, found.end() - 1
+        while index < len(text):
+            if text[index] == "{":
+                depth += 1
+            elif text[index] == "}":
+                depth -= 1
+                if depth == 0:
+                    break
+            index += 1
+        text = text[:found.start()] + " " + text[index + 1:]
+
+
 def strip(text):
-    """Comments and string literals. This codebase names APIs constantly in
-    prose, and counting those would report symbols nothing calls."""
+    """Comments, string literals, and anything already behind an `#available`.
+
+    The first two because this codebase names APIs constantly in prose, and
+    counting those would report symbols nothing calls. The third because a
+    guarded symbol has already been dealt with.
+    """
     text = re.sub(r"^\s*///?.*$", "", text, flags=re.M)
     text = re.sub(r"/\*.*?\*/", "", text, flags=re.S)
-    return re.sub(r'"(?:[^"\\\n]|\\.)*"', '""', text)
+    text = re.sub(r'"(?:[^"\\\n]|\\.)*"', '""', text)
+    return guarded(text)
 
 
 def survey():

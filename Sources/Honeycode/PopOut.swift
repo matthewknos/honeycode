@@ -224,6 +224,24 @@ private final class FloatingPanel: NSPanel {
 /// The composer is the real one. Attachments, `@` mentions, slash commands, the
 /// model picker and stop all work because this is the same `Session` object —
 /// there is no second conversation and no second rendering path.
+/// Drag the window by this view, where the OS can.
+///
+/// `WindowDragGesture` is macOS 15. Below that the header simply isn't a
+/// handle — which costs less than it sounds, because the panel is `.titled`
+/// with a transparent titlebar, so the strip along the top drags it the way it
+/// drags every other window. `isMovableByWindowBackground` is still not the
+/// answer for the reason given at the call site.
+extension View {
+    @ViewBuilder
+    func windowDraggable() -> some View {
+        if #available(macOS 15, *) {
+            gesture(WindowDragGesture())
+        } else {
+            self
+        }
+    }
+}
+
 struct PopOutChat: View {
     @ObservedObject var session: Session
     @ObservedObject var workspace: Workspace
@@ -306,7 +324,7 @@ struct PopOutChat: View {
         // text fields and a scroll view moves the window when you meant to
         // select a sentence.
         .contentShape(Rectangle())
-        .gesture(WindowDragGesture())
+        .windowDraggable()
         .hoverCursor(.openHand)
     }
 

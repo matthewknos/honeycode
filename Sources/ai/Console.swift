@@ -45,6 +45,18 @@ enum Console {
         colour ? "\u{1B}[2m\(text)\u{1B}[0m" : text
     }
 
+    /// Dim *and* italic, for the handful of lines that are instructions about
+    /// the program rather than output from it — the hint under the prompt, the
+    /// tips on a first run.
+    ///
+    /// A third weight rather than a fifth colour. Colour here means *who*, and
+    /// has meant that since the tints were matched to the app's account
+    /// accents; spending one on "this is a hint" would be spending it on the
+    /// one thing that isn't an account.
+    static func hint(_ text: String) -> String {
+        colour ? "\u{1B}[2;3m\(text)\u{1B}[0m" : text
+    }
+
     // MARK: Writing
 
     /// Whether the cursor is mid-line. Everything that wants to start on a
@@ -58,12 +70,86 @@ enum Console {
         midLine = !text.hasSuffix("\n")
     }
 
+    /// How many blank lines have just gone out. Only `paragraph` reads it.
+    private static var blankRun = 1
+
     static func line(_ text: String = "") {
         write(text + "\n")
+        blankRun = text.isEmpty ? blankRun + 1 : 0
+    }
+
+    /// A blank line, unless the last thing printed was already one.
+    ///
+    /// The prompt asks for this. Everything that prints before it ends
+    /// differently — a plan closes on a blank, `/models` closes on a row, a
+    /// reply closes wherever the model stopped — and a prompt that always
+    /// added a newline would leave two blanks after some of them and a prompt
+    /// that never did would jam against the rest. Neither is a thing you can
+    /// fix at the call sites, because the call sites don't know what ran
+    /// before them.
+    static func paragraph() {
+        if blankRun == 0 { line() }
     }
 
     static func breakLine() {
         if midLine { write("\n") }
+    }
+
+    /// The cursor is at the start of a line, and this didn't put it there.
+    ///
+    /// `LineEditor` writes through `Terminal` rather than through here, because
+    /// what it writes is mostly cursor movement and counting that as text is
+    /// how you get a stray blank line above every prompt. It still ends each
+    /// line properly, and this is how it says so.
+    static func markFresh() {
+        midLine = false
+        blankRun = 0
+    }
+
+    // MARK: Room
+
+    /// How wide to lay things out.
+    ///
+    /// Everything that truncates asks this rather than carrying a number.
+    /// Three places used to carry their own — 90, 110 and 28 — which on a wide
+    /// window threw away most of what would have fitted and on a narrow one
+    /// wrapped every line of a plan into two.
+    static var width: Int { Terminal.columns }
+
+    /// Cut to fit, with an ellipsis when there was more.
+    ///
+    /// Counts characters, so an escape sequence inside `text` would be counted
+    /// as the dozen characters it is. Nothing here passes one: this is for the
+    /// plain strings — a task, a message, a path — that go *into* a painted
+    /// line rather than for the line itself.
+    static func fit(_ text: String, to room: Int) -> String {
+        let flat = text.replacingOccurrences(of: "\n", with: " ")
+        guard room > 1, flat.count > room else { return flat }
+        return String(flat.prefix(room - 1)) + "…"
+    }
+
+    /// Break at spaces to fit, each line carrying its own indent.
+    ///
+    /// For the few places where cutting is the wrong answer — an instruction
+    /// somebody is going to follow, rather than a task or a message where the
+    /// substance is somewhere else and the line is only a reminder that it
+    /// exists.
+    static func wrap(_ text: String, to room: Int, indent: String) -> [String] {
+        guard room > 8 else { return [indent + text] }
+        var lines: [String] = []
+        var current = ""
+        for word in text.split(separator: " ") {
+            if current.isEmpty {
+                current = String(word)
+            } else if current.count + 1 + word.count <= room {
+                current += " " + word
+            } else {
+                lines.append(indent + current)
+                current = String(word)
+            }
+        }
+        if !current.isEmpty { lines.append(indent + current) }
+        return lines
     }
 
     /// `▸ claude-p`, `▸ kimi#2` — who is about to speak.

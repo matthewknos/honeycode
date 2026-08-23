@@ -66,10 +66,32 @@ Then, once:
 
 ```sh
 ./tools/signing-identity.sh    # optional, and you want it — see below
-./build.sh                     # build/Honeycode.app
+./build.sh --install           # /Applications/Honeycode.app
 ./build-ai.sh                  # build/ai
-open build/Honeycode.app
+open -a Honeycode
 ```
+
+### Installing it
+
+`--install` is the flag; everything else about it is already true. Nothing in
+the bundle knows where it sits — resources come out of `Bundle.main`,
+preferences are keyed on the bundle identifier, and every session, transcript
+and setting is in Application Support or your home directory — so the .app runs
+from /Applications, from `build/`, or from anywhere else you drop it. The
+signature covers the bundle's contents rather than its path, so moving one
+can't break it.
+
+Without the flag `./build.sh` writes `build/Honeycode.app` and leaves
+/Applications alone. **With a copy already installed, every build refreshes it,
+flag or no flag.** That is the one piece of behaviour worth knowing, and it
+exists because the alternative is worse: once Honeycode is in /Applications
+that's the copy the Dock, Spotlight and `open -a` launch, and a build that
+quietly rewrote only `build/` would leave you staring at the old binary
+wondering why your change didn't take.
+
+If /Applications or the installed bundle isn't yours to write — a bundle put
+there with `sudo` is the usual reason — the build stops and prints the two
+commands that fix it rather than half-replacing an app.
 
 ### The first run
 
@@ -294,6 +316,79 @@ button counts the files edited so far.
 Who you're signed in to GitHub and Azure as sits at the foot of the sidebar,
 and switches from there.
 
+### The terminal
+
+```
+$ ai
+ai  0.1  ·  ~/proj
+  @claude-p  @claude-w  @kimi
+
+  Getting started:
+
+  ✓  claude-p, claude-w and kimi are ready
+  ·  copilot is not installed — /accounts
+     Name several in one message and the first one leads
+     Tab completes handles, models and paths
+
+╭────────────────────────────────────────────────────────────╮
+│ > a landing page for a dentist @claude-p @kimi             │
+╰────────────────────────────────────────────────────────────╯
+  tab completes · ↑ for history · /help
+```
+
+The same engine, no window. It opens on the accounts you actually have — that
+list is detected the first time `ai` runs on a machine, so a fresh Mac is not
+offered three subscriptions it has no CLI for, and a Mac with none is told what
+to install rather than left to find out one failed mention at a time.
+
+The **getting-started list ticks off what is already true**, which is the half
+that makes it worth printing: four tips are a thing you skip, and four tips that
+have noticed which two you have already done are about this machine.
+`Diagnostic.readiness` has always known; it used to only complain. It appears on
+a first run and after that only when something is genuinely waiting.
+
+The prompt is a **box** rather than a character, with the hint underneath where
+it stays instead of scrolling away. On submit the frame comes down and the line
+goes into the transcript as a plain `> …` — a box is somewhere to type, not
+something to keep. Below about 34 columns it degrades to a bare prompt.
+
+A slash command's answer hangs off it with `└`, so an answer looks like an
+answer rather than like more transcript. The window title tracks what is
+running, which is how you tell which of four terminals has agents in it.
+
+**Tab completes the things you can't guess.** Handles, the `:model` and
+`:effort` qualifiers behind them, slash commands, and file paths in the folder
+you started from. Up and down walk back through what you have asked before,
+kept in `~/Library/Application Support/Honeycode/ai-history` and readable only
+by you. Ctrl-A, ctrl-E, ctrl-W, ctrl-K, ctrl-U and alt-arrow do what they do
+everywhere else. Ctrl-C clears the line, or leaves if the line is already
+empty and you press it twice.
+
+| | |
+|---|---|
+| `/help` | all of the above |
+| `/accounts` | who is here, and what each still needs |
+| `/models [account]` | what an account can run |
+| `/cost` | what this month has come to |
+| `/cwd` | the folder the work happens in |
+| `/clear` | clear the screen |
+| `/quit` | leave |
+
+It composes with the shell it is sitting in. Anything piped in is added to the
+message, which is the whole of the integration story for a coding agent that is
+already in a terminal:
+
+```sh
+ai -p "a landing page for a dentist @claude-p @kimi"   # one message, then exit
+git diff | ai -p "review this @claude-w"               # stdin is appended
+ai --models copilot                                    # what it can run
+ai --describe                                          # all of it, as JSON
+```
+
+`ai --describe` is the one for other programs: capabilities, grammar and the
+model catalogue per account, so something driving `ai -p` can find out what is
+available instead of guessing.
+
 ### Mentions
 
 ```
@@ -379,6 +474,7 @@ something unparseable blocks the assignment.
 | | |
 |---|---|
 | Sessions, artifacts, crew scratch directories | `~/Library/Application Support/Honeycode/` (0700) |
+| What you have typed at `ai` | `~/Library/Application Support/Honeycode/ai-history` (0600), last 500 lines |
 | Preferences, model catalogues, spend totals | `com.matthewquigley.honeycode` — one domain shared by the app and `ai` |
 | Custom account API keys | login Keychain, `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly` |
 | Agent credentials | wherever each agent CLI keeps them; Honeycode never copies them |
@@ -396,7 +492,7 @@ Sources/ai/           the terminal client
 Tests/                one main.swift per suite, no framework
 Resources/            Info.plist, entitlements, icon, syntax themes
 tools/                doctor.sh, signing-identity.sh, crewlab.sh, crewscore.py
-build.sh              → build/Honeycode.app
+build.sh              → build/Honeycode.app, or --install to /Applications
 build-ai.sh           → build/ai
 test.sh               everything; --typecheck for a fast loop
 ```
@@ -420,6 +516,16 @@ compiled against the real sources rather than a copy of their logic. There's no
 test framework for the same reason there's no package manifest: a target is one
 `swiftc` invocation, and a second tool would be more machinery than the thing it
 tests.
+
+Most of them cover `AgentKit`. `CLI` is the exception and covers the terminal
+client — what Tab offers, what a slash command parses to, what the up-arrow
+remembers. It names the files it compiles rather than taking all of
+`Sources/ai`, because `main.swift` *is* a main and two of those don't link. The
+line editor itself isn't in there: it's a loop over `read(2)` against a tty in
+raw mode, there is no tty in a test run, and a fake one would be a test of the
+fake. So the editor is kept thin — it decodes a keypress and calls something
+else — and the something elses are pure functions of a line, a cursor and a
+directory.
 
 `test.sh` writes nothing into `build/` and never stops a running app, so it's
 safe to run while you're using the thing it's testing. `build.sh` does quit

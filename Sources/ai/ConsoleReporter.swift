@@ -12,6 +12,13 @@ final class ConsoleReporter: CrewReporter {
     private let progress = Progress()
     private var streamer: Streamer?
 
+    /// What the window says when nothing is running.
+    private let idleTitle: String
+
+    init(title: String) {
+        self.idleTitle = title
+    }
+
     // MARK: Asides
 
     func status(_ text: String) {
@@ -49,7 +56,8 @@ final class ConsoleReporter: CrewReporter {
         for assignment in assignments {
             let name = Console.paint("▸ " + assignment.label,
                                      Console.tint(assignment.to.account), bold: true)
-            Console.line(name + " " + Console.dim(String(assignment.task.prefix(110))))
+            let room = Console.width - assignment.label.count - 4
+            Console.line(name + " " + Console.dim(Console.fit(assignment.task, to: room)))
         }
         Console.line()
     }
@@ -79,7 +87,14 @@ final class ConsoleReporter: CrewReporter {
     }
 
     func working(_ delegates: [(seat: Seat, session: Session)]) {
-        guard !delegates.isEmpty else { progress.end(); return }
+        guard !delegates.isEmpty else {
+            progress.end()
+            Terminal.title(idleTitle)
+            return
+        }
+        // The one thing worth knowing from outside the window: which of the
+        // four terminals you have open is the one with agents in it.
+        Terminal.title("ai · " + delegates.map(\.seat.handle).joined(separator: " "))
         progress.begin(delegates.map { ($0.seat, $0.session) })
     }
 
@@ -92,8 +107,8 @@ final class ConsoleReporter: CrewReporter {
         let heads = Console.paint(from.mention, Console.tint(from.account))
             + Console.dim(arrow)
             + Console.paint(to.mention, Console.tint(to.account))
-        let flat = text.replacingOccurrences(of: "\n", with: " ")
-        Console.line("  " + heads + " " + Console.dim(String(flat.prefix(90))))
+        let room = Console.width - from.mention.count - to.mention.count - arrow.count - 4
+        Console.line("  " + heads + " " + Console.dim(Console.fit(text, to: room)))
     }
 
     func worked(_ seat: Seat, files: Int) {
@@ -104,8 +119,17 @@ final class ConsoleReporter: CrewReporter {
         progress.finish(seat)
     }
 
+    /// `end` rather than `clear`, which is the difference between taking the
+    /// live block off the screen and stopping it coming back.
+    ///
+    /// `Crew.settle` calls this and then `onIdle`, and `onIdle` is what puts
+    /// the prompt up — so anything still ticking after this point is a timer
+    /// redrawing a progress block over a line somebody is typing into. Every
+    /// path that gets here has called `working([])` first and so has already
+    /// stopped it; this is the one that doesn't have to be checked for.
     func finished(seconds: Int, spend: String) {
-        progress.clear()
+        progress.end()
+        Terminal.title(idleTitle)
         Console.breakLine()
         Console.status("\(seconds)s · " + spend)
     }

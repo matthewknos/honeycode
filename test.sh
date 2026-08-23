@@ -84,6 +84,22 @@ kit Teams
 kit Changes
 kit Setup
 
+# The terminal client's own logic: what Tab offers, what a slash command parses
+# to, what the up-arrow remembers. Not the whole of Sources/ai — `main.swift`
+# *is* a main and two of those do not link — so this names the files that hold
+# the logic. Everything left out is a loop over read(2) against a tty, which
+# there isn't one of in here.
+echo "==> CLI"
+# shellcheck disable=SC2046
+"${SWIFTC[@]}" -o "$WORK/CLI" \
+  $(find "$ROOT/Sources/AgentKit" -name '*.swift' | sort) \
+  "$ROOT/Sources/ai/Commands.swift" \
+  "$ROOT/Sources/ai/Completion.swift" \
+  "$ROOT/Sources/ai/Help.swift" \
+  "$ROOT/Sources/ai/History.swift" \
+  "$ROOT/Tests/CLI/main.swift"
+"$WORK/CLI"
+
 # The sandbox suite drives a real WKWebView against a real local server, which
 # is the only way to learn anything about a content rule list: every interesting
 # property of one — whether `ignore-previous-rules` cancels a notification,

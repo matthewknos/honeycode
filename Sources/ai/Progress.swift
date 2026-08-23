@@ -99,14 +99,22 @@ final class Progress {
 
         var out = ""
         for _ in 0..<drawn { out += "\u{1B}[1A\u{1B}[2K" }
+        // A blank line of its own, and counted below, so the live block reads
+        // as a block rather than as two more rows of whatever was printed above
+        // it — which for a crew run is the delegates talking to each other.
+        out += "\n"
         for row in rows {
             let mark = row.done ? "✓" : "·"
             let name = Console.paint("\(mark) \(row.seat.mention)",
                                      Console.tint(row.seat.account))
-            out += "  \(name)  \(Console.dim(row.state))\n"
+            // A live line that wraps is a live line that can't be erased: the
+            // cursor walk that takes this block down counts rows, and a wrapped
+            // row is two of them.
+            let state = Console.fit(row.state, to: Console.width - row.seat.mention.count - 7)
+            out += "  \(name)  \(Console.dim(state))\n"
         }
         out += "  " + Console.dim("\(elapsed)s") + "\n"
         Console.write(out)
-        drawn = rows.count + 1
+        drawn = rows.count + 2
     }
 }

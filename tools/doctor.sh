@@ -231,5 +231,7 @@ if (( WARNED > 0 )); then
 else
   printf '  %sEverything Honeycode needs is here.%s\n' "$GREEN" "$RESET"
 fi
-printf '\n    %s./build.sh && ./build-ai.sh%s\n' "$BOLD" "$RESET"
-printf '    %sopen %s/build/Honeycode.app%s\n\n' "$DIM" "$ROOT" "$RESET"
+printf '\n    %s./build.sh --install && ./build-ai.sh%s\n' "$BOLD" "$RESET"
+printf '    %sputs Honeycode.app where the Dock and Spotlight find it. Without%s\n' "$DIM" "$RESET"
+printf '    %s--install it builds to %s/build and leaves /Applications alone.%s\n\n' \
+       "$DIM" "$ROOT" "$RESET"

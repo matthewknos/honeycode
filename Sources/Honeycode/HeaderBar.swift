@@ -253,12 +253,23 @@ struct HeaderBar: View {
               : "Workbench — \(changed) file\(changed == 1 ? "" : "s") edited")
     }
 
+    /// Which tab the panel opens on.
+    ///
+    /// Every answer here is checked against the tabs that are actually in the
+    /// row. Naming one that isn't lands on `Workbench.shownTab`'s clamp, which
+    /// drops you on Changes — so "opening lands on the tab with something in
+    /// it" became "opening lands on Changes with nothing in it" for anyone with
+    /// Preview switched off. The clamp is right; asking it to catch this was
+    /// not. Run is the one exception, and the same one `Workbench.available`
+    /// makes: a crew run in flight brings its tab back whatever the switch says.
     private func openingTab(changed: Int) -> WorkbenchTab {
+        let available = WorkbenchTab.available
         if session.crewRun != nil { return .run }
-        if session.browserHTML != nil || session.browserFile != nil
+        if available.contains(.preview),
+           session.browserHTML != nil || session.browserFile != nil
             || session.devServer != nil { return .preview }
         if changed > 0 { return .changes }
-        return session.workbenchTab
+        return available.contains(session.workbenchTab) ? session.workbenchTab : .changes
     }
 
     // MARK: Everything else about this conversation

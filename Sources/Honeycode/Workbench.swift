@@ -422,7 +422,9 @@ private struct DirectoryRows: View {
                 // A file opens in Preview, which is the tab that already knows
                 // how to render one safely — and is why the two are in the same
                 // panel rather than in two places that don't know about each
-                // other.
+                // other. It is also why `WorkbenchTab.files` hangs off the
+                // Preview switch: with nowhere to open a file, this row has
+                // nothing to do and the tab has no reason to be in the strip.
                 session.open(file: entry.url)
                 session.workbenchTab = .preview
             }

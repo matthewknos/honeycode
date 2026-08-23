@@ -364,7 +364,7 @@ struct AccountEditor: View {
             }
             .formStyle(.grouped)
 
-            Divider()
+            Divider().overlay(Theme.rule)
 
             HStack {
                 if let objection {

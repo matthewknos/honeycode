@@ -144,7 +144,7 @@ struct TeamBar: View {
 
             checking
 
-            Divider()
+            Divider().overlay(Theme.rule)
 
             if let note {
                 Text(note)
@@ -180,7 +180,7 @@ struct TeamBar: View {
     @ViewBuilder
     private var saved: some View {
         if !teams.isEmpty || !session.team.isEmpty {
-            Divider()
+            Divider().overlay(Theme.rule)
             HStack {
                 Text("Saved teams")
                     .font(Theme.label)
@@ -272,7 +272,7 @@ struct TeamBar: View {
     /// thing it controls.
     @ViewBuilder
     private var checking: some View {
-        Divider()
+        Divider().overlay(Theme.rule)
         VStack(alignment: .leading, spacing: Theme.s2) {
             Text("Before assembling")
                 .font(Theme.label)

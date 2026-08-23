@@ -119,6 +119,12 @@ enum Theme {
     /// Recessed well — hover fills, chips, expanded detail.
     static var well: Color { Color(nsColor: .quaternarySystemFill) }
     /// Hairline rules. Quieter than a `.separator` border.
+    ///
+    /// For rules this app draws — `Divider().overlay(Theme.rule)`, and the
+    /// places that stroke one by hand. Not for a `Divider()` inside a `Menu` or
+    /// a `.contextMenu` builder: that is not a view, it is a request for a menu
+    /// separator, and AppKit draws it to the system's own metrics. Most of the
+    /// bare `Divider()`s a scan turns up are those, which is why they are bare.
     static var rule: Color { Color(nsColor: .separatorColor) }
 
     /// The ground under code blocks and diffs.

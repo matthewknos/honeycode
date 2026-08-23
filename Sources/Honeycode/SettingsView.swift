@@ -239,7 +239,11 @@ private struct FeatureSettings: View {
             } footer: {
                 Text("A bundle brings a whole way of working with it rather than "
                      + "one control — its own half of the sidebar, its own pane, "
-                     + "and skills every agent can read.")
+                     + "and skills every agent can read.\n\nThese same switches "
+                     + "are in the View menu under Bundles, and on the right-click "
+                     + "menu of the sidebar's own switcher — this pane is where a "
+                     + "bundle explains itself, not somewhere to keep coming back "
+                     + "to.")
                     .font(Theme.note)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

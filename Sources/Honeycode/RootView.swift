@@ -696,6 +696,11 @@ struct RootView: View {
                             around: Theme.cornerChip, inset: Theme.s1)))
             .padding(.horizontal, Theme.s5)
             .padding(.bottom, Theme.s5)
+            // Right on the control that switches halves, because "which halves
+            // are there" is the same question one step out. Not the only route
+            // — the pill isn't drawn at all when Code is the only half left, so
+            // the View menu carries the same items.
+            .contextMenu { BundleToggles() }
         }
     }
 

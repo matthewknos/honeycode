@@ -247,6 +247,12 @@ Bundles start **off**, unlike features. A feature asks what you have installed
 and can find out for itself; a bundle asks what you are doing, which nothing on
 disk can answer.
 
+Once you know what one is, you shouldn't have to come back here to flip it. The
+same switches are in **View ▸ Bundles**, and on the right-click menu of the
+sidebar's own Code/Crew/Agents switcher — which is where "which halves are
+there" belongs, one step out from the control that moves between them. All three
+are the same switch; the pane is just the one with room to explain itself.
+
 Academia adds a fourth segment to the sidebar pill. In Library mode there is no
 branch chip, no Changes tab, no dev server and no terminal — not because they
 are hidden, but because a paper is not a repository and the pane a sidebar mode

@@ -233,6 +233,34 @@ has four; one switched off stops being offered by every menu, mention list and
 roster. It is not a delete — conversations you already have on it stay in the
 sidebar, and the transcripts stay on disk.
 
+### Bundles
+
+Below the features, in the same pane, is **Bundles**. A feature adds a control;
+a bundle changes what the window is *for* — its own half of the sidebar, its own
+pane, and skills every agent can read. There is one so far.
+
+| | |
+|---|---|
+| **Academia** | a Library beside your sessions: read papers in the window, highlight a passage and ask an agent about it, and keep the ones you're writing — as Word documents — on the same shelf |
+
+Bundles start **off**, unlike features. A feature asks what you have installed
+and can find out for itself; a bundle asks what you are doing, which nothing on
+disk can answer.
+
+Academia adds a fourth segment to the sidebar pill. In Library mode there is no
+branch chip, no Changes tab, no dev server and no terminal — not because they
+are hidden, but because a paper is not a repository and the pane a sidebar mode
+puts on screen is its own. Highlights are stored in `Library.json` rather than
+written into the PDF, which is usually somebody else's file; a `.docx` is
+previewed in the window and edited in whatever edits Word documents on your Mac,
+while the same conversation floats over it and can rewrite the file on disk.
+
+Switching it off hides all of that and deletes none of it. The papers are
+referenced rather than copied, so they never moved in the first place, and the
+two skills it installs stay in your Skills folder — they're plain Markdown you
+are meant to edit, and a switch that ate your edits is one you'd only ever flick
+once.
+
 ### Why the signing step
 
 Without a signing identity, `build.sh` signs the app ad-hoc. An ad-hoc signature
@@ -563,6 +591,7 @@ something unparseable blocks the assignment.
 | | |
 |---|---|
 | Sessions, artifacts, crew scratch directories | `~/Library/Application Support/Honeycode/` (0700) |
+| Your paper library, and what you highlighted | `~/Library/Application Support/Honeycode/Library.json` — the PDFs stay where you keep them |
 | What you have typed at `ai` | `~/Library/Application Support/Honeycode/ai-history` (0600), last 500 lines |
 | Preferences, model catalogues, spend totals | `com.matthewquigley.honeycode` — one domain shared by the app and `ai` |
 | Custom account API keys | login Keychain, `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly` |
@@ -587,12 +616,15 @@ build-ai.sh           → build/ai
 test.sh               everything; --typecheck for a fast loop
 ```
 
-**`AgentKit` must not import SwiftUI, AppKit, WebKit, Charts or Quartz.** It's the
-half that has to run without a UI. Nothing in the language enforces that —
-SwiftUI imports perfectly well into a background process and drags AppKit along
-behind it — so `build.sh` and `test.sh` both check, and both fail the build. It
-has caught exactly one violation, in the direction you'd expect: a `Color` on
-`Account`.
+**`AgentKit` must not import SwiftUI, AppKit, WebKit, Charts, Quartz or PDFKit.**
+It's the half that has to run without a UI. Nothing in the language enforces
+that — SwiftUI imports perfectly well into a background process and drags AppKit
+along behind it — so `build.sh` and `test.sh` both check, and both fail the
+build. It has caught exactly one violation, in the direction you'd expect: a
+`Color` on `Account`. PDFKit joined the list with the library, and for the same
+reason: a paper is a path, some facts about it and the passages you marked, all
+of which are answerable without a renderer and all of which are therefore
+testable.
 
 ### Tests
 

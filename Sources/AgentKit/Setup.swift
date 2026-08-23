@@ -303,6 +303,12 @@ enum Setup {
             // shows it either way, with the command that installs it.
             store.set(Diagnostic.readiness(of: account).hasCLI, forKey: accountKey(account))
         }
+        // Bundles are seeded the same way and always land on off. Nothing is
+        // detected here because there is nothing to detect: a DLC asks what you
+        // are doing, not what you have installed, and the app cannot know.
+        for dlc in DLC.allCases where store.object(forKey: dlcKey(dlc)) == nil {
+            store.set(dlc.initialValue, forKey: dlcKey(dlc))
+        }
     }
 
     /// Finished, or skipped — the same thing as far as this is concerned. What
@@ -328,6 +334,7 @@ enum Setup {
     static func forgetEverything() {
         for feature in Feature.allCases { store.removeObject(forKey: featureKey(feature)) }
         for account in Account.allCases { store.removeObject(forKey: accountKey(account)) }
+        for dlc in DLC.allCases { store.removeObject(forKey: dlcKey(dlc)) }
         rerun()
     }
 

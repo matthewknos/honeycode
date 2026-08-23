@@ -53,9 +53,14 @@ echo "==> Building Honeycode ($CONFIGURATION)"
 # imports perfectly well into a background process and simply drags AppKit in
 # behind it — so the boundary is checked here instead. It failed exactly once,
 # in the direction you would expect: a `Color` on `Account`.
-if grep -lE '^import (SwiftUI|AppKit|WebKit|Charts|Quartz)$' "$ROOT"/Sources/AgentKit/*.swift 2>/dev/null | grep -q .; then
+#
+# PDFKit is on the list for the same reason and was added with the library: a
+# paper is a path, some facts about it and the marks you made, all of which are
+# answerable without a renderer. The moment `Paper` holds a `PDFDocument` the
+# model stops being testable and the daemon stops linking.
+if grep -lE '^import (SwiftUI|AppKit|WebKit|Charts|Quartz|PDFKit)$' "$ROOT"/Sources/AgentKit/*.swift 2>/dev/null | grep -q .; then
   echo "==> AgentKit must not import UI frameworks:" >&2
-  grep -lE '^import (SwiftUI|AppKit|WebKit|Charts|Quartz)$' "$ROOT"/Sources/AgentKit/*.swift >&2
+  grep -lE '^import (SwiftUI|AppKit|WebKit|Charts|Quartz|PDFKit)$' "$ROOT"/Sources/AgentKit/*.swift >&2
   exit 1
 fi
 
@@ -93,7 +98,7 @@ xcrun --sdk macosx swiftc \
   "${SWIFT_FLAGS[@]}" \
   -framework AppKit -framework SwiftUI \
   -framework Speech -framework AVFoundation \
-  -framework Quartz \
+  -framework Quartz -framework PDFKit \
   -o "$APP/Contents/MacOS/Honeycode" \
   $(find "$ROOT/Sources/AgentKit" "$ROOT/Sources/Honeycode" -name '*.swift' | sort)
 

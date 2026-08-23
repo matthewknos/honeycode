@@ -22,6 +22,17 @@ struct MiniChat: View {
     @ObservedObject var workspace: Workspace
     /// The area it's floating over, so it can't be dragged off the edge.
     let bounds: CGSize
+    /// Something from the document underneath, put in front of the composer.
+    ///
+    /// The one thing this card could not do. It is the real `ComposerView`, so
+    /// `@` mentions and slash commands already work — but the surface it floats
+    /// over had no way to hand it anything, and a passage you highlighted was
+    /// something you retyped. Cleared as it is consumed, so the same quote
+    /// can't arrive twice and a second selection always lands.
+    ///
+    /// Nil everywhere but the library, where the thing underneath is a page of
+    /// somebody else's prose and quoting it is the entire interaction.
+    var quoted: Binding<String?>?
 
     @State private var draft = ""
     @State private var collapsed = false
@@ -88,6 +99,18 @@ struct MiniChat: View {
         .modifier(Elevated(depth: .float))
         .offset(x: clampedX, y: clampedY)
         .animation(Motion.disclose, value: collapsed)
+        // Prepended rather than appended, and the draft is kept: you quote a
+        // passage and then say what you want to know about it, which is the
+        // order the two arrive in and the order they read in.
+        // `?? nil` flattens the `String??` that optional-chaining through an
+        // optional binding produces, so the guard below unwraps once and means
+        // what it looks like it means.
+        .onChange(of: quoted?.wrappedValue ?? nil) { _, incoming in
+            guard let incoming, !incoming.isEmpty else { return }
+            draft = incoming + draft
+            collapsed = false
+            quoted?.wrappedValue = nil
+        }
     }
 
     // MARK: Moving

@@ -25,6 +25,15 @@ struct RootView: View {
     /// means popovers drawing dark text on light material.
     @Binding var appearance: HoneycodeApp.Appearance
 
+    /// Academia's shelf.
+    ///
+    /// Owned here rather than passed down from `HoneycodeApp`, because unlike
+    /// the workspace and the agents nothing outside this view tree has any use
+    /// for it — `honeycoded` does not read papers. It costs nothing when the
+    /// DLC is off: it holds an empty array until the library is on screen and
+    /// asks it to read.
+    @StateObject private var library = LibraryStore()
+
     /// Which half of the app the sidebar is showing.
     ///
     /// The pill switches the *sidebar*, not the app: the window, the pane and
@@ -32,21 +41,23 @@ struct RootView: View {
     /// arrangement while you're off looking at an agent. Persisted, because
     /// which half you were last in is the same kind of fact as which session.
     enum SidebarMode: String, CaseIterable {
-        case code, crew, agents
+        case code, crew, agents, library
 
         var title: String {
             switch self {
-            case .code:   return "Code"
-            case .crew:   return "Crew"
-            case .agents: return "Agents"
+            case .code:    return "Code"
+            case .crew:    return "Crew"
+            case .agents:  return "Agents"
+            case .library: return "Library"
             }
         }
 
         var symbol: String {
             switch self {
-            case .code:   return "chevron.left.forwardslash.chevron.right"
-            case .crew:   return "person.2"
-            case .agents: return "sparkles"
+            case .code:    return "chevron.left.forwardslash.chevron.right"
+            case .crew:    return "person.2"
+            case .agents:  return "sparkles"
+            case .library: return DLC.academia.symbol
             }
         }
 
@@ -55,9 +66,23 @@ struct RootView: View {
         /// simpler Honeycode, it is a different program.
         var feature: Feature? {
             switch self {
-            case .code:   return nil
-            case .crew:   return .crew
-            case .agents: return .agents
+            case .code:    return nil
+            case .crew:    return .crew
+            case .agents:  return .agents
+            case .library: return nil
+            }
+        }
+
+        /// The bundle that brings this half with it, if it isn't part of the
+        /// app on its own.
+        ///
+        /// The whole of what `RootView` knows about DLCs, and deliberately the
+        /// same shape as `feature` above — a declaration, read by the filter
+        /// that was already there. Nothing below branches on which DLC it is.
+        var dlc: DLC? {
+            switch self {
+            case .library: return .academia
+            case .code, .crew, .agents: return nil
             }
         }
     }
@@ -66,7 +91,10 @@ struct RootView: View {
 
     /// The halves that are switched on.
     private var modes: [SidebarMode] {
-        SidebarMode.allCases.filter { $0.feature.map(Features.isOn) ?? true }
+        SidebarMode.allCases.filter {
+            ($0.feature.map(Features.isOn) ?? true)
+                && ($0.dlc.map(DLCs.isOn) ?? true)
+        }
     }
 
     /// Which one is actually showing.
@@ -128,6 +156,7 @@ struct RootView: View {
                         case .code:   SessionColumns(workspace: workspace)
                         case .crew:   CrewPane(workspace: workspace)
                         case .agents: AgentsPane(store: agents, workspace: workspace)
+                        case .library: LibraryPane(library: library, workspace: workspace)
                         }
                     }
                 }
@@ -286,6 +315,7 @@ struct RootView: View {
                                   withAnimation(Motion.hover) { mode = .code }
                               }
                 case .agents: AgentList(store: agents)
+                case .library: LibrarySidebar(library: library)
                 }
                 footer
             }
@@ -375,14 +405,20 @@ struct RootView: View {
             .onHover { if $0 { railTarget = nil } }
             .help("Expand sidebar")
 
-            // The pill, as two icons. Both always drawn, the inactive one
+            // The pill, as icons. All of them always drawn, the inactive ones
             // dimmed — a single glyph that changed its own meaning would be a
             // control you have to press to find out what it does.
-            railMode(.code, "chevron.left.forwardslash.chevron.right")
-            railMode(.crew, "person.2")
-            railMode(.agents, "sparkles")
+            //
+            // Off `modes`, like the expanded pill, rather than a hand-written
+            // list. The list had the symbols spelled out a second time and did
+            // not consult the switches at all, so a collapsed sidebar offered
+            // Crew on a Mac with Crew switched off — and would have offered
+            // Library to everyone.
+            ForEach(modes, id: \.self) { railMode($0) }
 
-            if mode == .agents {
+            // `shownMode` for the same reason `newButton` reads it: the
+            // stored mode can name a half that is switched off.
+            if shownMode == .agents {
                 Image(systemName: "plus")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(.secondary)
@@ -438,9 +474,9 @@ struct RootView: View {
         }
     }
 
-    private func railMode(_ value: SidebarMode, _ symbol: String) -> some View {
-        let on = mode == value
-        return Image(systemName: symbol)
+    private func railMode(_ value: SidebarMode) -> some View {
+        let on = shownMode == value
+        return Image(systemName: value.symbol)
             .font(.system(size: 11.5, weight: .medium))
             .foregroundStyle(on ? AnyShapeStyle(.primary) : AnyShapeStyle(.tertiary))
             .frame(width: 28, height: 22)
@@ -701,24 +737,31 @@ struct RootView: View {
     /// `value == .code ? … : …` did the instant Crew was added.
     private static func segmentHelp(_ value: SidebarMode) -> String {
         switch value {
-        case .code:   return "Conversations you started"
-        case .crew:   return "Who is running, what you have, and your saved teams"
-        case .agents: return "Agents that run on their own"
+        case .code:    return "Conversations you started"
+        case .crew:    return "Who is running, what you have, and your saved teams"
+        case .agents:  return "Agents that run on their own"
+        case .library: return "Papers you are reading and the ones you are writing"
         }
     }
 
     private static func railHelp(_ value: SidebarMode) -> String {
         switch value {
-        case .code:   return "Sessions"
-        case .crew:   return "Crew"
-        case .agents: return "Agents"
+        case .code:    return "Sessions"
+        case .crew:    return "Crew"
+        case .agents:  return "Agents"
+        case .library: return "Library"
         }
     }
 
     /// The `+` means different things on the two sides, so it does.
+    ///
+    /// `shownMode`, not `mode`: the stored mode can name a half that is
+    /// switched off, and the header would then offer a button for a pane that
+    /// isn't on screen. Everything else that branches on the sidebar already
+    /// reads `shownMode`; this one had been left behind.
     @ViewBuilder
     private var newButton: some View {
-        switch mode {
+        switch shownMode {
         case .code:
             newSessionMenu
         case .crew:
@@ -736,6 +779,16 @@ struct RootView: View {
             }
             .buttonStyle(.plain)
             .help("New agent — describe it in a sentence")
+        case .library:
+            Button { library.importFromPanel() } label: {
+                Image(systemName: "plus")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 24, height: 24)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("Add a paper — a PDF to read, or a Word document you are writing")
         }
     }
 

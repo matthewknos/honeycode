@@ -111,11 +111,39 @@ whatever it actually compiled for into the bundle's `LSMinimumSystemVersion`, so
 the plist and the linker can't disagree — that particular mistake produces an app
 that builds cleanly and then refuses to open.
 
-**Whether it compiles lower is an open question and the compiler is the only
-thing that can answer it.** What is known is that there is not one `@available`
-in the whole source, so nothing in it has ever declared needing a version of
-anything: 26.0 is what it was built against, not a floor somebody measured. Every
-rejection names an API and a version, and between them those are the real floor.
+There is not one `@available` in the whole source, so nothing in it has ever
+declared needing a version of anything — 26.0 is what it was built against, not
+a floor somebody measured. `./tools/availability.py` works out what it *would*
+be, by reading Apple's own availability data for every symbol the app uses:
+
+```
+$ ./tools/availability.py --floor 14.0
+
+  ── above macOS 14.0 ──────────────────────────────────────
+     glassEffect              macOS 26.0   swiftui/view/glasseffect(_:in:)
+     onScrollGeometryChange   macOS 15.0   swiftui/view/onscrollgeometrychange(…)
+     WindowDragGesture        macOS 15.0   swiftui/windowdraggesture
+     ScrollPosition           macOS 15.0   swiftui/scrollposition
+```
+
+**Seven call sites across three files** is what stands between this and macOS 14:
+
+| | |
+|---|---|
+| `Chrome.swift` 83, 181, 217, 235 | `.glassEffect(.regular, in:)` — **macOS 26** |
+| `TranscriptView.swift` 57, 280 | `ScrollPosition` and `onScrollGeometryChange` — macOS 15 |
+| `PopOut.swift` 309 | `WindowDragGesture` — macOS 15 |
+
+Gate the four `glassEffect` calls and the floor is **macOS 15**; the app already
+has an opaque-fill branch beside each one for when no background photo is set,
+so there is somewhere obvious for an `#available` to land. Gate the other three
+— a `ScrollViewReader` and a `GeometryReader` do both jobs the older way — and
+it is **macOS 14**. Neither is a port. Both are afternoons.
+
+That is a *lower bound*, not a clearance. The tool resolves what it can name,
+125 symbols went unresolved, and an unresolved symbol is one it could not ask
+about rather than one it cleared. `swiftc` at a lower target is still the only
+authority; this just means nobody has to start from nothing.
 
 Of the two targets, `ai` is the better bet. `build-ai.sh` compiles `AgentKit`
 and `Sources/ai` and links no UI framework at all, so it has none of the SwiftUI
@@ -534,7 +562,8 @@ Sources/Honeycode/    the app (SwiftUI/AppKit)
 Sources/ai/           the terminal client
 Tests/                one main.swift per suite, no framework
 Resources/            Info.plist, entitlements, icon, syntax themes
-tools/                doctor.sh, signing-identity.sh, crewlab.sh, crewscore.py
+tools/                doctor.sh, signing-identity.sh, availability.py,
+                      acp-catalogue.py, crewlab.sh, crewscore.py
 build.sh              → build/Honeycode.app, or --install to /Applications
 build-ai.sh           → build/ai
 test.sh               everything; --typecheck for a fast loop

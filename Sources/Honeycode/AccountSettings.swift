@@ -370,7 +370,12 @@ struct AccountEditor: View {
                 if let objection {
                     Text(objection)
                         .font(Theme.label)
-                        .foregroundStyle(Color.red.opacity(0.9))
+                        // `Theme.stateBad`, not `Color.red` — the pattern
+                        // Theme's State section says was removed. Raw red is
+                        // the same value in both appearances; this one is
+                        // darkened for light mode, which matters most in the
+                        // one place in a form where legibility does.
+                        .foregroundStyle(Theme.stateBad)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer()

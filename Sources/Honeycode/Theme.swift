@@ -88,12 +88,38 @@ enum Theme {
     /// the floating pill sits the same distance from the window edge as the
     /// View menu does on the other side.
     static let railWidth: CGFloat = 60
+    /// A panel of content sitting on the pane, and a control you type into.
+    ///
+    /// The same number, and deliberately: at this app's sizes a settings card
+    /// and a search field want the same corner, and two names for one value
+    /// costs nothing while letting a call site say which it means. If they ever
+    /// diverge it will be here, once, rather than at forty call sites.
     static let cornerCard: CGFloat = 10
     static let cornerField: CGFloat = 10
     /// A tab in a strip, and anything else the size of one. Tighter than a
     /// card because at 24pt tall a 10pt radius is most of the way to a capsule,
     /// and a row of capsules reads as segmented control rather than as tabs.
+    ///
+    /// This is the one that kept being reinvented — as 5, 6, 7 and 8, at
+    /// fifteen sites, for the same kind of small thing: a segment, a thumbnail,
+    /// an inline path, a tooltip over a plot. None of those differences were
+    /// decisions and none of them are visible; what they cost is the ability to
+    /// change the app's small corner at all.
     static let cornerChip: CGFloat = 7
+    /// A layer floating free of the document, with the whole window under it —
+    /// the command palette, the mini chat. Larger than a card because it is
+    /// larger *and* nearer: the same corner that reads as crisp on a panel in
+    /// the pane reads as sharp on something hanging in front of it.
+    static let cornerFloat: CGFloat = 12
+
+    /// One shape inside another, inset by `inset`, keeps the two curves
+    /// concentric: `cornerChip + Theme.s1` around a chip padded by `s1`. Worth
+    /// stating because the alternative reads as two unrelated numbers, and the
+    /// segmented pill in the View menu had exactly that — an inner 6 and an
+    /// outer 8, correct by arithmetic and unmaintainable by inspection.
+    static func corner(around inner: CGFloat, inset: CGFloat) -> CGFloat {
+        inner + inset
+    }
 
     /// The header bar above every column.
     static let headerHeight: CGFloat = 34
@@ -138,16 +164,25 @@ enum Theme {
 
     // MARK: Elevation
     //
-    // One shadow, at two depths, and nothing else. The app had grown four
+    // One shadow, at three depths, and nothing else. The app had grown four
     // ad-hoc shadows — a segmented pill's 1pt, a popover's, a card's — which is
     // how a window ends up with three different ideas of how far off the page
-    // anything is. A raised control uses `low`; a layer that floats over the
-    // document — the workbench, the pop-out, a floating card — uses `high`.
+    // anything is. It then grew four more, which is why there is a third depth
+    // here rather than a fourth round of snapping everything to `high`.
+    //
+    // A raised control uses `low`. A layer over the document — a completion
+    // panel, a tooltip over a plot — uses `high`. A layer over the *window*,
+    // with nothing of its own underneath, uses `float`: the command palette
+    // and the mini chat were both hand-tuned to roughly twice `high`, from
+    // opposite directions, and agreed closely enough that the disagreement was
+    // drift rather than a decision.
 
     static let shadowLow = (colour: Color.black.opacity(0.10),
                             radius: CGFloat(1.5), y: CGFloat(0.5))
     static let shadowHigh = (colour: Color.black.opacity(0.16),
                              radius: CGFloat(14), y: CGFloat(4))
+    static let shadowFloat = (colour: Color.black.opacity(0.28),
+                              radius: CGFloat(28), y: CGFloat(10))
 
     // MARK: State
     //
@@ -174,11 +209,20 @@ enum Theme {
 
 /// One elevation, applied the same way everywhere.
 struct Elevated: ViewModifier {
-    var high = false
+    enum Depth { case low, high, float }
+
+    var depth = Depth.low
 
     func body(content: Content) -> some View {
-        let depth = high ? Theme.shadowHigh : Theme.shadowLow
-        return content.shadow(color: depth.colour, radius: depth.radius, y: depth.y)
+        let shadow: (colour: Color, radius: CGFloat, y: CGFloat) = {
+            switch depth {
+            case .low:   return Theme.shadowLow
+            case .high:  return Theme.shadowHigh
+            case .float: return Theme.shadowFloat
+            }
+        }()
+        return content.shadow(color: shadow.colour,
+                              radius: shadow.radius, y: shadow.y)
     }
 }
 

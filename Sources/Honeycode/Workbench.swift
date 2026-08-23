@@ -140,7 +140,8 @@ struct Workbench: View {
             .foregroundStyle(on ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
             .padding(.horizontal, Theme.s4)
             .frame(height: 24)
-            .background(on ? Theme.well : .clear, in: RoundedRectangle(cornerRadius: 7))
+            .background(on ? Theme.well : .clear,
+                        in: RoundedRectangle(cornerRadius: Theme.cornerChip))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

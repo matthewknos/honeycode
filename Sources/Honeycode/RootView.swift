@@ -444,7 +444,8 @@ struct RootView: View {
             .font(.system(size: 11.5, weight: .medium))
             .foregroundStyle(on ? AnyShapeStyle(.primary) : AnyShapeStyle(.tertiary))
             .frame(width: 28, height: 22)
-            .background(on ? Theme.well : .clear, in: RoundedRectangle(cornerRadius: 6))
+            .background(on ? Theme.well : .clear,
+                        in: RoundedRectangle(cornerRadius: Theme.cornerChip))
             .contentShape(Rectangle())
             .onHover { if $0 { railTarget = nil } }
             .onTapGesture { withAnimation(Motion.hover) { mode = value } }
@@ -651,13 +652,16 @@ struct RootView: View {
     @ViewBuilder
     private var pill: some View {
         if modes.count > 1 {
-            HStack(spacing: 2) {
+            HStack(spacing: Theme.s1) {
                 ForEach(modes, id: \.self) { value in
                     segment(value)
                 }
             }
-            .padding(2)
-            .background(Theme.well, in: RoundedRectangle(cornerRadius: 8))
+            .padding(Theme.s1)
+            // Concentric with the segments inside it — see `Theme.corner`.
+            .background(Theme.well,
+                        in: RoundedRectangle(cornerRadius: Theme.corner(
+                            around: Theme.cornerChip, inset: Theme.s1)))
             .padding(.horizontal, Theme.s5)
             .padding(.bottom, Theme.s5)
         }
@@ -682,7 +686,8 @@ struct RootView: View {
             .foregroundStyle(on ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
             .frame(maxWidth: .infinity)
             .frame(height: 22)
-            .background(on ? Theme.surface : .clear, in: RoundedRectangle(cornerRadius: 6))
+            .background(on ? Theme.surface : .clear,
+                        in: RoundedRectangle(cornerRadius: Theme.cornerChip))
             // One elevation vocabulary — see `Theme.shadowLow`. This was a
             // hand-tuned 0.12/1/0.5, which is close enough to the shared value
             // that the difference was invisible and far enough that it was a
@@ -1121,7 +1126,7 @@ struct SessionView: View {
                         resizer(in: geometry.size.width)
                     }
                     Workbench(session: session, workspace: workspace)
-                        .modifier(Elevated(high: true))
+                        .modifier(Elevated(depth: .high))
                         .frame(width: session.browserFull
                                ? nil : clamped(panelWidth, in: geometry.size.width))
                         .frame(maxWidth: session.browserFull ? .infinity : nil)

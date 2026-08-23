@@ -144,9 +144,10 @@ struct CommandPalette: View {
             }
         }
         .frame(width: 520)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Theme.rule, lineWidth: 1))
-        .shadow(color: .black.opacity(0.28), radius: 28, y: 10)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Theme.cornerFloat))
+        .overlay(RoundedRectangle(cornerRadius: Theme.cornerFloat)
+            .strokeBorder(Theme.rule, lineWidth: 1))
+        .modifier(Elevated(depth: .float))
         .onAppear {
             focused = true
             installKeyMonitor()

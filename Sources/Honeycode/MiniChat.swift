@@ -82,9 +82,10 @@ struct MiniChat: View {
         // through the card's, which is unreadable at any level. A material
         // blurs what's behind first, so the page reads as texture and the
         // conversation stays crisp.
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
-        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Theme.rule, lineWidth: 1))
-        .shadow(color: .black.opacity(0.3), radius: 22, y: 8)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Theme.cornerFloat))
+        .overlay(RoundedRectangle(cornerRadius: Theme.cornerFloat)
+            .strokeBorder(Theme.rule, lineWidth: 1))
+        .modifier(Elevated(depth: .float))
         .offset(x: clampedX, y: clampedY)
         .animation(Motion.disclose, value: collapsed)
     }

@@ -851,8 +851,9 @@ private struct BackgroundSettings: View {
                 }
             }
             .frame(height: 232)
-            .clipShape(RoundedRectangle(cornerRadius: 10))
-            .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.rule, lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.cornerCard))
+            .overlay(RoundedRectangle(cornerRadius: Theme.cornerCard)
+                .strokeBorder(Theme.rule, lineWidth: 1))
 
             HStack {
                 Text(store.selected?.name ?? "No background")
@@ -985,9 +986,9 @@ private struct Thumbnail: View {
                 }
                 .frame(height: 84)
                 .frame(maxWidth: .infinity)
-                .clipShape(RoundedRectangle(cornerRadius: 7))
+                .clipShape(RoundedRectangle(cornerRadius: Theme.cornerChip))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 7)
+                    RoundedRectangle(cornerRadius: Theme.cornerChip)
                         .strokeBorder(selected ? Color.accentColor : Theme.rule,
                                       lineWidth: selected ? 2.5 : 1)
                 )

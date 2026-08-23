@@ -118,7 +118,7 @@ private struct ImageAttachment: View {
                     // conversation off screen.
                     .frame(maxWidth: 320 * scale, maxHeight: 240 * scale, alignment: .leading)
             } else {
-                RoundedRectangle(cornerRadius: 8)
+                RoundedRectangle(cornerRadius: Theme.cornerChip)
                     .fill(Theme.well)
                     .frame(width: 160 * scale, height: 100 * scale)
                     .overlay {
@@ -134,8 +134,9 @@ private struct ImageAttachment: View {
                     }
             }
         }
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.rule, lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.cornerChip))
+        .overlay(RoundedRectangle(cornerRadius: Theme.cornerChip)
+            .strokeBorder(Theme.rule, lineWidth: 1))
         .overlay(alignment: .topTrailing) {
             HStack(spacing: Theme.s2) {
                 // A diagram at 320pt is a thumbnail of a diagram. Vectors

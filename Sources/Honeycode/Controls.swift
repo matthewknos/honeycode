@@ -258,7 +258,7 @@ struct SidebarFooterButton: ButtonStyle {
         let filled = selected || hovering || configuration.isPressed
         return configuration.label
             .background(filled ? Theme.well : .clear,
-                        in: RoundedRectangle(cornerRadius: 6))
+                        in: RoundedRectangle(cornerRadius: Theme.cornerChip))
             .animation(Motion.hover, value: hovering)
             .animation(Motion.hover, value: selected)
             .onHover { hovering = $0 }

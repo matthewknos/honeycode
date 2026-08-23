@@ -910,7 +910,7 @@ private struct UserTurn: View {
             // a column that only wants one. Extending the *background* past the
             // measure keeps your words on the same line as the agent's.
             .background(alignment: .center) {
-                RoundedRectangle(cornerRadius: 10)
+                RoundedRectangle(cornerRadius: Theme.cornerCard)
                     .fill(accent.opacity(0.11))
                     .padding(.horizontal, -Theme.s5 * scale)
             }

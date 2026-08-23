@@ -486,7 +486,7 @@ struct CompletionPanel<Content: View>: View {
         VStack(alignment: .leading, spacing: 0) { content }
             .padding(Theme.s2)
             .modifier(RaisedSurface(glass: background.isGlassy, radius: Theme.cornerCard))
-            .shadow(color: .black.opacity(0.16), radius: 14, y: 5)
+            .modifier(Elevated(depth: .high))
     }
 }
 

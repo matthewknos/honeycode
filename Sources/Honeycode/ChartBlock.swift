@@ -442,9 +442,10 @@ private struct ChartCanvas: View {
         }
         .padding(.horizontal, Theme.s4)
         .padding(.vertical, Theme.s3 - 1)
-        .background(Theme.surface, in: RoundedRectangle(cornerRadius: 6))
-        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Theme.rule, lineWidth: 1))
-        .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
+        .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.cornerChip))
+        .overlay(RoundedRectangle(cornerRadius: Theme.cornerChip)
+            .strokeBorder(Theme.rule, lineWidth: 1))
+        .modifier(Elevated(depth: .high))
     }
 
     @ChartContentBuilder

@@ -366,7 +366,8 @@ struct AgentDetail: View {
                 .scrollContentBackground(.hidden)
                 .padding(Theme.s4)
                 .frame(minHeight: 96)
-                .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.cornerField))
+                .background(Theme.surface,
+                            in: RoundedRectangle(cornerRadius: Theme.cornerField))
                 .overlay(RoundedRectangle(cornerRadius: Theme.cornerField)
                     .strokeBorder(Theme.rule, lineWidth: 1))
         }
@@ -413,8 +414,8 @@ struct AgentDetail: View {
                     .padding(.horizontal, Theme.s5)
                     .padding(.vertical, Theme.s3)
                     .background(on ? Theme.surface : .clear,
-                                in: RoundedRectangle(cornerRadius: 7))
-                    .overlay(RoundedRectangle(cornerRadius: 7)
+                                in: RoundedRectangle(cornerRadius: Theme.cornerChip))
+                    .overlay(RoundedRectangle(cornerRadius: Theme.cornerChip)
                         .strokeBorder(on ? account.accent.opacity(0.75) : Theme.rule,
                                       lineWidth: on ? 1.5 : 1))
                     .contentShape(Rectangle())
@@ -432,7 +433,8 @@ struct AgentDetail: View {
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, Theme.s4)
                 .padding(.vertical, Theme.s2)
-                .background(Theme.codeGround, in: RoundedRectangle(cornerRadius: 5))
+                .background(Theme.codeGround,
+                            in: RoundedRectangle(cornerRadius: Theme.cornerChip))
             Button("Choose…") {
                 let panel = NSOpenPanel()
                 panel.canChooseDirectories = true
@@ -494,7 +496,8 @@ struct AgentDetail: View {
                         .foregroundStyle(.secondary)
                         .padding(.horizontal, Theme.s4)
                         .padding(.vertical, Theme.s2)
-                        .background(Theme.codeGround, in: RoundedRectangle(cornerRadius: 5))
+                        .background(Theme.codeGround,
+                                    in: RoundedRectangle(cornerRadius: Theme.cornerChip))
                         .help(path)
                     Button("Choose…") {
                         let panel = NSOpenPanel()
@@ -633,8 +636,9 @@ struct AgentDetail: View {
         }
         .padding(.horizontal, Theme.s4)
         .padding(.vertical, Theme.s2)
-        .background(Theme.surface, in: RoundedRectangle(cornerRadius: 6))
-        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Theme.rule, lineWidth: 1))
+        .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.cornerChip))
+        .overlay(RoundedRectangle(cornerRadius: Theme.cornerChip)
+            .strokeBorder(Theme.rule, lineWidth: 1))
         .contentShape(Rectangle())
     }
 

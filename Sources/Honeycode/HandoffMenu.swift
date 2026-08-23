@@ -219,7 +219,7 @@ private struct HandoffForm: View {
         HStack {
             Text(summary)
                 .font(.system(size: 10.5))
-                .foregroundStyle(.quaternary)
+                .foregroundStyle(.secondary)
                 .lineLimit(1)
             Spacer()
             Button("Ask") { ask() }

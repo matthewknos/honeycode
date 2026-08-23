@@ -180,7 +180,7 @@ struct RelayForm: View {
             Text(instruction.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                  ? "Sent as-is" : "\(source.account.shortTitle) transforms it first")
                 .font(.system(size: 10.5))
-                .foregroundStyle(.quaternary)
+                .foregroundStyle(.secondary)
                 .lineLimit(1)
             Spacer(minLength: Theme.s4)
             Button(chosen.map { "Send to \($0.account.shortTitle)" } ?? "Send") {

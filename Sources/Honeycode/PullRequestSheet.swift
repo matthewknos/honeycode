@@ -213,7 +213,7 @@ struct PullRequestSheet: View {
                     }
                     Image(systemName: "arrow.right")
                         .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(.quaternary)
+                        .foregroundStyle(.tertiary)
                         .padding(.bottom, Theme.s5)
                     field("Into") {
                         TextField("", text: $base)

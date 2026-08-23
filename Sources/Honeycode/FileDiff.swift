@@ -212,7 +212,7 @@ struct FileDiffView: View {
             if superseded {
                 Image(systemName: unfolded ? "chevron.down" : "chevron.right")
                     .font(.system(size: 8, weight: .semibold))
-                    .foregroundStyle(.quaternary)
+                    .foregroundStyle(.tertiary)
                     .frame(width: 8)
             }
             Image(systemName: state.isDeclined ? "slash.circle"
@@ -395,7 +395,7 @@ struct FileDiffView: View {
         Text(number.map(String.init) ?? "")
             .font(.system(size: 10.5, design: .monospaced))
             .monospacedDigit()
-            .foregroundStyle(.quaternary)
+            .foregroundStyle(.tertiary)
             .frame(width: 30, alignment: .trailing)
             .padding(.trailing, 6)
     }

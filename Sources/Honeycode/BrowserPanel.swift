@@ -434,7 +434,7 @@ struct BrowserPanel: View {
                         .controlSize(.small)
                     Text("No dev server detected yet")
                         .font(.system(size: 11))
-                        .foregroundStyle(.quaternary)
+                        .foregroundStyle(.secondary)
                     // A manual re-read, for when a server was announced in a
                     // turn that finished before this feature existed — or in
                     // any shape the pattern didn't catch.

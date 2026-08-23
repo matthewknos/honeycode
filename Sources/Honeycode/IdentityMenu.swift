@@ -93,7 +93,7 @@ struct IdentityMenu: View {
                 Spacer(minLength: 0)
                 Image(systemName: "chevron.up.chevron.down")
                     .font(.system(size: 8, weight: .semibold))
-                    .foregroundStyle(.quaternary)
+                    .foregroundStyle(.tertiary)
             }
         }
         .padding(.horizontal, compact ? 0 : Theme.s4)

@@ -137,7 +137,7 @@ struct CrewPane: View {
                 }
                 Text(modelSummary(account))
                     .font(Theme.monoSmall)
-                    .foregroundStyle(.quaternary)
+                    .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
@@ -164,7 +164,7 @@ struct CrewPane: View {
                 }
                 Text(open == 1 ? "1 session" : "\(open) sessions")
                     .font(Theme.label)
-                    .foregroundStyle(.quaternary)
+                    .foregroundStyle(.secondary)
             }
         }
         .padding(.horizontal, Theme.s5)

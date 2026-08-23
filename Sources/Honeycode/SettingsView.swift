@@ -481,7 +481,7 @@ private struct SkillEditor: View {
                 // fixed at creation and isn't otherwise visible.
                 Text("/\(skill.slug)")
                     .font(Theme.monoSmall)
-                    .foregroundStyle(.quaternary)
+                    .foregroundStyle(.secondary)
                 Spacer()
                 Button("Cancel") { dismiss() }
                 Button("Save") {

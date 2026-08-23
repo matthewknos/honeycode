@@ -575,7 +575,7 @@ struct ComposerView: View {
                     HStack(spacing: Theme.s3) {
                         Image(systemName: "arrow.up.to.line")
                             .font(.system(size: 8.5, weight: .semibold))
-                            .foregroundStyle(.quaternary)
+                            .foregroundStyle(.tertiary)
                         Text(text)
                             .font(.system(size: 11.5))
                             .foregroundStyle(.tertiary)
@@ -676,7 +676,7 @@ struct ComposerView: View {
             if let subtitle {
                 Text(subtitle)
                     .font(.system(size: 11))
-                    .foregroundStyle(.quaternary)
+                    .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .padding(.leading, Theme.s4)

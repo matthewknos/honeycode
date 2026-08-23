@@ -90,7 +90,7 @@ struct StartPane<Composer: View>: View {
                     Text(state.account.shortTitle)
                         .font(Theme.label)
                         .foregroundStyle(state.isReady ? AnyShapeStyle(.secondary)
-                                                       : AnyShapeStyle(.quaternary))
+                                                       : AnyShapeStyle(.tertiary))
                     if !state.isReady {
                         Text(state.summary)
                             .font(Theme.label)

@@ -589,7 +589,7 @@ struct RootView: View {
                         Spacer(minLength: 0)
                         Text("⌘,")
                             .font(.system(size: 11))
-                            .foregroundStyle(.quaternary)
+                            .foregroundStyle(.secondary)
                     }
                 }
                 .padding(.horizontal, expanded ? Theme.s4 : 0)

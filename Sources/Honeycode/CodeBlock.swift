@@ -247,7 +247,7 @@ struct CodeBlock: View {
         HStack(spacing: 6) {
             Image(systemName: "chevron.left.forwardslash.chevron.right")
                 .font(.system(size: 9.5))
-                .foregroundStyle(.quaternary)
+                .foregroundStyle(.tertiary)
             Text(language.isEmpty ? "text" : language)
                 .font(.system(size: 10.5, weight: .medium))
                 .foregroundStyle(.tertiary)
@@ -310,7 +310,7 @@ struct CodeBlock: View {
                     Text("\(index + 1)")
                         .font(.system(size: 10.5 * scale, design: .monospaced))
                         .monospacedDigit()
-                        .foregroundStyle(.quaternary)
+                        .foregroundStyle(.tertiary)
                         .frame(width: gutterWidth, alignment: .trailing)
                         .padding(.trailing, 8)
                     text(for: line, at: index)

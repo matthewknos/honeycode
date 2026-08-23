@@ -109,7 +109,7 @@ struct ModelPicker: View {
             // letting it look like it applied to the turn already running.
             Text("Applies from your next message.")
                 .font(.system(size: 10.5))
-                .foregroundStyle(.quaternary)
+                .foregroundStyle(.secondary)
                 .padding(.horizontal, Theme.s5)
                 .padding(.top, Theme.s4)
                 .padding(.bottom, Theme.s2)

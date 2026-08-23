@@ -243,7 +243,7 @@ struct CommandPalette: View {
                     Spacer(minLength: Theme.s4)
                     Text(session.account.title)
                         .font(.system(size: 10.5, weight: .medium))
-                        .foregroundStyle(.quaternary)
+                        .foregroundStyle(.secondary)
                 }
                 // The matched line, so you can tell which of four hits is the
                 // one you meant without opening all four.

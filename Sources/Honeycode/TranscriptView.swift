@@ -742,7 +742,7 @@ extension TranscriptView {
             if let sentAt, hovered {
                 Text(Self.relative.localizedString(for: sentAt, relativeTo: Date()))
                     .font(.system(size: 9.5))
-                    .foregroundStyle(.quaternary)
+                    .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .fixedSize()
                     .help(Self.absolute.string(from: sentAt))
@@ -1304,7 +1304,7 @@ struct Cluster: View, Equatable {
             HStack(spacing: Theme.s3) {
                 Image(systemName: "chevron.down")
                     .font(.system(size: 8, weight: .semibold))
-                    .foregroundStyle(.quaternary)
+                    .foregroundStyle(.tertiary)
                     .rotationEffect(.degrees(expanded ? 0 : -90))
                 Text(summary)
                     .font(Theme.label)

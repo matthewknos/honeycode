@@ -303,7 +303,7 @@ private struct ChangesTab: View {
                     if change.edits.count > 1 {
                         Text("\(change.edits.count) edits")
                             .font(Theme.label)
-                            .foregroundStyle(.quaternary)
+                            .foregroundStyle(.secondary)
                     }
                     Spacer(minLength: Theme.s4)
                     HStack(spacing: Theme.s3) {
@@ -395,7 +395,7 @@ private struct DirectoryRows: View {
             if truncated > 0 {
                 Text("+\(truncated) more")
                     .font(Theme.label)
-                    .foregroundStyle(.quaternary)
+                    .foregroundStyle(.secondary)
                     .padding(.leading, indent(for: depth) + Theme.s6)
                     .padding(.vertical, Theme.s2)
             }

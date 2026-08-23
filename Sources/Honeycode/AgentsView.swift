@@ -56,7 +56,7 @@ struct AgentList: View {
             if let count, count > 1 {
                 Text("\(count)")
                     .font(.system(size: 11))
-                    .foregroundStyle(.quaternary)
+                    .foregroundStyle(.secondary)
             }
         }
         .padding(.trailing, Theme.s1)
@@ -131,7 +131,7 @@ private struct AgentRow: View {
                 } else if !agent.schedule.shortTitle.isEmpty {
                     Text(agent.schedule.shortTitle)
                         .font(.system(size: 11))
-                        .foregroundStyle(.quaternary)
+                        .foregroundStyle(.secondary)
                         .opacity(hovering ? 0 : 1)
                 }
                 moreButton
@@ -580,7 +580,7 @@ struct AgentDetail: View {
                 if !runs.isEmpty {
                     Text("keeping the last \(AgentStore.runsKept)")
                         .font(.system(size: 11))
-                        .foregroundStyle(.quaternary)
+                        .foregroundStyle(.secondary)
                 }
             }
             .padding(.bottom, Theme.s3)
@@ -702,7 +702,7 @@ private struct RunRow: View {
                 Spacer(minLength: Theme.s4)
                 Image(systemName: "chevron.right")
                     .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(.quaternary)
+                    .foregroundStyle(.tertiary)
             }
             .padding(.horizontal, Theme.s3)
             .padding(.vertical, Theme.s4)

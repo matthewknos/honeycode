@@ -403,7 +403,7 @@ struct MentionList: View {
             Spacer(minLength: 0)
             Text("helps with this")
                 .font(.system(size: 10.5))
-                .foregroundStyle(.quaternary)
+                .foregroundStyle(.secondary)
         }
         .padding(.horizontal, Theme.s4)
         .padding(.vertical, Theme.s3 - 1)
@@ -432,7 +432,7 @@ struct MentionList: View {
             Spacer(minLength: Theme.s4)
             Text(":" + value.value)
                 .font(Theme.monoSmall)
-                .foregroundStyle(.quaternary)
+                .foregroundStyle(.secondary)
                 .lineLimit(1)
         }
         .padding(.horizontal, Theme.s4)

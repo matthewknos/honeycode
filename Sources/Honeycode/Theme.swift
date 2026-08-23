@@ -200,6 +200,33 @@ enum Theme {
     static let shadowFloat = (colour: Color.black.opacity(0.28),
                               radius: CGFloat(28), y: CGFloat(10))
 
+    // MARK: How faint anything is allowed to be
+    //
+    // The app leans on SwiftUI's hierarchy styles — `.secondary`, `.tertiary`,
+    // `.quaternary` — and those were never checked against the standard this
+    // file already applies to colour. `systemGreen` was called a legibility bug
+    // here at about 1.8:1. `.quaternary` is roughly 10% of the label colour,
+    // which on `canvas` lands near 1.2:1 — a tier *below* the thing already
+    // called a bug — and it was carrying real content at forty sites: a seat's
+    // model list, a session count, a slug shown precisely because it "isn't
+    // otherwise visible".
+    //
+    // So there is a floor, and it is stated rather than felt:
+    //
+    // - **`.secondary`** is where text bottoms out. Anything that is the only
+    //   place a piece of information appears is at least this.
+    // - **`.tertiary`** is for text that recedes on purpose and is not the only
+    //   copy of anything — a diff's line-number gutter, a completed to-do, an
+    //   8pt disclosure chevron — and for small glyphs that are affordances
+    //   rather than content.
+    // - **`.quaternary` is never text.** Separators, disabled controls, a large
+    //   empty-state symbol, a background fill. Things whose job is to be nearly
+    //   invisible, where being nearly invisible is not a failure.
+    //
+    // `.tertiary` is around 1.9:1 and is a floor rather than a comfortable
+    // place to sit; the reason it is still allowed is that everything using it
+    // is either duplicated elsewhere on screen or is not a word.
+
     // MARK: State
     //
     // Kept apart from the account tints below, and this separation is the whole

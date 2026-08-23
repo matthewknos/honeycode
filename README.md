@@ -322,15 +322,39 @@ and switches from there.
 $ ai
 ai  0.1  ·  ~/proj
   @claude-p  @claude-w  @kimi
-  the first one named leads · tab completes · /help
 
-> a landing page for a dentist @claude-p @kimi
+  Getting started:
+
+  ✓  claude-p, claude-w and kimi are ready
+  ·  copilot is not installed — /accounts
+     Name several in one message and the first one leads
+     Tab completes handles, models and paths
+
+╭────────────────────────────────────────────────────────────╮
+│ > a landing page for a dentist @claude-p @kimi             │
+╰────────────────────────────────────────────────────────────╯
+  tab completes · ↑ for history · /help
 ```
 
 The same engine, no window. It opens on the accounts you actually have — that
 list is detected the first time `ai` runs on a machine, so a fresh Mac is not
 offered three subscriptions it has no CLI for, and a Mac with none is told what
 to install rather than left to find out one failed mention at a time.
+
+The **getting-started list ticks off what is already true**, which is the half
+that makes it worth printing: four tips are a thing you skip, and four tips that
+have noticed which two you have already done are about this machine.
+`Diagnostic.readiness` has always known; it used to only complain. It appears on
+a first run and after that only when something is genuinely waiting.
+
+The prompt is a **box** rather than a character, with the hint underneath where
+it stays instead of scrolling away. On submit the frame comes down and the line
+goes into the transcript as a plain `> …` — a box is somewhere to type, not
+something to keep. Below about 34 columns it degrades to a bare prompt.
+
+A slash command's answer hangs off it with `└`, so an answer looks like an
+answer rather than like more transcript. The window title tracks what is
+running, which is how you tell which of four terminals has agents in it.
 
 **Tab completes the things you can't guess.** Handles, the `:model` and
 `:effort` qualifiers behind them, slash commands, and file paths in the folder

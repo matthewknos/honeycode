@@ -22,6 +22,21 @@ enum Terminal {
         FileHandle.standardOutput.write(Data(text.utf8))
     }
 
+    /// What the window calls itself.
+    ///
+    /// Worth one escape sequence: with four terminals open, the one running a
+    /// crew is otherwise indistinguishable from the three that aren't. Set
+    /// while work is happening and set back when it stops, so the tab says what
+    /// it is doing rather than what it was started as.
+    ///
+    /// Nothing restores this on exit, because there is no sequence that means
+    /// "whatever it was before" — every shell rewrites the title at its next
+    /// prompt, which is a second later and is the only correct answer anyway.
+    static func title(_ text: String) {
+        guard isInteractive else { return }
+        emit("\u{1B}]0;\(text)\u{07}")
+    }
+
     // MARK: - Raw mode
 
     nonisolated(unsafe) private static var saved: termios?

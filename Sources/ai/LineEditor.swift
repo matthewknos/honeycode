@@ -82,12 +82,12 @@ final class LineEditor {
                 guard buffer.isEmpty else {
                     buffer = []; cursor = 0; offset = 0; draw(); break
                 }
-                Terminal.emit("\n")
+                clearPrompt()
                 Console.markFresh()
                 return .interrupted
             case 0x04:
                 guard buffer.isEmpty else { deleteForward(); break }
-                Terminal.emit("\n")
+                clearPrompt()
                 Console.markFresh()
                 return .endOfInput
             case 0x09:
@@ -104,7 +104,9 @@ final class LineEditor {
             case 0x0B: buffer.removeSubrange(cursor..<buffer.count); draw()
             case 0x15: buffer.removeSubrange(0..<cursor); cursor = 0; draw()
             case 0x17: deleteWordBack()
-            case 0x0C: Terminal.emit("\u{1B}[2J\u{1B}[H"); draw()
+            // The screen goes, and with it the block whose position every
+            // movement in `draw` is measured from.
+            case 0x0C: Terminal.emit("\u{1B}[2J\u{1B}[H"); blockUp = false; draw()
             case 0x1B: escape()
             default:
                 // Anything else below space is a control key nothing here binds.
@@ -114,18 +116,20 @@ final class LineEditor {
                 insert(character(startingWith: byte))
             }
         }
-        Terminal.emit("\n")
+        clearPrompt()
         Console.markFresh()
         return .endOfInput
     }
 
     private func submit() -> Outcome {
         let text = String(buffer)
-        // Redrawn in full rather than left as the scrolled window: this line
-        // stops being an editor and becomes a line of the transcript, and a
+        // The frame comes down and the line goes into the transcript as a plain
+        // one. A box is a place to type, not a thing to keep — and the line is
+        // rewritten in full rather than left as the scrolled window, because a
         // transcript that says `…ge for a dentist @kimi` is a worse record than
         // one that wraps.
-        Terminal.emit("\r\u{1B}[K" + prompt + text + "\n")
+        clearPrompt()
+        Terminal.emit(prompt + text + "\n")
         Console.markFresh()
         history.add(text)
         return .line(text)
@@ -304,9 +308,9 @@ final class LineEditor {
             rows.append("… and \(candidates.count - shown.count) more")
         }
 
-        // Straight over the prompt line: the prompt is redrawn underneath, so
-        // the list reads as having appeared above where you are typing.
-        Terminal.emit("\r\u{1B}[K")
+        // Straight over the prompt: it is redrawn underneath, so the list reads
+        // as having appeared above where you are typing.
+        clearPrompt()
         for line in rows {
             Terminal.emit(Console.dim("  " + line.trimmingCharacters(in: .whitespaces)) + "\n")
         }
@@ -315,28 +319,104 @@ final class LineEditor {
 
     // MARK: - Drawing
 
-    /// The whole line, every keystroke.
-    ///
-    /// Redrawing beats patching. The alternative is working out which cells
-    /// changed and moving the cursor to each, which is a great deal of
-    /// arithmetic to save writing eighty bytes to a file descriptor — and every
-    /// bug in it looks like the terminal is haunted.
-    private func draw() {
-        let room = max(20, Terminal.columns - promptWidth - 1)
+    /// Whether the block is on screen. When it is, the cursor is on its input
+    /// line — that is the only place a draw ever leaves it, and every movement
+    /// below counts from there.
+    private var blockUp = false
 
-        // Scroll only as far as the cursor demands, and give the room back when
-        // the line shrinks — otherwise deleting from a long line leaves the
-        // window stuck out to the right of the text still in it.
+    /// Lines the block occupies: top rule, input, bottom rule, hint.
+    private static let blockHeight = 4
+
+    /// Below this there isn't room to spend four characters on borders, so the
+    /// prompt goes back to being a prompt.
+    private var boxed: Bool { Terminal.columns >= 34 }
+
+    private static let hint = "tab completes · ↑ for history · /help"
+
+    private func draw() {
+        boxed ? drawBlock() : drawBare()
+    }
+
+    /// The prompt as a place rather than a character.
+    ///
+    /// Four lines, redrawn whole on every keystroke, with the caret parked on
+    /// the second one. Redrawing whole beats patching: the alternative is
+    /// working out which cells changed and moving to each, which is a great
+    /// deal of arithmetic to save writing a couple of hundred bytes to a file
+    /// descriptor — and every bug in it looks like the terminal is haunted.
+    ///
+    /// Nothing here writes a newline after the last line. At the bottom of a
+    /// window that would scroll the screen, and everything below counts rows
+    /// relative to where it thinks it is.
+    private func drawBlock() {
+        let width = Terminal.columns
+        let room = max(8, width - 4 - promptWidth)
+        slide(room: room)
+
+        let end = min(buffer.count, offset + room)
+        let visible = String(buffer[offset..<end])
+        let pad = String(repeating: " ", count: max(0, room - (end - offset)))
+        let rule = String(repeating: "─", count: max(0, width - 2))
+        let edge = Console.dim("│")
+
+        // Up to the top rule from wherever the last draw left the caret.
+        var out = blockUp ? "\u{1B}[1A\r" : "\r"
+        out += "\u{1B}[2K" + Console.dim("╭" + rule + "╮") + "\n"
+        out += "\u{1B}[2K" + edge + " " + prompt + visible + pad + " " + edge + "\n"
+        out += "\u{1B}[2K" + Console.dim("╰" + rule + "╯") + "\n"
+        out += "\u{1B}[2K" + Console.hint("  " + Console.fit(Self.hint, to: width - 2))
+
+        // Back into the input line, at the caret. Two for the border and the
+        // space inside it, then the prompt, then however far along you are.
+        out += "\u{1B}[2A\r\u{1B}[\(2 + promptWidth + cursor - offset)C"
+        Terminal.emit(out)
+        blockUp = true
+    }
+
+    /// One line, for a window too narrow to frame.
+    private func drawBare() {
+        let room = max(20, Terminal.columns - promptWidth - 1)
+        slide(room: room)
+        let end = min(buffer.count, offset + room)
+        var out = "\r\u{1B}[2K" + prompt + String(buffer[offset..<end]) + "\r"
+        let column = promptWidth + (cursor - offset)
+        if column > 0 { out += "\u{1B}[\(column)C" }
+        Terminal.emit(out)
+        blockUp = false
+    }
+
+    /// Keep the caret in view, and give the room back when the line shrinks —
+    /// otherwise deleting from a long line leaves the window stuck out to the
+    /// right of the text still in it.
+    private func slide(room: Int) {
         if cursor < offset { offset = cursor }
         if cursor - offset > room { offset = cursor - room }
         if buffer.count - offset < room { offset = max(0, buffer.count - room) }
         if cursor < offset { offset = cursor }
+    }
 
-        let end = min(buffer.count, offset + room)
-        let visible = String(buffer[offset..<end])
-        var out = "\r\u{1B}[K" + prompt + visible + "\r"
-        let column = promptWidth + (cursor - offset)
-        if column > 0 { out += "\u{1B}[\(column)C" }
+    /// Take whatever is drawn off the screen, leaving the caret at column zero
+    /// of the line the prompt began on — the one place from which something
+    /// permanent can be written.
+    private func clearPrompt() {
+        if blockUp { takeDown() } else { Terminal.emit("\r\u{1B}[2K") }
+    }
+
+    /// Wipe the block and leave the caret where its first line was, so
+    /// something permanent can be written there instead.
+    ///
+    /// Erasing downwards and walking back rather than printing newlines: a
+    /// newline on the last row of a window scrolls it, and every movement here
+    /// is relative to a row this thinks it knows.
+    private func takeDown() {
+        guard blockUp else { return }
+        var out = "\u{1B}[1A\r"
+        for step in 0..<Self.blockHeight {
+            out += "\u{1B}[2K"
+            if step < Self.blockHeight - 1 { out += "\u{1B}[1B" }
+        }
+        out += "\u{1B}[\(Self.blockHeight - 1)A\r"
         Terminal.emit(out)
+        blockUp = false
     }
 }

@@ -36,7 +36,8 @@ final class Program {
 
     init(directory: URL) {
         self.directory = directory
-        self.crew = Crew(directory: directory, reporter: ConsoleReporter())
+        self.crew = Crew(directory: directory,
+                         reporter: ConsoleReporter(title: Program.title(directory)))
         self.editor = LineEditor(directory: directory)
         crew.onIdle = { [weak self] in self?.prompt() }
     }
@@ -92,21 +93,78 @@ final class Program {
         Describe.run(crew) { exit(0) }
     }
 
+    /// What the window calls itself while this is running.
+    static func title(_ directory: URL) -> String {
+        "ai · " + (directory.lastPathComponent.isEmpty ? directory.path
+                                                       : directory.lastPathComponent)
+    }
+
     func run() {
         begin()
+        Terminal.title(Program.title(directory))
 
         Console.line()
         Console.line(Console.paint("ai", "244", bold: true)
                      + Console.dim("  \(version)  ·  ")
                      + Console.dim(Console.fit(directory.path, to: Console.width - 14)))
-        if ready(orExplain: true) {
-            let roster = Account.enabled
-                .map { Console.paint("@" + AgentMention.handle($0), Console.tint($0)) }
-                .joined(separator: "  ")
-            Console.line("  " + roster)
-            Console.line(Console.dim("  the first one named leads · tab completes · /help"))
-        }
+        guard ready(orExplain: true) else { return prompt() }
+
+        let roster = Account.enabled
+            .map { Console.paint("@" + AgentMention.handle($0), Console.tint($0)) }
+            .joined(separator: "  ")
+        Console.line("  " + roster)
+        // The line that used to sit here said `tab completes · /help`, which is
+        // now under the prompt where it stays rather than scrolling away.
+        gettingStarted(Diagnostic.readiness())
         prompt()
+    }
+
+    /// What to do next, with what is already done ticked off.
+    ///
+    /// The idea is Claude Code's, and the half that makes it work is the tick:
+    /// a list of four tips is a thing you skip, and a list that has noticed
+    /// which two of them you have already done is a list about *this* machine.
+    /// `Diagnostic.readiness` has had the answer all along and only ever used
+    /// it to complain.
+    ///
+    /// Shown on a first run, and after that only when something is actually
+    /// waiting. Somebody whose four accounts all work does not need to be told
+    /// so every time they open a terminal.
+    private func gettingStarted(_ roster: [AccountReadiness]) {
+        let waiting = roster.filter { !$0.isReady }
+        let greeted = Prefs.store.bool(forKey: Program.greetedKey)
+        guard !greeted || !waiting.isEmpty else { return }
+        Prefs.store.set(true, forKey: Program.greetedKey)
+
+        Console.line()
+        Console.line(Console.hint("  Getting started:"))
+        Console.line()
+
+        let ready = roster.filter(\.isReady).map { AgentMention.handle($0.account) }
+        if !ready.isEmpty {
+            step("✓", names(ready) + (ready.count == 1 ? " is ready" : " are ready"))
+        }
+        // Three at most. Past that it is the same list `/accounts` prints, and
+        // this is a greeting rather than a report.
+        for state in waiting.prefix(3) {
+            step("·", AgentMention.handle(state.account) + " is " + state.summary
+                    + " — /accounts")
+        }
+        step(" ", "Name several in one message and the first one leads")
+        step(" ", "Tab completes handles, models and paths")
+    }
+
+    private static let greetedKey = "ai.greeted"
+
+    private func step(_ mark: String, _ text: String) {
+        let symbol = mark == "✓" ? Console.paint(mark, "71") : Console.dim(mark)
+        Console.line("  " + symbol + "  " + Console.hint(text))
+    }
+
+    /// `claude-p, claude-w and kimi`.
+    private func names(_ list: [String]) -> String {
+        guard list.count > 1, let last = list.last else { return list.first ?? "" }
+        return list.dropLast().joined(separator: ", ") + " and " + last
     }
 
     /// Whether there is anybody to talk to, and what to do about it if not.
@@ -133,7 +191,10 @@ final class Program {
         Console.line()
         let all = Diagnostic.readinessOfAll()
         let width = column(of: all)
-        for state in all { report(state, indent: "  ", column: width) }
+        // No connector: nothing asked for this. It is what the program says
+        // when it opens and finds it has nothing to work with.
+        let answer = Answer(indent: "", connector: false)
+        for state in all { report(state, into: answer, column: width) }
         Console.line()
         Console.line(Console.dim("  ./tools/doctor.sh checks the same things in more detail."))
         return false
@@ -146,22 +207,20 @@ final class Program {
     ///   summaries line up. Four accounts whose states each start at a
     ///   different column is a list you have to read rather than scan, and
     ///   scanning it is the entire reason it is printed.
-    private func report(_ state: AccountReadiness, indent: String, column: Int) {
+    private func report(_ state: AccountReadiness, into answer: Answer, column: Int) {
         let handle = "@" + AgentMention.handle(state.account)
         let name = Console.paint(handle, Console.tint(state.account), bold: true)
         let mark = state.isReady ? "✓" : "·"
         let off = state.account.isEnabled ? "" : "  (switched off)"
         let pad = String(repeating: " ", count: max(0, column - handle.count))
-        Console.line(indent + mark + " " + name + pad
-                     + Console.dim("  " + state.summary + off))
+        answer.line(mark + " " + name + pad + Console.dim("  " + state.summary + off))
         // Wrapped rather than cut. A remedy is the one line here somebody is
         // going to act on — `npx comes with Node.js…` runs to about a hundred
         // and thirty characters — and half of an instruction is worse than a
         // second line of one.
         guard let remedy = state.remedy else { return }
-        for text in Console.wrap(remedy, to: Console.width - indent.count - 4,
-                                 indent: indent + "    ") {
-            Console.line(Console.dim(text))
+        for text in Console.wrap(remedy, to: Console.width - 12, indent: "   ") {
+            answer.line(Console.dim(text))
         }
     }
 
@@ -226,7 +285,7 @@ final class Program {
             prompt()
         case "cwd":
             Console.line()
-            Console.line("  " + directory.path)
+            Answer().line(directory.path)
             prompt()
         case "clear":
             Console.write("\u{1B}[2J\u{1B}[H")
@@ -254,7 +313,8 @@ final class Program {
                 guard let self else { return }
                 Console.line()
                 let width = self.column(of: roster)
-                for state in roster { self.report(state, indent: "  ", column: width) }
+                let answer = Answer()
+                for state in roster { self.report(state, into: answer, column: width) }
                 finish()
             }
         }
@@ -269,16 +329,20 @@ final class Program {
     private func cost() {
         let store = UsageStore.shared
         let cap = store.monthlyCap
+        let answer = Answer()
         var total = 0.0
         Console.line()
+        let column = Account.enabled
+            .map { AgentMention.handle($0).count + 1 }.max() ?? 0
         for account in Account.enabled {
             let spent = store.monthlySpend[account] ?? 0
             total += spent
-            let name = Console.paint("@" + AgentMention.handle(account),
-                                     Console.tint(account), bold: true)
-            Console.line("  " + name + Console.dim(String(format: "  $%.2f", spent)))
+            let handle = "@" + AgentMention.handle(account)
+            let name = Console.paint(handle, Console.tint(account), bold: true)
+            let pad = String(repeating: " ", count: max(0, column - handle.count))
+            answer.line(name + pad + Console.dim(String(format: "  $%.2f", spent)))
         }
-        Console.line(Console.dim(String(format: "  this month  $%.2f of $%.2f", total, cap)))
+        answer.line(Console.dim(String(format: "this month  $%.2f of $%.2f", total, cap)))
     }
 
     /// `/models` for the line-up, `/models copilot` for everything that
@@ -309,9 +373,10 @@ final class Program {
             let account = queue.removeFirst()
             self.crew.catalogue(for: account) { models, current in
                 Console.line()
-                Console.line(Console.paint("@" + AgentMention.handle(account),
-                                           Console.tint(account), bold: true)
-                             + Console.dim("  \(models.count) available"))
+                let answer = Answer()
+                answer.line(Console.paint("@" + AgentMention.handle(account),
+                                          Console.tint(account), bold: true)
+                            + Console.dim("  \(models.count) available"))
                 // The whole list only when asked for one account. Four accounts
                 // at twenty models each is a page you have to scroll past to
                 // get back to the prompt.
@@ -320,11 +385,11 @@ final class Program {
                     : models
                 let column = shown.map(\.title.count).max() ?? 0
                 for model in shown {
-                    Console.line(ModelPick.describe(model, current: model.id == current,
-                                                    column: column))
+                    answer.line(ModelPick.describe(model, current: model.id == current,
+                                                   column: column))
                 }
                 if argument.isEmpty && models.count > 1 {
-                    Console.line(Console.dim("    /models \(AgentMention.handle(account)) for the rest"))
+                    answer.line(Console.hint("/models \(AgentMention.handle(account)) for the rest"))
                 }
                 next()
             }

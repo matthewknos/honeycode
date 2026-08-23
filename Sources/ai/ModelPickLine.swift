@@ -27,7 +27,9 @@ extension ModelPick {
         // The id is the one part that can be given up. On a narrow window it is
         // also the longest thing on the line, and the title beside it already
         // says which model this is.
-        let id = Console.fit(model.id, to: max(8, Console.width - width - 11))
-        return "  \(mark) \(name)\(price.padding(toLength: 7, withPad: " ", startingAt: 0))\(Console.dim(id))"
+        // 13 is what `Answer` and this line put in front of the id: four of
+        // indent, the mark and its space, and seven of price column.
+        let id = Console.fit(model.id, to: max(8, Console.width - width - 13))
+        return "\(mark) \(name)\(price.padding(toLength: 7, withPad: " ", startingAt: 0))\(Console.dim(id))"
     }
 }

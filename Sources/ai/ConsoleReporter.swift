@@ -12,6 +12,13 @@ final class ConsoleReporter: CrewReporter {
     private let progress = Progress()
     private var streamer: Streamer?
 
+    /// What the window says when nothing is running.
+    private let idleTitle: String
+
+    init(title: String) {
+        self.idleTitle = title
+    }
+
     // MARK: Asides
 
     func status(_ text: String) {
@@ -80,7 +87,14 @@ final class ConsoleReporter: CrewReporter {
     }
 
     func working(_ delegates: [(seat: Seat, session: Session)]) {
-        guard !delegates.isEmpty else { progress.end(); return }
+        guard !delegates.isEmpty else {
+            progress.end()
+            Terminal.title(idleTitle)
+            return
+        }
+        // The one thing worth knowing from outside the window: which of the
+        // four terminals you have open is the one with agents in it.
+        Terminal.title("ai · " + delegates.map(\.seat.handle).joined(separator: " "))
         progress.begin(delegates.map { ($0.seat, $0.session) })
     }
 
@@ -115,6 +129,7 @@ final class ConsoleReporter: CrewReporter {
     /// stopped it; this is the one that doesn't have to be checked for.
     func finished(seconds: Int, spend: String) {
         progress.end()
+        Terminal.title(idleTitle)
         Console.breakLine()
         Console.status("\(seconds)s · " + spend)
     }

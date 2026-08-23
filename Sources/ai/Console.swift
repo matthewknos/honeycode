@@ -45,6 +45,18 @@ enum Console {
         colour ? "\u{1B}[2m\(text)\u{1B}[0m" : text
     }
 
+    /// Dim *and* italic, for the handful of lines that are instructions about
+    /// the program rather than output from it — the hint under the prompt, the
+    /// tips on a first run.
+    ///
+    /// A third weight rather than a fifth colour. Colour here means *who*, and
+    /// has meant that since the tints were matched to the app's account
+    /// accents; spending one on "this is a hint" would be spending it on the
+    /// one thing that isn't an account.
+    static func hint(_ text: String) -> String {
+        colour ? "\u{1B}[2;3m\(text)\u{1B}[0m" : text
+    }
+
     // MARK: Writing
 
     /// Whether the cursor is mid-line. Everything that wants to start on a

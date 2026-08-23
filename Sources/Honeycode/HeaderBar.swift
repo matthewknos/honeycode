@@ -61,7 +61,18 @@ struct HeaderBar: View {
     /// Width, and then whether a crew is a thing in this app at all. The Team
     /// control's only purpose is naming other accounts to run with; with Crew
     /// switched off there is nothing on the other side of it.
-    private var showsTeam: Bool { available >= 420 && Features.isOn(.crew) }
+    ///
+    /// The width is `Workspace.minColumnWidth` rather than a number of its own,
+    /// and that is the point. It was 420 against a column floor of 400, so the
+    /// chips — the thing this bar sheds *last*, because nothing else can edit a
+    /// team — were the only thing it shed in the case that matters most: three
+    /// conversations side by side, which is exactly when you want to put a crew
+    /// on one of them. Tying it to the floor is what stops the two drifting
+    /// apart again. The other two breakpoints are the bar's own measurements
+    /// and stay numbers.
+    private var showsTeam: Bool {
+        available >= Workspace.minColumnWidth && Features.isOn(.crew)
+    }
 
     var body: some View {
         HStack(spacing: Theme.s4) {

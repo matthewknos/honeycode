@@ -1955,6 +1955,10 @@ final class Workspace: ObservableObject {
     /// wants a window around 1600pt; the layout works out how many actually
     /// fit and shows that many, so this is the ceiling rather than the count.
     static let maxColumns = 3
+    /// Also the width at which a header bar keeps its crew chips, so that the
+    /// narrowest column the layout will ever produce still has the one control
+    /// that can edit a team. Raise this and that follows; it reads the constant
+    /// rather than carrying a copy.
     static let minColumnWidth: CGFloat = 400
 
     var columnSessions: [Session] { columns.compactMap { id in sessions.first { $0.id == id } } }

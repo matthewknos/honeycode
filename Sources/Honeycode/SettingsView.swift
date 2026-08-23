@@ -714,6 +714,30 @@ private struct ShortcutSettings: View {
                 Text("Sessions")
             }
 
+            // Built from `Account.enabled` rather than written out, for the
+            // same reason the transcript modes below are built from
+            // `allCases`: a list of shortcuts maintained by hand is a list
+            // that goes quietly out of date, which is the failure this whole
+            // file exists to prevent. Switching an account off in Accounts
+            // takes its row with it, because the key stops doing anything.
+            Section {
+                ForEach(Account.enabled.filter { $0.shortcut != nil }) { account in
+                    LabeledContent(account.title) {
+                        Text("⌘\(account.shortcut?.character.description ?? "")")
+                            .font(Self.keyCap)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            } header: {
+                Text("Focus an account")
+            } footer: {
+                Text("Selects the session you last had open on that account, "
+                     + "and does nothing if you have none. An account you added "
+                     + "yourself gets no key: the number would depend on the "
+                     + "order things were added, so it would mean different "
+                     + "accounts on two Macs.")
+            }
+
             Section {
                 ForEach(Shortcuts.columns) { shortcut in
                     LabeledContent(shortcut.title) {

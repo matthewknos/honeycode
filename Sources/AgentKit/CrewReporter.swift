@@ -11,6 +11,20 @@ struct CrewAssignment: Equatable {
     /// "four ways" and mean it.
     let to: Seat
     let task: String
+    /// The files this piece is going to write, as the lead declared them.
+    ///
+    /// Empty means the lead didn't say, not that the piece writes nothing —
+    /// every check that reads this falls back to `Crew.namedFiles`, which is a
+    /// regex over the prose and is what all of them used to do.
+    ///
+    /// The regex cannot tell "write this" from "read this", and three separate
+    /// checks rested on it: the overlap warning had to be worded as *"named in
+    /// more than one piece"* and reported as a note rather than a fault;
+    /// `Crew.outstanding` computed exactly the right signal and explicitly
+    /// refused to act on it; `alreadyDone` guessed. One field the lead already
+    /// knows the answer to turns all three into facts, for about ten tokens a
+    /// piece.
+    var writes: [String] = []
     /// The part of the job every piece shares, written once by the lead and
     /// prepended to each task on the way out.
     ///
@@ -34,9 +48,22 @@ struct CrewAssignment: Equatable {
     ///
     /// Used by everything that reads a piece for what it *contains* rather than
     /// for what it is called — see `brief`.
+    /// The declared files are part of it, and have to be.
+    ///
+    /// Two reasons, and the second is the load-bearing one. A delegate checked
+    /// against a list it was never shown is being marked against a paper it
+    /// didn't sit — so if this app is going to report "you didn't write x.ts",
+    /// the agent has to have been told x.ts was its. And `Tenancy.inspection`
+    /// reads `wire`, so a path that carries this organisation's material —
+    /// `src/acme-migration/…` is a real shape — goes through the gate with
+    /// everything else rather than around it.
     var wire: String {
-        guard let brief, !brief.isEmpty else { return task }
-        return brief + "\n\n" + task
+        var out = task
+        if let brief, !brief.isEmpty { out = brief + "\n\n" + out }
+        guard !writes.isEmpty else { return out }
+        return out + "\n\nThe files this piece is responsible for writing: "
+            + writes.joined(separator: ", ")
+            + ". They are what it will be checked against."
     }
 
     /// `@kimi#2:k3` — how the plan should read.

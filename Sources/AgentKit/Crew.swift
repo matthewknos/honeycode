@@ -245,7 +245,7 @@ final class Crew {
     /// conversations, so a second instance is not a second chance.
     private var troubled: [Account: String] = [:]
     /// Unowned pieces waiting for whoever finishes first. See `Wire.queue`.
-    private var backlog: [String] = []
+    private var backlog: [Unowned] = []
     /// The `brief` of the plan the backlog came from, since a queued piece has
     /// no assignment to carry one until it is handed out.
     private var sharedBrief: String?
@@ -396,6 +396,16 @@ final class Crew {
         let file: String
         /// In roster order, so the sentence reads the way the plan does.
         let seats: [Seat]
+        /// Every claim on this file came from a declared `writes` list rather
+        /// than from a path found in the prose.
+        ///
+        /// Which is the difference between "this might be a collision" and
+        /// "this is one". A lead that declared its files has answered the
+        /// question the regex could only guess at, so the warning stops
+        /// hedging — and, more usefully, a file one piece declares and another
+        /// merely mentions stops being reported at all, because the mention is
+        /// now known to be a read.
+        var declared = false
     }
 
     /// A path reduced to something two of them can be compared by.
@@ -431,20 +441,31 @@ final class Crew {
     /// brief leaves. This asks who claimed what, and only a task claims.
     static func overlaps(in assignments: [CrewAssignment]) -> [Overlap] {
         var claims: [String: [Seat]] = [:]
+        var certain: [String: Bool] = [:]
         var seen: [String] = []
         for assignment in assignments {
-            for file in namedFiles(in: assignment.task).map(comparable) {
-                if claims[file] == nil { seen.append(file) }
+            // A piece that declared its files has *answered* this question, so
+            // its prose is no longer evidence: a path in the task text of a
+            // piece with a `writes` list is a file it was told to read. That is
+            // the whole win — the first live run's lead kept the shared types
+            // file and told all three delegates to ask it about that file, and
+            // all three were reported as contesting something none of them was
+            // going to touch.
+            let stated = !assignment.writes.isEmpty
+            let files = stated ? assignment.writes : namedFiles(in: assignment.task)
+            for file in files.map(comparable) {
+                if claims[file] == nil { seen.append(file); certain[file] = true }
                 // One task naming the same file twice is one claim, not a
                 // collision with itself.
                 if claims[file]?.contains(assignment.to) != true {
                     claims[file, default: []].append(assignment.to)
+                    if !stated { certain[file] = false }
                 }
             }
         }
         return seen.compactMap { file in
             guard let seats = claims[file], seats.count > 1 else { return nil }
-            return Overlap(file: file, seats: seats)
+            return Overlap(file: file, seats: seats, declared: certain[file] ?? false)
         }
     }
 
@@ -500,7 +521,7 @@ final class Crew {
     /// of having its piece handed out again. The question is "did *your* piece
     /// already exist", and only the task says which files are yours.
     private func alreadyDone(_ assignment: CrewAssignment, in root: URL) -> Bool {
-        let named = Self.namedFiles(in: assignment.task)
+        let named = Self.owned(by: assignment)
         guard !named.isEmpty else { return false }
         return named.allSatisfy { path in
             let url = path.hasPrefix("/") ? URL(fileURLWithPath: path)
@@ -511,6 +532,17 @@ final class Crew {
             // work — treating it as done is how a hole gets signed off.
             return size > 0
         }
+    }
+
+    /// The files this piece is answerable for, however the lead said so.
+    ///
+    /// One function rather than three copies of the same `writes.isEmpty`
+    /// ternary, because the three callers must agree: `alreadyDone` excuses a
+    /// delegate on this list, `outstanding` accuses one on it, and a plan where
+    /// those two read different lists would excuse and accuse the same agent in
+    /// the same report.
+    static func owned(by assignment: CrewAssignment) -> [String] {
+        assignment.writes.isEmpty ? namedFiles(in: assignment.task) : assignment.writes
     }
 
     /// Whether a command plausibly created a file without the editor seeing it.
@@ -579,7 +611,7 @@ final class Crew {
     /// about the other *before* it starts writing rather than after one of them
     /// has been overwritten. Cleared each time a plan is dispatched, so a
     /// re-issued piece doesn't inherit a collision from the plan before it.
-    private var contested: [Seat: [(file: String, with: [Seat])]] = [:]
+    private var contested: [Seat: [(file: String, with: [Seat], declared: Bool)]] = [:]
 
     /// Who has already been told they produced nothing.
     ///
@@ -1177,7 +1209,8 @@ final class Crew {
     the request — and then end with a fenced block, exactly:
 
     ```\(Self.fence)
-    {"brief":"…","assignments":[{"to":"<handle>","task":"…"}]}
+    {"brief":"…","assignments":[
+      {"to":"<handle>","task":"…","writes":["src/a.ts","src/b.ts"]}]}
     ```
 
     `brief` is optional and is the part every piece shares — what is being \
@@ -1197,9 +1230,21 @@ final class Crew {
     Saying it again in your own words costs you the tokens and tells them \
     nothing new.
     - Everyone not marked as outside the organisation shares one working \
-    directory. **Two agents must never be given the same file.** Name the \
-    exact files each one owns. Nothing locks them, so overlapping \
-    assignments will silently overwrite each other.
+    directory. **Two agents must never be given the same file.** Nothing locks \
+    them, so overlapping assignments will silently overwrite each other — no \
+    error, nothing in either transcript, and one agent's work simply gone.
+    - **`writes` is how you say which files a piece owns, and it is worth the \
+    ten tokens.** List every file that piece will create or change, and nothing \
+    it is only going to read. Three things then stop being guesswork: two \
+    pieces claiming one file is caught before either starts and both are told; \
+    a delegate that wrote two of its three files is reported to you as having \
+    left one undone, which its own report will not say; and an agent that \
+    correctly declines to redo work already on disk is no longer mistaken for \
+    one that did nothing. Leave it out and all three fall back to reading paths \
+    out of your prose — which cannot tell a file you told somebody to *write* \
+    from one you told them to *read*, so it hedges, and a hedged warning is one \
+    that gets skipped. Say it in the task as well; `writes` is the machine-\
+    readable copy, not a replacement for telling the agent.
     - Give work only to agents in the team list below, by the handle shown. The \
     model beside each one is what it is running right now — that is the \
     answer if you are asked, and it is not written in any file, so don't go \
@@ -1249,15 +1294,16 @@ final class Crew {
 
     ```\(Self.fence)
     {"brief":"…",
-     "assignments":[{"to":"<handle>#2","task":"…"},{"to":"<handle>#3","task":"…"}],
-     "queue":[{"task":"…"},{"task":"…"}]}
+     "assignments":[{"to":"<handle>#2","task":"…","writes":["…"]},
+                    {"to":"<handle>#3","task":"…","writes":["…"]}],
+     "queue":[{"task":"…","writes":["…"]},{"task":"…","writes":["…"]}]}
     ```
 
     A queued piece has no `to`. It goes to whichever delegate reports back \
     first, then the next one to the next, until the queue is empty — so \
     guessing wrong about which piece is biggest costs nothing. Write each \
-    one to stand alone, the same as any other task, and name the files it \
-    owns; you will not know who gets it. Anything still queued when the \
+    one to stand alone, the same as any other task, and give it a `writes` \
+    list like any other; you will not know who gets it. Anything still queued when the \
     last delegate finishes comes back to you, and you will be told.
 
     **Aim for about twice as many pieces as you have seats.** One spare \
@@ -1572,13 +1618,27 @@ final class Crew {
     private func contest(_ overlaps: [Overlap]) {
         contested = [:]
         for overlap in overlaps {
-            reporter.status("\(overlap.file) is named in "
-                            + "\(Self.list(overlap.seats.map(\.mention)))'s pieces — "
-                            + "they have been told about each other in case more than "
-                            + "one of them writes it")
+            // A declared collision is a fault and is said as one: the lead
+            // wrote down that two agents would both write this file, which is
+            // the one rule its briefing states as an absolute. An inferred one
+            // is still only a path that turned up in two pieces of prose, and
+            // is still a note.
+            if overlap.declared {
+                reporter.problem("\(overlap.file) — "
+                                 + "\(Self.list(overlap.seats.map(\.mention))) were all "
+                                 + "given it to write. Nothing locks a file, so the last "
+                                 + "one to finish wins; they have been told to settle it "
+                                 + "between themselves")
+            } else {
+                reporter.status("\(overlap.file) is named in "
+                                + "\(Self.list(overlap.seats.map(\.mention)))'s pieces — "
+                                + "they have been told about each other in case more than "
+                                + "one of them writes it")
+            }
             for seat in overlap.seats {
                 contested[seat, default: []].append(
-                    (file: overlap.file, with: overlap.seats.filter { $0 != seat }))
+                    (file: overlap.file, with: overlap.seats.filter { $0 != seat },
+                     declared: overlap.declared))
             }
         }
     }
@@ -2097,8 +2157,9 @@ final class Crew {
                   !queued.contains(seat),
                   let session = inFlight(seat) else { continue }
 
-            let assignment = CrewAssignment(to: seat, task: backlog.removeFirst(),
-                                            brief: sharedBrief)
+            let piece = backlog.removeFirst()
+            let assignment = CrewAssignment(to: seat, task: piece.task,
+                                            writes: piece.writes, brief: sharedBrief)
             // The roster line every other delegate reads. Replaced rather than
             // appended: what this seat owns *now* is what its colleagues need,
             // and a line that grows by a sentence per piece is one nobody
@@ -2503,23 +2564,50 @@ final class Crew {
     /// it too late — the other's turn is already over.
     private func collisionNote(for delegate: Seat) -> String {
         guard let claims = contested[delegate] else { return "" }
-        let lines = claims.map { claim in
-            "- \(claim.file) — also given to \(Self.list(claim.with.map(\.mention)))"
-        }.joined(separator: "\n")
-        return """
+        func lines(_ of: [(file: String, with: [Seat], declared: Bool)]) -> String {
+            of.map { "- \($0.file) — also given to \(Self.list($0.with.map(\.mention)))" }
+                .joined(separator: "\n")
+        }
+        // The two kinds are different messages, because they warrant different
+        // action. A file the lead said two of you would write needs settling
+        // before either of you starts; a path that merely turned up in two
+        // pieces of prose usually needs nothing at all, and the old single
+        // paragraph had to hedge enough to cover both — which made the urgent
+        // half read like the routine one.
+        var out = ""
+        let stated = claims.filter(\.declared)
+        if !stated.isEmpty {
+            out += """
 
-        [ai: these files are named in somebody else's piece as well as yours:
-        \(lines)
-        That may be nothing — one of you writes it and the other only reads \
-        it, which is the usual reason. But **if you are going to change one \
-        of these, say so to whoever else has it before you do.** Nothing \
-        locks a file: whoever writes last wins, the other's work is gone, and \
-        there is no error and nothing in either transcript to say it \
-        happened. Agreeing who owns which part costs one message, which is \
-        what the channel below is for. If the file already holds what your \
-        piece needs, read it and leave it alone.]
+            [ai: **you and somebody else were both given these files to write:**
+            \(lines(stated))
+            That is not a misreading of your task — the plan says both of you \
+            own them. Nothing locks a file, so whoever finishes last wins and \
+            the other's work is gone, with no error and nothing in either \
+            transcript to say it happened. **Settle it before you write:** \
+            message whoever else has it, agree which part is yours, and say \
+            what you agreed. One message is cheaper than half a subsystem.]
 
-        """
+            """
+        }
+        let guessed = claims.filter { !$0.declared }
+        if !guessed.isEmpty {
+            out += """
+
+            [ai: these files are named in somebody else's piece as well as yours:
+            \(lines(guessed))
+            That may be nothing — one of you writes it and the other only reads \
+            it, which is the usual reason. But **if you are going to change one \
+            of these, say so to whoever else has it before you do.** Nothing \
+            locks a file: whoever writes last wins, the other's work is gone, and \
+            there is no error and nothing in either transcript to say it \
+            happened. Agreeing who owns which part costs one message, which is \
+            what the channel below is for. If the file already holds what your \
+            piece needs, read it and leave it alone.]
+
+            """
+        }
+        return out
     }
 
     /// What a delegate has to say at the end, beyond "done".
@@ -2941,7 +3029,7 @@ final class Crew {
     /// the failure `CrewRefusal` exists to prevent one step earlier.
     private func unclaimed() -> String {
         guard !backlog.isEmpty else { return "" }
-        let lines = backlog.map { "- " + Self.gist($0) }.joined(separator: "\n")
+        let lines = backlog.map { "- " + Self.gist($0.task) }.joined(separator: "\n")
         return "\n\n[ai: **\(backlog.count == 1 ? "one queued piece" : "\(backlog.count) queued pieces") "
             + "never went out.** No delegate came free in time — they were still "
             + "working when the last one finished. Nobody has done these:\n\n\(lines)\n\n"
@@ -2950,10 +3038,15 @@ final class Crew {
 
     private func outstanding() -> String {
         var lines: [String] = []
+        // Whether every line below came from a declared `writes` list. It
+        // changes the paragraph rather than the list: an inferred miss may be a
+        // file the piece was only meant to read, and has to be worded so, while
+        // a declared one is the lead's own sentence about what that agent owed.
+        var allStated = true
         for seat in order {
             guard let assignment = given[seat], !offTenant.contains(seat),
                   let did = evidence[seat], !did.wroteNothing else { continue }
-            let named = Self.namedFiles(in: assignment.task)
+            let named = Self.owned(by: assignment)
             let absent = named.filter { path in
                 let url = path.hasPrefix("/") ? URL(fileURLWithPath: path)
                                               : directory.appendingPathComponent(path)
@@ -2964,16 +3057,32 @@ final class Crew {
                 return size <= 0
             }
             guard !absent.isEmpty else { continue }
+            if assignment.writes.isEmpty { allStated = false }
             lines.append("- \(seat.mention) — " + absent.joined(separator: ", "))
         }
         guard !lines.isEmpty else { return "" }
 
-        return "\n\n[ai: **these files were named in somebody's piece and are not on "
-            + "disk.** Counted by this app, from the paths in each task and what is "
-            + "actually there — so it may include a file a piece was only meant to "
-            + "read, and it will not include anything nobody named. Where it is a file "
-            + "that piece owed, that agent stopped part-way and said so as though it "
-            + "hadn't: check before you describe any of it as done.\n"
+        // The declared wording states a fact, because it is one: you wrote down
+        // which files each piece would produce, and these are the ones that
+        // aren't there. It used to have to hedge for both cases at once, and
+        // the hedge is what made this section easy to skim past — a lead told
+        // the list "may include a file a piece was only meant to read" has been
+        // given a reason not to act on any of it.
+        let preamble = allStated
+            ? "**these files were declared as somebody's output and are not on "
+                + "disk.** You said in the plan which files each piece would write; "
+                + "this is that list against what is actually there. Every line is a "
+                + "piece of the job that has not been done, by an agent whose own "
+                + "report very likely says otherwise — it stopped part-way at a point "
+                + "where things were going well."
+            : "**these files were named in somebody's piece and are not on "
+                + "disk.** Counted by this app, from the paths in each task and what is "
+                + "actually there — so it may include a file a piece was only meant to "
+                + "read, and it will not include anything nobody named. Where it is a file "
+                + "that piece owed, that agent stopped part-way and said so as though it "
+                + "hadn't."
+        return "\n\n[ai: " + preamble
+            + " Check before you describe any of it as done.\n"
             + lines.joined(separator: "\n") + "]"
     }
 
@@ -3228,7 +3337,13 @@ final class Crew {
     }
 
     private struct Wire: Codable {
-        struct Item: Codable { var to: String?; var task: String? }
+        struct Item: Codable {
+            var to: String?
+            var task: String?
+            /// The files this piece will write, named by the lead rather than
+            /// dug out of its prose. See `CrewAssignment.writes`.
+            var writes: [String]?
+        }
         var assignments: [Item]?
         /// Pieces with no owner, handed out as seats come free.
         ///
@@ -3304,15 +3419,44 @@ final class Crew {
         }
     }
 
+    /// A piece with no owner yet.
+    ///
+    /// Not a `CrewAssignment`, because the one thing an assignment has is a
+    /// seat and the one thing the lead is deliberately not deciding here is
+    /// which seat. Carries `writes` for the same reason an assignment does: a
+    /// queued piece is checked against its declared files exactly like any
+    /// other, and losing them on the way through the queue would make the two
+    /// halves of a plan behave differently.
+    struct Unowned: Equatable {
+        var task: String
+        var writes: [String] = []
+    }
+
     /// What a delegation block asked for, and what of it can actually run.
     struct Plan: Equatable {
         var assignments: [CrewAssignment] = []
         var refused: [CrewRefusal] = []
         /// Unowned pieces, in the order they should go out. See `Wire.queue`.
-        var backlog: [String] = []
+        var backlog: [Unowned] = []
         /// Kept beside the backlog because a queued piece has no
         /// `CrewAssignment` to carry it until somebody is free to take it.
         var brief: String?
+    }
+
+    /// A declared file list, tidied the way every other path in here is.
+    ///
+    /// Blanks dropped and `comparable` applied, so a lead that writes
+    /// `` `./src/a.ts` `` in `writes` and `src/a.ts` in the prose has written
+    /// one file. Not deduplicated across pieces — that is exactly what
+    /// `overlaps` is for, and silently merging the duplicates here would delete
+    /// the finding.
+    private static func paths(_ raw: [String]?) -> [String] {
+        var out: [String] = []
+        for path in raw ?? [] {
+            let tidy = comparable(path)
+            if !tidy.isEmpty, !out.contains(tidy) { out.append(tidy) }
+        }
+        return out
     }
 
     /// Forgiving on shape, strict on the handle, and silent about nothing.
@@ -3334,7 +3478,7 @@ final class Crew {
         // runs, whereas a refusal would lose real work over a stray field.
         plan.backlog = (wire.queue ?? []).compactMap {
             let task = ($0.task ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            return task.isEmpty ? nil : task
+            return task.isEmpty ? nil : Unowned(task: task, writes: paths($0.writes))
         }
         for item in wire.assignments ?? [] {
             let raw = (item.to ?? "")
@@ -3399,6 +3543,7 @@ final class Crew {
             }
             let qualifiers = AgentMention.qualify(Array(parts.dropFirst()), for: account)
             plan.assignments.append(CrewAssignment(to: seat, task: task,
+                                                   writes: paths(item.writes),
                                                    brief: brief?.isEmpty == false ? brief : nil,
                                                    model: qualifiers.model,
                                                    effort: qualifiers.effort))

@@ -275,6 +275,42 @@ check("a piece that declares nothing carries an empty list, not a missing one",
 check("the declared files go down the wire with the task",
       declared.assignments.first?.wire.contains("src/a.ts") == true)
 
+// --- the piece the lead keeps for itself ---
+//
+// The whole point of it is that it runs beside the delegates rather than inside
+// the assembly turn, which is where everything a lead kept used to land: alone,
+// after everyone had reported, with every paid seat idle. Parsed like any other
+// piece, with its `to` ignored — the addressee is the lead by construction.
+let own = MainActor.assumeIsolated {
+    Crew.assignments(#"""
+    {"brief":"shared",
+     "mine":{"task":"Wire it together in src/app.ts","writes":["src/app.ts"]},
+     "assignments":[{"to":"kimi","task":"Write src/a.ts","writes":["src/a.ts"]}]}
+    """#)
+} ?? Crew.Plan()
+check("a lead may keep a piece", own.mine?.task == "Wire it together in src/app.ts")
+check("and declare its files like anyone else", own.mine?.writes == ["src/app.ts"])
+check("keeping one does not cost it a delegate", own.assignments.count == 1)
+check("a plan that keeps nothing reports nothing", plain.mine == nil)
+
+// A kept piece with no task is noise from a model, not an instruction to sit
+// there — the same rule the queue uses.
+let hollow = MainActor.assumeIsolated {
+    Crew.assignments(#"""
+    {"mine":{"task":"   "},"assignments":[{"to":"kimi","task":"real"}]}
+    """#)
+} ?? Crew.Plan()
+check("an empty kept piece is dropped rather than started", hollow.mine == nil)
+
+// Addressing yourself in `assignments` is the mistake `mine` exists to fix, so
+// the refusal has to say where the piece actually goes. Sent to the lead in the
+// report, which is the only place it can act on it.
+check("a piece addressed to the lead is pointed at `mine`",
+      MainActor.assumeIsolated {
+          Crew.objection(to: Seat(.personal), leader: Seat(.personal),
+                         roster: [.personal])
+      }?.contains("mine") == true)
+
 // The common case, and it has to cost nothing: no queue at all.
 check("a plan with no queue has an empty backlog", plan.backlog.isEmpty)
 check("and the old grammar is unchanged", plain.backlog.isEmpty)

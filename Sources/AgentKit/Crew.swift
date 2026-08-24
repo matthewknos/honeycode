@@ -244,6 +244,29 @@ final class Crew {
     /// usual cause. A quota is spent for the subscription, not for one of its
     /// conversations, so a second instance is not a second chance.
     private var troubled: [Account: String] = [:]
+    /// Whether the lead is part-way through a piece of its own.
+    ///
+    /// A fourth way for an agent to be mid-turn, beside `running`, `answering`
+    /// and `queued`, and it has to be counted everywhere those are: `proceed`
+    /// must not assemble around it, `post` must not hand it a question that
+    /// would overwrite the handler its own work is waiting on, and `watch` must
+    /// be willing to end it if it dies. See `busy`.
+    private var leadWorking = false
+    /// The piece the lead kept for itself, waiting for the delegates to be
+    /// under way.
+    ///
+    /// Held rather than started at once because "the delegates are working" is
+    /// only true at the end of `launch`, and the paths where a plan reaches
+    /// nobody — everything refused, nothing cleared to leave the organisation —
+    /// go straight to `assemble` instead. Starting a turn on either of those
+    /// would overwrite the handler assembly is waiting on.
+    private var mine: Unowned?
+    /// The piece the lead actually started, and where its transcript stood when
+    /// it did. Read by `outstanding`, which checks the lead's declared files
+    /// the same way it checks everybody else's.
+    private var kept: Unowned?
+    private var keptMark = 0
+
     /// Unowned pieces waiting for whoever finishes first. See `Wire.queue`.
     private var backlog: [Unowned] = []
     /// The `brief` of the plan the backlog came from, since a queued piece has
@@ -719,6 +742,9 @@ final class Crew {
             self.instructed = []
             self.rostered = [:]
             self.warned = [:]
+            self.leadWorking = false
+            self.mine = nil
+            self.kept = nil
             self.check = nil
             self.baseline = nil
             self.verdict = nil
@@ -966,6 +992,8 @@ final class Crew {
         for session in confined.values where session.isRunning { session.interrupt() }
         reporter.endStream()
         running.removeAll()
+        leadWorking = false
+        mine = nil
         // The conversation stops with the work. A message still in the box
         // would be delivered to an agent whose run has been called off, and
         // answered into a report nobody is going to assemble.
@@ -1059,6 +1087,9 @@ final class Crew {
             }
             self.backlog = plan.backlog
             self.sharedBrief = plan.brief
+            // Set before dispatch and consumed at the end of `launch`, which is
+            // where the delegates are actually under way.
+            self.mine = plan.mine
             self.dispatch(plan.assignments, for: leader)
             // After dispatch, not before. `queued` is claimed in there, and it
             // is what stops a question overtaking the assignment it is about.
@@ -1085,11 +1116,13 @@ final class Crew {
     private func watch(_ seat: Seat, session: Session, leader: Seat) {
         let work = DispatchWorkItem { [weak self] in
             guard let self else { return }
-            // Both kinds of outstanding turn, for the same reason `proceed`
-            // waits on both: an agent part-way through answering somebody's
-            // question is an agent the run is waiting for, and it used to be
-            // the one kind of waiting nothing could end.
-            guard self.running.contains(seat) || self.answering.contains(seat) else { return }
+            // Every kind of outstanding turn, for the same reason `proceed`
+            // waits on all of them: an agent part-way through answering
+            // somebody's question is an agent the run is waiting for, and it
+            // used to be the one kind of waiting nothing could end. The lead
+            // working on its own piece is now a third.
+            guard self.running.contains(seat) || self.answering.contains(seat)
+                    || (self.leadWorking && seat == self.lead) else { return }
             let now = Self.progress(of: session, from: self.marks[seat] ?? 0)
             var state = self.silence[seat] ?? (seen: now, seconds: 0)
             if now != state.seen {
@@ -1108,7 +1141,14 @@ final class Crew {
                                   + "\(Int(Self.patience / 60)) minutes — carrying on without it")
             // Before `finished`, because `finished` drains the mailbox and a
             // seat nobody can reach must not be sent anything. See `abandoned`.
-            self.abandoned.insert(seat)
+            //
+            // Never the lead, though. There is nobody else who can assemble, and
+            // a lead in `abandoned` is one `post` will refuse to deliver to and
+            // one the report has nowhere to go — so a lead that goes silent on
+            // its own piece has that turn cut short and is asked to assemble
+            // anyway. That still ends with an answer, which is the only outcome
+            // here worth having.
+            if seat != self.lead { self.abandoned.insert(seat) }
             self.mailbox[seat] = nil
             session.interrupt()
 
@@ -1116,10 +1156,12 @@ final class Crew {
                 self.finished(seat, reply: nil, leader: leader)
                 return
             }
-            // It was answering somebody rather than doing its piece: there is
-            // no work to count and no piece to hand out again, only a wait to
-            // end. Whoever it owed an answer to simply doesn't get one — which
-            // is the truth, and better than the run never ending.
+            // It was answering somebody, or it was the lead on its own piece:
+            // either way there is no work to count and no piece to hand out
+            // again, only a wait to end. Whoever it owed an answer to simply
+            // doesn't get one — which is the truth, and better than the run
+            // never ending.
+            if seat == self.lead { self.leadWorking = false }
             self.answering.remove(seat)
             self.owes[seat] = nil
             self.expiry[seat] = nil
@@ -1274,17 +1316,31 @@ final class Crew {
     by default. It is also where the same work gets done four times: \
     everybody tests their own piece in isolation, nobody tests the join, and \
     you end up building the harness at the end anyway.
-    - **Keep a piece for yourself, and keep it small.** You are also the one \
-    who has to assemble, and everybody else is idle while you type — a lead \
-    that keeps four files and hands out three has made itself the longest \
-    pole in a run that was supposed to be parallel. Hand out the rest, \
-    including work you could do faster yourself. And note what "yours" \
-    does *not* mean: the seam is not your piece. It is the piece that \
-    needs the whole picture, so keeping it feels right and is the single \
-    most expensive habit a lead has — you cannot start it until everyone \
-    has reported, which is precisely when every other seat goes idle. \
-    Yours is whatever is left once the seam is handed out, and some of the \
-    best plans keep nothing at all.
+    - **Keep a piece for yourself in `mine`, and it runs while they do.** \
+    Anything you put there comes straight back to you as a working turn that \
+    starts at the same moment theirs do, so your own piece costs no wall \
+    clock at all. Write it like any other — what to build, where, and a \
+    `writes` list:
+
+    ```\(Self.fence)
+    {"brief":"…",
+     "mine":{"task":"…","writes":["src/app.ts"]},
+     "assignments":[{"to":"<handle>","task":"…","writes":["…"]}]}
+    ```
+
+    Keep a real piece. Anything you *don't* put in `mine` and still intend \
+    to do yourself gets done in the assembly turn instead — alone, after \
+    everyone has reported, with every paid seat idle beside you. That was \
+    the only option before `mine` existed, and it is what makes a lead the \
+    longest pole in a run that was supposed to be parallel: three delegates \
+    once wrote 1,860 lines in parallel in eight minutes, and the lead then \
+    spent twenty-one minutes writing 1,549 more on its own. Seventy-two per \
+    cent of the wall clock was one agent.
+
+    What is still not yours is the **seam**. It is the piece that needs the \
+    whole picture, so keeping it feels right, and it is the single most \
+    expensive habit a lead has — hand it out at the start, as its own piece, \
+    written from the contract before the parts exist.
     - **Don't try to size the pieces evenly — queue the extras instead.** \
     You cannot tell in advance which piece is the long one; two files each \
     is not a balanced split when one is a render loop and the other is a \
@@ -1338,7 +1394,9 @@ final class Crew {
     conversations and remember what they wrote, so a piece that comes back \
     wrong is cheaper handed back to whoever wrote it than fixed by you \
     reading it cold. So plan the first round for what can be done in \
-    parallel *now*, not for everything you might eventually need to touch.
+    parallel *now*, not for everything you might eventually need to touch. \
+    `mine` works from that turn too, so a round where you also have something \
+    to write is still a round where nobody is waiting on you.
     - **They can talk to each other, and to you, while they work.** Each is \
     told who else is on the job and what they own, and can ask one of them — \
     or you — a question, which arrives as that agent's next turn. So you do \
@@ -1599,8 +1657,9 @@ final class Crew {
     /// four live agent processes to build a crew out of.
     static func objection(to seat: Seat, leader: Seat, roster: Set<Account>) -> String? {
         if seat == leader {
-            return "that is you — a piece you keep is one you do yourself, "
-                 + "as part of assembling, not one you send"
+            return "that is you — a piece you keep goes in \u{22}mine\u{22}, where it "
+                 + "runs beside theirs, rather than in \u{22}assignments\u{22}, which is "
+                 + "for the agents you are sending work to"
         }
         if !roster.contains(seat.account) {
             return "\(AgentMention.handle(seat.account)) isn't on this job — "
@@ -1748,6 +1807,11 @@ final class Crew {
 
         reporter.working(sending.map { (seat: $0.assignment.to, session: $0.session) })
         beginBaseline()
+        // Last, and only from here. This is the one point at which the
+        // delegates are genuinely under way — see `startOwnPiece` for why the
+        // two exits from `dispatch` that reach `assemble` must not pass through
+        // it.
+        startOwnPiece(for: leader)
     }
 
     /// Ask the project what it thinks of itself *before* the crew changes it.
@@ -1801,6 +1865,139 @@ final class Crew {
                 self.assemble(for: leader)
             }
         }
+    }
+
+    /// Whether this agent is mid-turn, by any of the four routes into one.
+    ///
+    /// One function because the four have to be asked together and getting the
+    /// set wrong is silent: handing a prompt to an agent that already has one
+    /// overwrites the completion handler the first is waiting on, so the run
+    /// stops waiting for a turn that will never be reported. `queued` is in
+    /// here for that reason and the lead's own piece is in here for the same
+    /// one.
+    private func busy(_ seat: Seat) -> Bool {
+        running.contains(seat) || answering.contains(seat) || queued.contains(seat)
+            || (leadWorking && seat == lead)
+    }
+
+    /// Start the lead on the piece it kept, beside the delegates rather than
+    /// after them.
+    ///
+    /// The whole run used to be: plan, stop, wait, assemble. Between `dispatch`
+    /// and `assemble` the lead's session was touched only to answer questions —
+    /// it had no working turn — while its own briefing told it to keep a piece.
+    /// There was nowhere to do it, so everything it kept landed inside the
+    /// assembly turn: serial, after everybody, with every other seat idle.
+    ///
+    /// Measured on the run that `waves` was written for. Three delegates wrote
+    /// 1,860 lines in parallel in eight minutes; the lead then spent twenty-one
+    /// minutes alone writing 1,549 more and integrating the lot. Seventy-two
+    /// per cent of the wall clock was one agent. `waves` made re-dispatch
+    /// possible and left that untouched, because re-dispatch is not the part
+    /// that was serial.
+    ///
+    /// It is not an extra turn. That work already happened — this moves it off
+    /// the critical path, which is why a lead can now keep a real piece instead
+    /// of being told to keep as little as it can get away with.
+    ///
+    /// Called from the end of `launch`, which is the one moment where "the
+    /// delegates are working" is true. Not from `dispatch`, which has two exits
+    /// that go straight to `assemble` — a turn started on either would overwrite
+    /// the handler the report is waiting on.
+    private func startOwnPiece(for leader: Seat) {
+        guard let piece = mine else { return }
+        mine = nil
+        let session = session(for: leader)
+        // Nothing can reach the lead between `hand` and here — the delegates'
+        // turns complete asynchronously and this runs in the same call stack —
+        // but a lead that is somehow mid-turn must not be given a second
+        // prompt. It falls back to the old behaviour, which is that the piece
+        // gets done as part of assembling; the lead wrote it and knows it kept
+        // it, so there is nothing to tell it.
+        guard !busy(leader), !session.isRunning else { return }
+
+        kept = piece
+        keptMark = session.items.count
+        leadWorking = true
+        reporter.speaker(leader, note: "on its own piece")
+
+        session.onTurnComplete = { [weak self] done in
+            guard let self else { return }
+            self.leadWorking = false
+            self.expiry[leader]?.cancel()
+            self.expiry[leader] = nil
+            self.reporter.speaker(leader, note: "done")
+            let text = Self.lastTurn(of: done, from: self.marks[leader] ?? 0)
+            self.reporter.prose(text)
+            // A lead that hands work out from this turn is doing the one thing
+            // this turn cannot do: the round is already dispatched, the seats
+            // are taken, and there is no point between here and assembly where
+            // a second plan could be launched without racing the first.
+            //
+            // Refused rather than dropped, which is the rule `CrewRefusal`
+            // exists for. Silently ignoring a block would leave the lead
+            // describing that work as delegated in the very next turn, which is
+            // the failure mode this whole file is most careful about.
+            self.declineSecondPlan(in: text, from: leader)
+            // Routed like any other turn. A lead that ends its own piece with a
+            // question for a delegate — "did you keep the name we agreed" — is
+            // asking it at the one moment the answer is still worth having.
+            // `record` drops the lead's own words, so none of this reaches the
+            // report as though a delegate had said it.
+            self.route(text, from: leader, leader: leader)
+            self.drain(leader, leader: leader)
+            self.proceed(leader)
+        }
+        deliver(ownPiece(piece), to: session, as: leader, shownAs: nil)
+        silence[leader] = (seen: Self.progress(of: session, from: marks[leader] ?? 0),
+                           seconds: 0)
+        watch(leader, session: session, leader: leader)
+    }
+
+    /// Refuse a delegation block written from the lead's own working turn.
+    ///
+    /// The round it would dispatch is already out. Saying so costs a line and
+    /// buys the thing that matters: the work reaches the assembly report as
+    /// outstanding, rather than reaching nobody while the lead goes on to call
+    /// it handed out.
+    private func declineSecondPlan(in text: String, from leader: Seat) {
+        guard let json = Self.split(text).1, let extra = Self.assignments(json),
+              !extra.assignments.isEmpty || !extra.backlog.isEmpty else { return }
+        let why = "sent from your own working turn, which cannot dispatch — the "
+                + "round was already out. Send it when you assemble, which is the "
+                + "turn that can."
+        for assignment in extra.assignments {
+            refuse(assignment.to.handle, why)
+        }
+        for piece in extra.backlog {
+            refuse("the queue", "\(Self.gist(piece.task)) — " + why)
+        }
+    }
+
+    /// What the lead is told when it is handed back the piece it kept.
+    ///
+    /// The one thing this has to prevent is the lead treating this as the
+    /// assembly turn. It is mid-run, everybody else is working, and there is
+    /// nothing to assemble yet — a lead that spends this turn summarising has
+    /// spent the turn its own piece was supposed to happen in, and will then be
+    /// asked to assemble around a hole it made itself.
+    private func ownPiece(_ piece: Unowned) -> String {
+        let files = piece.writes.isEmpty ? "" : " The files you said it writes: "
+            + piece.writes.joined(separator: ", ") + "."
+        return """
+        [ai: your team is working now, and this turn is yours — the piece you \
+        kept in the plan, done beside theirs rather than after them.\(files)
+
+        Do that work now and end when it is done. **This is not the assembly \
+        turn.** You will be asked to assemble separately, once everybody has \
+        reported; nothing has come back yet, so there is nothing to fit \
+        together and nothing to summarise. Don't report on anybody else, don't \
+        describe the plan back, and don't wait for them — they are in the same \
+        directory working on different files, and the only thing this turn is \
+        for is the work you kept.]
+
+        \(piece.task)
+        """
     }
 
     /// Give one delegate one piece and start watching for it.
@@ -2079,9 +2276,14 @@ final class Crew {
         // be caught — and a seat given a queued piece goes straight back into
         // `running`, so the guard below sees a crew that is still working.
         assignBacklog(for: leader)
-        guard running.isEmpty, answering.isEmpty else {
+        // The lead's own piece counts. It is a turn in flight like any other,
+        // and assembling around it would ask the lead to fit together a set of
+        // pieces one of which it is still writing.
+        guard running.isEmpty, answering.isEmpty, !leadWorking else {
             // Others still going: put the block back under what was just printed.
-            reporter.working((running.union(answering)).compactMap { seat in
+            var waiting = running.union(answering)
+            if leadWorking { waiting.insert(leader) }
+            reporter.working(waiting.compactMap { seat in
                 inFlight(seat).map { (seat: seat, session: $0) }
             })
             return
@@ -2290,9 +2492,9 @@ final class Crew {
         // `queued` counts as busy. An agent with a piece on the way has not
         // started it yet, and handing it a question first would have it answer
         // instead — then the assignment would land on top of the handler
-        // waiting for that answer. See `queued`.
-        guard !running.contains(message.to), !self.answering.contains(message.to),
-              !queued.contains(message.to) else {
+        // waiting for that answer. See `queued`, and `busy` for the fourth
+        // route into a turn: the lead working on the piece it kept.
+        guard !busy(message.to) else {
             mailbox[message.to, default: []].append(
                 (from: sender, message: message, answering: answering))
             return
@@ -2809,6 +3011,7 @@ final class Crew {
             }
             self.backlog = more.backlog
             self.sharedBrief = more.brief
+            self.mine = more.mine
             self.dispatch(more.assignments, for: leader)
             self.route(reply, from: leader, leader: leader)
         }
@@ -2849,6 +3052,11 @@ final class Crew {
         // pieces of a plan the lead has already replaced.
         backlog = []
         sharedBrief = nil
+        // The lead's own piece belongs to the round that planned it, exactly
+        // like the queue. A second round is where it decides whether there is
+        // anything left for it to keep.
+        mine = nil
+        kept = nil
         // The check runs again per wave and its verdict is this wave's. The
         // *baseline* is not re-taken: it is what the project looked like before
         // the crew touched it, and re-reading it now would fold this run's own
@@ -3036,6 +3244,19 @@ final class Crew {
             + "Do them yourself, or hand them out again in this turn.]"
     }
 
+    /// Whether a path a piece claimed is not there, or is there and empty.
+    ///
+    /// The same rule `alreadyDone` uses from the other direction: an empty file
+    /// is a placeholder somebody touched, not work done, and treating one as
+    /// done is how a hole gets signed off.
+    private func missing(_ path: String) -> Bool {
+        let url = path.hasPrefix("/") ? URL(fileURLWithPath: path)
+                                      : directory.appendingPathComponent(path)
+        guard let size = try? FileManager.default
+            .attributesOfItem(atPath: url.path)[.size] as? Int else { return true }
+        return size <= 0
+    }
+
     private func outstanding() -> String {
         var lines: [String] = []
         // Whether every line below came from a declared `writes` list. It
@@ -3046,19 +3267,22 @@ final class Crew {
         for seat in order {
             guard let assignment = given[seat], !offTenant.contains(seat),
                   let did = evidence[seat], !did.wroteNothing else { continue }
-            let named = Self.owned(by: assignment)
-            let absent = named.filter { path in
-                let url = path.hasPrefix("/") ? URL(fileURLWithPath: path)
-                                              : directory.appendingPathComponent(path)
-                guard let size = try? FileManager.default
-                    .attributesOfItem(atPath: url.path)[.size] as? Int else { return true }
-                // The same rule `alreadyDone` uses from the other direction: an
-                // empty file is a placeholder somebody touched, not work done.
-                return size <= 0
-            }
+            let absent = Self.owned(by: assignment).filter { missing($0) }
             guard !absent.isEmpty else { continue }
             if assignment.writes.isEmpty { allStated = false }
             lines.append("- \(seat.mention) — " + absent.joined(separator: ", "))
+        }
+        // The lead's own piece, on the same terms as everybody else's. It is
+        // the one piece nobody else in the run can see, written in a turn the
+        // lead has since moved on from, and it is about to describe the whole
+        // job as finished — so "you said you would write this and it isn't
+        // there" is worth as much here as anywhere.
+        if let kept, !kept.writes.isEmpty, let lead, let session = sessions[lead],
+           !Self.work(of: session, from: keptMark).wroteNothing {
+            let absent = kept.writes.filter { missing($0) }
+            if !absent.isEmpty {
+                lines.append("- yours — " + absent.joined(separator: ", "))
+            }
         }
         guard !lines.isEmpty else { return "" }
 
@@ -3164,9 +3388,11 @@ final class Crew {
             \(rounds == 1 ? "round" : "rounds") available. Prefer that to doing \
             it yourself where the work is somebody else's file: whoever wrote it \
             has it in mind and you would be reading it in cold, and everyone \
-            you don't use is idle while you type. Do it yourself when it is \
-            small, when it is genuinely yours, or when handing it over would \
-            take longer to explain than to do.
+            you don't use is idle while you type. When you send a round out and \
+            have something of your own to write, put yours in `mine` — it runs \
+            beside theirs instead of after this turn. Do it in this turn only \
+            when it is small, or when handing it over would take longer to \
+            explain than to do.
             """
 
         var out = """
@@ -3368,6 +3594,13 @@ final class Crew {
         /// task. A fresh instance pays for all of it again, and costs another
         /// full share of the subscription.
         var queue: [Item]?
+        /// The piece the lead kept for itself, run beside the delegates rather
+        /// than folded into the assembly turn. See `Crew.startOwnPiece`.
+        ///
+        /// An `Item` like any other, with its `to` ignored: the addressee is
+        /// the lead by construction, and refusing a plan over a field it filled
+        /// in redundantly would lose real work.
+        var mine: Item?
         /// What every piece has in common, said once.
         ///
         /// Optional and usually absent, and the run works identically without
@@ -3441,6 +3674,8 @@ final class Crew {
         /// Kept beside the backlog because a queued piece has no
         /// `CrewAssignment` to carry it until somebody is free to take it.
         var brief: String?
+        /// What the lead kept for itself, if it kept anything.
+        var mine: Unowned?
     }
 
     /// A declared file list, tidied the way every other path in here is.
@@ -3476,6 +3711,10 @@ final class Crew {
         // lead is deliberately not doing here. Anything it writes in `to` is
         // dropped rather than refused — it costs nothing and the piece still
         // runs, whereas a refusal would lose real work over a stray field.
+        if let own = wire.mine {
+            let task = (own.task ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            if !task.isEmpty { plan.mine = Unowned(task: task, writes: paths(own.writes)) }
+        }
         plan.backlog = (wire.queue ?? []).compactMap {
             let task = ($0.task ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             return task.isEmpty ? nil : Unowned(task: task, writes: paths($0.writes))

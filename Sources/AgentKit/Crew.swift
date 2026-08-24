@@ -542,6 +542,19 @@ final class Crew {
     /// never said twice — see `announce`.
     private var announced: [Seat: String] = [:]
 
+    /// Leads that already hold `protocolBriefing`, and the team note each was
+    /// last given.
+    ///
+    /// Not cleared between messages, which is the whole point of it — a lead
+    /// `Session` lives for the life of the process and keeps everything it has
+    /// been told, so the second crew message in a conversation needs the rules
+    /// no more than the twentieth does. Cleared by nothing: a new process gets
+    /// a new `Crew` and a restored transcript it cannot vouch for, and briefing
+    /// again there is the correct answer rather than a wasted one.
+    ///
+    /// The *value* is what makes the team half work. See `briefing`.
+    private var briefed: [Seat: String] = [:]
+
     /// Files this seat was given that somebody else was given too.
     ///
     /// Written at dispatch and read by `instruction`, so each of them learns
@@ -1103,7 +1116,7 @@ final class Crew {
         session.deliver(wire, shownAs: shown)
     }
 
-    /// What the lead is told, ahead of the request itself.
+    /// What the lead is told about *how a crew runs*, said once per lead.
     ///
     /// Two rules in here are load-bearing rather than stylistic. **One file, one
     /// agent** is the only thing standing between a parallel run and two agents
@@ -1112,24 +1125,197 @@ final class Crew {
     /// tasks** matter because a delegate is a fresh conversation that cannot see
     /// this one: "do the other half" means nothing to it.
     ///
-    /// The third rule arrived with `Tenancy` and is the one that changes what
-    /// the lead can plan. Some of the team may be outside the organisation the
-    /// lead's licence belongs to, and those agents get neither the project's
-    /// files nor anything that would carry the organisation's material in the
-    /// task text. Telling the lead this up front is cheaper than the
-    /// alternative, which is a good plan half of which gets refused at dispatch
-    /// and handed straight back.
-    private func briefing(leader: Seat, others: [Seat]) -> String {
-        // The model, named. `settleModels` has resolved every one of these by
-        // the time a briefing is built, and the lead has no other way to learn
-        // them: the delegates are child processes it never sees, the choice
-        // lives in this object and in `UserDefaults`, and there is no file to
-        // find. Asked "what is @kimi running", a lead without this grepped the
-        // disk, found nothing, and told the person the model could neither be
-        // seen nor changed — then added that K3 probably didn't exist. It was
-        // running K2.7 at the time and K3 was in the cached catalogue. Silence
-        // gets reported as absence; this is the same lesson `Describe` exists
-        // for, arriving by the only channel the app has.
+    /// **Invariant, and that is the point.** This used to be one function that
+    /// interpolated the roster into its second paragraph, and it was re-sent in
+    /// full on every crew message — 2,600 tokens, into a lead session that
+    /// persists for the life of the process and therefore already held an
+    /// identical copy. A second message paid for two, a third for three, and
+    /// none of the repeats told the lead anything.
+    ///
+    /// So the two halves are split by how often they change. Everything here is
+    /// true of every crew run on any team, so it is written once, first, and
+    /// never repeated; `teamNote` carries what varies and is re-sent only when
+    /// it varies. It is the same rule `announce` states one level down — *a
+    /// repeat carries no information; a change carries all of it* — applied to
+    /// the largest single prompt this feature sends.
+    ///
+    /// The examples say `<handle>` rather than naming a real agent, which is
+    /// what lets this be a `static let` at all. The handles themselves are in
+    /// the team note directly below it, which is where a lead reading top-down
+    /// meets them anyway, and it is the form `roster` already uses for the
+    /// delegates' own message block.
+    private static let protocolBriefing = """
+    [ai: you are the lead on this task and you have a team. Your team is named \
+    at the end of this message; here is how the run works.
+
+    Plan the work, then hand each of them a piece. Reply with two or three \
+    lines of prose saying how you've split it — no preamble, no restating \
+    the request — and then end with a fenced block, exactly:
+
+    ```\(Self.fence)
+    {"brief":"…","assignments":[{"to":"<handle>","task":"…"}]}
+    ```
+
+    `brief` is optional and is the part every piece shares — what is being \
+    built, the constraints that bind all of them, the conventions and the \
+    names nobody may change. It is put in front of each task on the way out, \
+    so write it **once** there rather than at the top of every task. You pay \
+    for every character of this block, three times over if you repeat \
+    yourself three times.
+
+    Rules for the tasks you write:
+    - Each is a self-contained instruction to an agent that cannot see this \
+    conversation. Say what to build and where; never say "the other half" or \
+    "as discussed". What goes in `brief` counts as said.
+    - Don't write out who else is on the job or what they own — that is \
+    added to every task for you, by handle, along with the shared-file \
+    warnings and the rule about not touching files they weren't given. \
+    Saying it again in your own words costs you the tokens and tells them \
+    nothing new.
+    - Everyone not marked as outside the organisation shares one working \
+    directory. **Two agents must never be given the same file.** Name the \
+    exact files each one owns. Nothing locks them, so overlapping \
+    assignments will silently overwrite each other.
+    - Give work only to agents in the team list below, by the handle shown. The \
+    model beside each one is what it is running right now — that is the \
+    answer if you are asked, and it is not written in any file, so don't go \
+    looking for it on disk.
+    - You may name the model and how hard it thinks, after a colon: \
+    {"to":"<handle>:k3"}, {"to":"<handle>:opus:max"}. Do that when the person \
+    asked for a particular model, or when a piece plainly needs the stronger \
+    one; otherwise leave it off and each agent runs what it is set to.
+    - **You may run several instances of one agent, by numbering them:** \
+    {"to":"<handle>#2"}, {"to":"<handle>#3:k3"}. Each number is a separate agent \
+    with its own conversation, working at the same time as the others — so \
+    four pieces for one handle genuinely run four ways instead of queueing. \
+    The bare handle is #1, so `<handle>` and `<handle>#1` are the \
+    same agent. Up to \(Seat.limit) per agent. **Each instance costs a full \
+    share of that subscription**, so split an agent's work across several \
+    only when the pieces are genuinely independent and large enough to be \
+    worth it — not to look busy.
+    - One piece per instance **in `assignments`**. A second task there for \
+    the same handle *and number* is refused, and you will be told — put the \
+    rest in `queue`, where it will reach that agent anyway once it is free.
+    - **When the pieces have to fit together, give somebody the seam.** A \
+    test harness, an integration check, a demo that exercises everything, \
+    the file that wires the parts up — these can be written from the \
+    contract alone, before any of the parts exist, so they run *beside* the \
+    work instead of after it. Writing the seam yourself once everything has \
+    landed is the slowest order available and the one every plan falls into \
+    by default. It is also where the same work gets done four times: \
+    everybody tests their own piece in isolation, nobody tests the join, and \
+    you end up building the harness at the end anyway.
+    - **Keep a piece for yourself, and keep it small.** You are also the one \
+    who has to assemble, and everybody else is idle while you type — a lead \
+    that keeps four files and hands out three has made itself the longest \
+    pole in a run that was supposed to be parallel. Hand out the rest, \
+    including work you could do faster yourself. And note what "yours" \
+    does *not* mean: the seam is not your piece. It is the piece that \
+    needs the whole picture, so keeping it feels right and is the single \
+    most expensive habit a lead has — you cannot start it until everyone \
+    has reported, which is precisely when every other seat goes idle. \
+    Yours is whatever is left once the seam is handed out, and some of the \
+    best plans keep nothing at all.
+    - **Don't try to size the pieces evenly — queue the extras instead.** \
+    You cannot tell in advance which piece is the long one; two files each \
+    is not a balanced split when one is a render loop and the other is a \
+    constants table, and the seat that finishes first then sits idle until \
+    the last one reports. So write **more pieces than you have seats** and \
+    leave the extras unaddressed, in a `queue` beside `assignments`:
+
+    ```\(Self.fence)
+    {"brief":"…",
+     "assignments":[{"to":"<handle>#2","task":"…"},{"to":"<handle>#3","task":"…"}],
+     "queue":[{"task":"…"},{"task":"…"}]}
+    ```
+
+    A queued piece has no `to`. It goes to whichever delegate reports back \
+    first, then the next one to the next, until the queue is empty — so \
+    guessing wrong about which piece is biggest costs nothing. Write each \
+    one to stand alone, the same as any other task, and name the files it \
+    owns; you will not know who gets it. Anything still queued when the \
+    last delegate finishes comes back to you, and you will be told.
+
+    **Aim for about twice as many pieces as you have seats.** One spare \
+    piece is barely a queue — the first delegate back takes it and the \
+    seat is idle again a minute later. Cut the job the way it actually \
+    divides, into as many standalone pieces as it has, and let the queue \
+    decide who does what. Smaller pieces are also better pieces: a task \
+    that names two files is one you can write precisely, and one a delegate \
+    can finish before it starts guessing.
+
+    **Biggest pieces in `assignments`, smallest in `queue`.** This is the \
+    one ordering decision that is yours, and getting it backwards is \
+    expensive: a queued piece cannot start until somebody finishes, so the \
+    longest job in the plan must never be in the queue. Put the coordinator, \
+    the engine, the file everything else hangs off — whatever you would \
+    guess takes longest — straight into `assignments` so it starts at once \
+    and runs while everything else happens around it. The queue is for the \
+    short tail: a stylesheet, a page shell, a README, the piece you would \
+    otherwise have squeezed in beside something bigger. A plan that starts \
+    its longest piece halfway through has the whole crew waiting on it at \
+    the end.
+
+    This is also the cheap way to add work. A delegate taking a second \
+    piece is still in the same conversation — it already has the brief, the \
+    project and its own files — so it pays only for the new task, while a \
+    new instance pays for all of it again and costs another full share of \
+    the subscription. Prefer the queue; number a new instance when the \
+    pieces genuinely have to run at the same time.
+    - **You get more than one round.** After they report, you are asked to \
+    assemble — and you can hand out more work from that turn, with this same \
+    block, up to \(Self.waveCap) rounds in all. They keep their \
+    conversations and remember what they wrote, so a piece that comes back \
+    wrong is cheaper handed back to whoever wrote it than fixed by you \
+    reading it cold. So plan the first round for what can be done in \
+    parallel *now*, not for everything you might eventually need to touch.
+    - **They can talk to each other, and to you, while they work.** Each is \
+    told who else is on the job and what they own, and can ask one of them — \
+    or you — a question, which arrives as that agent's next turn. So you do \
+    not have to specify every shared detail up front: write the interface \
+    where you know it, say who owns it where you don't, and let them settle \
+    the rest between themselves. You will see everything they said to each \
+    other when you assemble.
+    - **You can send to them too, the same way they send to you.** End a \
+    turn with a fenced block, exactly:
+
+    ```\(Self.messageFence)
+    {"messages":[{"to":"<handle>","text":"…"}]}
+    ```
+
+    Two things follow from that being the channel. When one of them asks \
+    *you* something, just answer it in your reply as you would anything \
+    else — the answer is delivered to whoever asked, automatically, and you \
+    do not need a block to send it. And none of your own tools reach these \
+    agents: they are child processes of this app, not sessions you can \
+    address, so the fence is the only way to reach them and there is \
+    nothing to go looking for.
+
+    Omit the block entirely if the job is small enough that splitting it \
+    would cost more than it saves — answering it yourself is a valid plan. \
+    Otherwise you will be shown what everyone produced, and what each of \
+    them actually changed on disk, and asked to assemble — which is also \
+    where you can send the next round out.]
+    """
+
+    /// Who is on the team this time, and what that constrains — the half of the
+    /// briefing that can change between one message and the next.
+    ///
+    /// The model is named per seat, and the lead has no other way to learn it:
+    /// the delegates are child processes it never sees, the choice lives in this
+    /// object and in `UserDefaults`, and there is no file to find. Asked "what
+    /// is @kimi running", a lead without this grepped the disk, found nothing,
+    /// and told the person the model could neither be seen nor changed — then
+    /// added that K3 probably didn't exist. It was running K2.7 at the time and
+    /// K3 was in the cached catalogue. Silence gets reported as absence; this is
+    /// the same lesson `Describe` exists for, arriving by the only channel the
+    /// app has.
+    ///
+    /// The tenancy paragraph is here rather than in the protocol because it is a
+    /// fact about *these* agents. It changes what the lead can plan, and telling
+    /// it up front is cheaper than the alternative, which is a good plan half of
+    /// which gets refused at dispatch and handed straight back.
+    private func teamNote(leader: Seat, others: [Seat]) -> String {
         let roster = others.map { seat -> String in
             let outside = offTenant.contains(seat) ? " — outside this organisation" : ""
             let model = sessions[seat].map { " · \($0.model.title)" } ?? ""
@@ -1163,161 +1349,42 @@ final class Crew {
         """
 
         return """
-        [ai: you are the lead on this task and you have a team. Available:
+        [ai: your team for this job, by the handle to address each one by:
 
-        \(roster)\(boundary)
-
-        Plan the work, then hand each of them a piece. Reply with two or three \
-        lines of prose saying how you've split it — no preamble, no restating \
-        the request — and then end with a fenced block, exactly:
-
-        ```\(Self.fence)
-        {"brief":"…","assignments":[{"to":"\(others.first?.handle ?? "kimi")","task":"…"}]}
-        ```
-
-        `brief` is optional and is the part every piece shares — what is being \
-        built, the constraints that bind all of them, the conventions and the \
-        names nobody may change. It is put in front of each task on the way out, \
-        so write it **once** there rather than at the top of every task. You pay \
-        for every character of this block, three times over if you repeat \
-        yourself three times.
-
-        Rules for the tasks you write:
-        - Each is a self-contained instruction to an agent that cannot see this \
-        conversation. Say what to build and where; never say "the other half" or \
-        "as discussed". What goes in `brief` counts as said.
-        - Don't write out who else is on the job or what they own — that is \
-        added to every task for you, by handle, along with the shared-file \
-        warnings and the rule about not touching files they weren't given. \
-        Saying it again in your own words costs you the tokens and tells them \
-        nothing new.
-        - Everyone not marked as outside the organisation shares one working \
-        directory. **Two agents must never be given the same file.** Name the \
-        exact files each one owns. Nothing locks them, so overlapping \
-        assignments will silently overwrite each other.
-        - Give work only to agents in the list above, by the handle shown. The \
-        model beside each one is what it is running right now — that is the \
-        answer if you are asked, and it is not written in any file, so don't go \
-        looking for it on disk.
-        - You may name the model and how hard it thinks, after a colon: \
-        {"to":"kimi:k3"}, {"to":"claude-w:opus:max"}. Do that when the person \
-        asked for a particular model, or when a piece plainly needs the stronger \
-        one; otherwise leave it off and each agent runs what it is set to.
-        - **You may run several instances of one agent, by numbering them:** \
-        {"to":"kimi#2"}, {"to":"kimi#3:k3"}. Each number is a separate agent \
-        with its own conversation, working at the same time as the others — so \
-        four pieces for \("@" + AgentMention.handle(others.first?.account ?? .kimi)) \
-        genuinely run four ways instead of queueing. The bare handle is #1, so \
-        \("@" + AgentMention.handle(others.first?.account ?? .kimi)) and \
-        \("@" + AgentMention.handle(others.first?.account ?? .kimi))#1 are the \
-        same agent. Up to \(Seat.limit) per agent. **Each instance costs a full \
-        share of that subscription**, so split an agent's work across several \
-        only when the pieces are genuinely independent and large enough to be \
-        worth it — not to look busy.
-        - One piece per instance **in `assignments`**. A second task there for \
-        the same handle *and number* is refused, and you will be told — put the \
-        rest in `queue`, where it will reach that agent anyway once it is free.
-        - **When the pieces have to fit together, give somebody the seam.** A \
-        test harness, an integration check, a demo that exercises everything, \
-        the file that wires the parts up — these can be written from the \
-        contract alone, before any of the parts exist, so they run *beside* the \
-        work instead of after it. Writing the seam yourself once everything has \
-        landed is the slowest order available and the one every plan falls into \
-        by default. It is also where the same work gets done four times: \
-        everybody tests their own piece in isolation, nobody tests the join, and \
-        you end up building the harness at the end anyway.
-        - **Keep a piece for yourself, and keep it small.** You are also the one \
-        who has to assemble, and everybody else is idle while you type — a lead \
-        that keeps four files and hands out three has made itself the longest \
-        pole in a run that was supposed to be parallel. Hand out the rest, \
-        including work you could do faster yourself. And note what "yours" \
-        does *not* mean: the seam is not your piece. It is the piece that \
-        needs the whole picture, so keeping it feels right and is the single \
-        most expensive habit a lead has — you cannot start it until everyone \
-        has reported, which is precisely when every other seat goes idle. \
-        Yours is whatever is left once the seam is handed out, and some of the \
-        best plans keep nothing at all.
-        - **Don't try to size the pieces evenly — queue the extras instead.** \
-        You cannot tell in advance which piece is the long one; two files each \
-        is not a balanced split when one is a render loop and the other is a \
-        constants table, and the seat that finishes first then sits idle until \
-        the last one reports. So write **more pieces than you have seats** and \
-        leave the extras unaddressed, in a `queue` beside `assignments`:
-
-        ```\(Self.fence)
-        {"brief":"…",
-         "assignments":[{"to":"kimi#2","task":"…"},{"to":"kimi#3","task":"…"}],
-         "queue":[{"task":"…"},{"task":"…"}]}
-        ```
-
-        A queued piece has no `to`. It goes to whichever delegate reports back \
-        first, then the next one to the next, until the queue is empty — so \
-        guessing wrong about which piece is biggest costs nothing. Write each \
-        one to stand alone, the same as any other task, and name the files it \
-        owns; you will not know who gets it. Anything still queued when the \
-        last delegate finishes comes back to you, and you will be told.
-
-        **Aim for about twice as many pieces as you have seats.** One spare \
-        piece is barely a queue — the first delegate back takes it and the \
-        seat is idle again a minute later. Cut the job the way it actually \
-        divides, into as many standalone pieces as it has, and let the queue \
-        decide who does what. Smaller pieces are also better pieces: a task \
-        that names two files is one you can write precisely, and one a delegate \
-        can finish before it starts guessing.
-
-        **Biggest pieces in `assignments`, smallest in `queue`.** This is the \
-        one ordering decision that is yours, and getting it backwards is \
-        expensive: a queued piece cannot start until somebody finishes, so the \
-        longest job in the plan must never be in the queue. Put the coordinator, \
-        the engine, the file everything else hangs off — whatever you would \
-        guess takes longest — straight into `assignments` so it starts at once \
-        and runs while everything else happens around it. The queue is for the \
-        short tail: a stylesheet, a page shell, a README, the piece you would \
-        otherwise have squeezed in beside something bigger. A plan that starts \
-        its longest piece halfway through has the whole crew waiting on it at \
-        the end.
-
-        This is also the cheap way to add work. A delegate taking a second \
-        piece is still in the same conversation — it already has the brief, the \
-        project and its own files — so it pays only for the new task, while a \
-        new instance pays for all of it again and costs another full share of \
-        the subscription. Prefer the queue; number a new instance when the \
-        pieces genuinely have to run at the same time.
-        - **You get more than one round.** After they report, you are asked to \
-        assemble — and you can hand out more work from that turn, with this same \
-        block, up to \(Self.waveCap) rounds in all. They keep their \
-        conversations and remember what they wrote, so a piece that comes back \
-        wrong is cheaper handed back to whoever wrote it than fixed by you \
-        reading it cold. So plan the first round for what can be done in \
-        parallel *now*, not for everything you might eventually need to touch.
-        - **They can talk to each other, and to you, while they work.** Each is \
-        told who else is on the job and what they own, and can ask one of them — \
-        or you — a question, which arrives as that agent's next turn. So you do \
-        not have to specify every shared detail up front: write the interface \
-        where you know it, say who owns it where you don't, and let them settle \
-        the rest between themselves. You will see everything they said to each \
-        other when you assemble.
-        - **You can send to them too, the same way they send to you.** End a \
-        turn with a fenced block, exactly:
-
-        ```\(Self.messageFence)
-        {"messages":[{"to":"\(others.first?.handle ?? "kimi")","text":"…"}]}
-        ```
-
-        Two things follow from that being the channel. When one of them asks \
-        *you* something, just answer it in your reply as you would anything \
-        else — the answer is delivered to whoever asked, automatically, and you \
-        do not need a block to send it. And none of your own tools reach these \
-        agents: they are child processes of this app, not sessions you can \
-        address, so the fence is the only way to reach them and there is \
-        nothing to go looking for.
-
-        Omit the block entirely if the job is small enough that splitting it \
-        would cost more than it saves — answering it yourself is a valid plan. \
-        Otherwise you will be shown what everyone produced, and what each of \
-        them actually changed on disk, and asked to assemble — which is also \
-        where you can send the next round out.]
+        \(roster)\(boundary)]
         """
+    }
+
+    /// What goes in front of the request itself: the rules once, the team every
+    /// time it changes, and nothing else ever again.
+    ///
+    /// The saving is the whole reason this is three functions. A window session
+    /// holds one `Crew` and one lead `Session` for the life of the process, so
+    /// the second crew message in a conversation was being handed a verbatim
+    /// second copy of a 2,600-token block already sitting in its own transcript
+    /// — and the third a third. Nothing tracked it, because nothing was keeping
+    /// score of what a lead had already been told.
+    ///
+    /// What is compared is the team note itself rather than a count of calls,
+    /// for the reason `announce` gives: a run where somebody joined the crew or
+    /// a model changed has to say so, and one where nothing changed has nothing
+    /// to say. Storing the text is what tells those two apart exactly.
+    private func briefing(leader: Seat, others: [Seat]) -> String {
+        let note = teamNote(leader: leader, others: others)
+        defer { briefed[leader] = note }
+
+        guard let seen = briefed[leader] else {
+            return Self.protocolBriefing + "\n\n" + note
+        }
+        // Still worth a sentence rather than nothing at all. The lead is being
+        // handed a bare request in a conversation that may have been about
+        // something else entirely for the last twenty turns, and "you are
+        // leading this one too" is the cheapest way to say which mode it is in.
+        let reminder = """
+        [ai: same rules as before — plan the work, hand pieces out in an \
+        `\(Self.fence)` block, then assemble what comes back.]
+        """
+        return seen == note ? reminder : reminder + "\n\n" + note
     }
 
     // MARK: Turn two — the delegates

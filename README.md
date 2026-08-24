@@ -556,17 +556,41 @@ ai --describe             all of it as JSON, for other tools
 
 Three turns:
 
-1. **The lead plans.** It emits an assignment block naming who gets what.
-2. **The delegates work,** each in its own session, in parallel. They can ask
-   each other questions mid-run through a message channel; the first message
-   between any two agents is free, after that there's a budget, because otherwise
-   four agents will happily talk to each other instead of working.
-3. **The lead assembles** what came back.
+1. **The lead plans.** It emits an assignment block naming who gets what, which
+   files each piece writes, and — in `mine` — the piece it keeps for itself.
+   Extra pieces go in a `queue` with no addressee, and reach whoever finishes
+   first.
+2. **Everyone works, including the lead,** each in its own session, in parallel.
+   They can ask each other questions mid-run through a message channel; the
+   first message between any two agents is free, after that there's a budget,
+   because otherwise four agents will happily talk to each other instead of
+   working.
+3. **The lead assembles** what came back — and can send another round out from
+   that same turn, up to three in all.
 
-Both channels are fenced blocks the agents write, and both are hidden from the
-transcript — you see the plan and the work, not the plumbing. A delegate that
-comes back empty-handed is noticed and its piece is handed out once more; a
-delegate that correctly reports "nothing to do, this was already built" is not.
+The lead working in step 2 is the difference between a crew and a queue with
+extra steps. Everything it keeps and *doesn't* put in `mine` gets done in the
+assembly turn instead: alone, after everyone has reported, with every paid seat
+idle. One measured run had three delegates write 1,860 lines in parallel in
+eight minutes and the lead then spend twenty-one minutes writing 1,549 more on
+its own — 72% of the wall clock was one agent.
+
+Three fenced blocks carry all of this. `ai-delegate` and `ai-message` are
+plumbing and are hidden from the transcript — you see the plan and the work, not
+the wire. `ai-interface` is the list of names each delegate signs off with, and
+stays on screen: it's the contract the lead writes code against, and it's as
+useful to you as to it.
+
+A delegate that comes back empty-handed is noticed and its piece is handed out
+once more; a delegate that correctly reports "nothing to do, this was already
+built" is not. A piece that declared its files and wrote only some of them is
+reported to the lead as a fact rather than a guess — that gap is invisible to
+every other check, because the delegate's own report was written at a point
+where things were still going well.
+
+Nothing is said twice. The lead is briefed once per conversation, not once per
+message; a delegate taking a second piece is sent the task and nothing else; and
+a round that wrote no files doesn't pay to re-run the project's check.
 
 The **Run** tab of the workbench shows every seat, what it's on, what it's
 touched and what the run has cost, live — and a banner above the composer says a

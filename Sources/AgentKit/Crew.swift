@@ -288,7 +288,7 @@ final class Crew {
     /// The piece the lead actually started, and where its transcript stood when
     /// it did. Read by `outstanding`, which checks the lead's declared files
     /// the same way it checks everybody else's.
-    private var kept: Unowned?
+    private var keptPiece: Unowned?
     private var keptMark = 0
 
     /// Unowned pieces waiting for whoever finishes first. See `Wire.queue`.
@@ -778,7 +778,7 @@ final class Crew {
             self.warned = [:]
             self.leadWorking = false
             self.mine = nil
-            self.kept = nil
+            self.keptPiece = nil
             self.check = nil
             self.baseline = nil
             self.verdict = nil
@@ -1841,13 +1841,19 @@ final class Crew {
             hand(assignment, to: session, for: leader)
         }
 
-        reporter.working(sending.map { (seat: $0.assignment.to, session: $0.session) })
         beginBaseline()
-        // Last, and only from here. This is the one point at which the
-        // delegates are genuinely under way — see `startOwnPiece` for why the
-        // two exits from `dispatch` that reach `assemble` must not pass through
-        // it.
+        // Only from here. This is the one point at which the delegates are
+        // genuinely under way — see `startOwnPiece` for why the two exits from
+        // `dispatch` that reach `assemble` must not pass through it.
         startOwnPiece(for: leader)
+
+        // Delegates only, and the lead deliberately not among them even when it
+        // is working. `TranscriptReporter.working` mirrors each session into the
+        // host's transcript, and in a window the lead's session *is* the host —
+        // `Session.mirror` has no guard against that, so the block would feed on
+        // its own updates for the rest of the run. The lead is announced by
+        // `speaker` instead, which is the channel its other turns use anyway.
+        reporter.working(sending.map { (seat: $0.assignment.to, session: $0.session) })
     }
 
     /// Ask the project what it thinks of itself *before* the crew changes it.
@@ -1884,7 +1890,7 @@ final class Crew {
     /// only one to write anything is a round that has to be checked.
     private var wroteSomething: Bool {
         if order.contains(where: { evidence[$0]?.wroteNothing == false }) { return true }
-        guard kept != nil, let lead, let session = sessions[lead] else { return false }
+        guard keptPiece != nil, let lead, let session = sessions[lead] else { return false }
         return !Self.work(of: session, from: keptMark).wroteNothing
     }
 
@@ -1992,7 +1998,7 @@ final class Crew {
         // it, so there is nothing to tell it.
         guard !busy(leader), !session.isRunning else { return }
 
-        kept = piece
+        keptPiece = piece
         keptMark = session.items.count
         leadWorking = true
         reporter.speaker(leader, note: "on its own piece")
@@ -2356,10 +2362,10 @@ final class Crew {
         // and assembling around it would ask the lead to fit together a set of
         // pieces one of which it is still writing.
         guard running.isEmpty, answering.isEmpty, !leadWorking else {
-            // Others still going: put the block back under what was just printed.
-            var waiting = running.union(answering)
-            if leadWorking { waiting.insert(leader) }
-            reporter.working(waiting.compactMap { seat in
+            // Others still going: put the block back under what was just
+            // printed. Delegates only — see `launch` for why the lead never
+            // goes in here, working or not.
+            reporter.working((running.union(answering)).compactMap { seat in
                 inFlight(seat).map { (seat: seat, session: $0) }
             })
             return
@@ -2375,7 +2381,11 @@ final class Crew {
         // never done. Held pieces are the exception: those *are* work the lead
         // still has to do, and are the whole content of the report when the
         // gate refused everything.
-        if replies.isEmpty && held.isEmpty && refusals.isEmpty {
+        // `interfaces` counts, and missing it was a real hole: a delegate that
+        // does exactly what the sign-off asks — the block and not much else —
+        // leaves no prose behind, and a run of those would have been called
+        // "nothing to assemble" while holding every name the lead needed.
+        if replies.isEmpty && interfaces.isEmpty && held.isEmpty && refusals.isEmpty {
             reporter.problem("no delegate reported back — nothing to assemble")
             // A later wave still owes the person an answer. The turn that
             // dispatched it ended with a plan rather than a conclusion, so
@@ -2455,7 +2465,14 @@ final class Crew {
         // A delegate that takes a queued second piece signs off twice, in two
         // turns, and both lists are the contract — so they append, exactly as
         // the prose does.
-        let (prose, built) = Self.split(text, at: Self.interfaceFence)
+        //
+        // The message block goes too. It is transport — the lead is shown every
+        // exchange, rendered, in `conversation` — so leaving the raw JSON in
+        // here put a second and worse copy of it in the report. `handOver`
+        // already strips it on the answering path; this is the assignment path
+        // catching up.
+        let (said, built) = Self.split(text, at: Self.interfaceFence)
+        let (prose, _) = Self.split(said, at: Self.messageFence)
         if let built {
             let block = built.trimmingCharacters(in: .whitespacesAndNewlines)
             if !block.isEmpty {
@@ -3184,7 +3201,7 @@ final class Crew {
         // like the queue. A second round is where it decides whether there is
         // anything left for it to keep.
         mine = nil
-        kept = nil
+        keptPiece = nil
         // The verdict deliberately survives — see `verdictWave`. The *baseline*
         // is not re-taken either, for a different reason: it is what the project
         // looked like before the crew touched it, and re-reading it now would
@@ -3405,9 +3422,9 @@ final class Crew {
         // lead has since moved on from, and it is about to describe the whole
         // job as finished — so "you said you would write this and it isn't
         // there" is worth as much here as anywhere.
-        if let kept, !kept.writes.isEmpty, let lead, let session = sessions[lead],
+        if let keptPiece, !keptPiece.writes.isEmpty, let lead, let session = sessions[lead],
            !Self.work(of: session, from: keptMark).wroteNothing {
-            let absent = kept.writes.filter { missing($0) }
+            let absent = keptPiece.writes.filter { missing($0) }
             if !absent.isEmpty {
                 lines.append("- yours — " + absent.joined(separator: ", "))
             }

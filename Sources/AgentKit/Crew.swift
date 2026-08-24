@@ -677,6 +677,16 @@ final class Crew {
     private var check: Verification.Check?
     private var baseline: Verification.Outcome?
     private var verdict: (check: Verification.Check, outcome: Verification.Outcome)?
+    /// Which round the verdict was taken after.
+    ///
+    /// A verdict used to be cleared with everything else in `nextWave`, on the
+    /// reasoning that a check runs per wave and its answer is that wave's. That
+    /// holds only while the check always runs. It doesn't now — a round that
+    /// wrote nothing cannot change what the project thinks of itself, so it
+    /// isn't paid for — and clearing the verdict there would leave the lead
+    /// assembling round two with no reading at all, having had a failing one in
+    /// round one. So the verdict stays and this says how old it is.
+    private var verdictWave = 0
 
     /// Called when the whole run has settled and it's safe to ask for input.
     var onIdle: (() -> Void)?
@@ -772,6 +782,7 @@ final class Crew {
             self.check = nil
             self.baseline = nil
             self.verdict = nil
+            self.verdictWave = 0
             self.silence = [:]
             self.postage = [:]
             self.pieces = [:]
@@ -1860,6 +1871,23 @@ final class Crew {
         }
     }
 
+    /// Whether anything was written this round, by anybody.
+    ///
+    /// `wroteNothing` rather than `files.isEmpty`, so a delegate that may have
+    /// written by shell redirection counts as having worked. The consequence of
+    /// being wrong here is asymmetric: a false "yes" costs one check that says
+    /// what the last one said, and a false "no" tells the lead the project is
+    /// fine when this round broke it.
+    ///
+    /// The lead's own piece counts too. It is a full working turn now, in the
+    /// same directory as everybody else's, and a round where the lead was the
+    /// only one to write anything is a round that has to be checked.
+    private var wroteSomething: Bool {
+        if order.contains(where: { evidence[$0]?.wroteNothing == false }) { return true }
+        guard kept != nil, let lead, let session = sessions[lead] else { return false }
+        return !Self.work(of: session, from: keptMark).wroteNothing
+    }
+
     /// Run the check again now the work is done, then assemble.
     ///
     /// Between the delegates and the assembly, because the point of it is to be
@@ -1868,6 +1896,28 @@ final class Crew {
     /// answer, which is a thing to read rather than a thing to act on.
     private func verify(for leader: Seat) {
         guard let check else { assemble(for: leader); return }
+        // A round in which nobody wrote a file cannot have changed what the
+        // project thinks of itself, and this is the one part of a run that sits
+        // squarely on the critical path: every seat is idle from the last
+        // delegate landing until the check finishes, which `Verification`
+        // allows five minutes for.
+        //
+        // It is not a rare case. It is exactly the shape of a bad round — the
+        // one `judge` complains about, where a delegate read the config, said
+        // it was about to start and stopped — so the run was spending its
+        // longest idle stretch confirming a reading it already had, at the
+        // moment it could least afford to.
+        //
+        // The reading itself is kept rather than discarded, so the lead still
+        // sees a failure from an earlier round; `verification` says how old it
+        // is. Erring the safe way throughout: anything that *might* have
+        // written — a shell redirect leaves no diff to count — reads as work
+        // here and pays for the check.
+        guard wroteSomething else {
+            reporter.status("nothing was written this round — `\(check.display)` not re-run")
+            assemble(for: leader)
+            return
+        }
         reporter.speaker(leader, note: "checking the work")
         reporter.status("running `\(check.display)`…")
         let root = directory
@@ -1876,6 +1926,7 @@ final class Crew {
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 self.verdict = (check: check, outcome: outcome)
+                self.verdictWave = self.waves
                 switch outcome {
                 case .passed:
                     self.reporter.status("`\(check.display)` passed")
@@ -2837,7 +2888,7 @@ final class Crew {
         // paragraph had to hedge enough to cover both — which made the urgent
         // half read like the routine one.
         var out = ""
-        let stated = claims.filter(\.declared)
+        let stated = claims.filter { $0.declared }
         if !stated.isEmpty {
             out += """
 
@@ -3134,11 +3185,11 @@ final class Crew {
         // anything left for it to keep.
         mine = nil
         kept = nil
-        // The check runs again per wave and its verdict is this wave's. The
-        // *baseline* is not re-taken: it is what the project looked like before
-        // the crew touched it, and re-reading it now would fold this run's own
-        // breakage into the reading that exists to exclude it.
-        verdict = nil
+        // The verdict deliberately survives — see `verdictWave`. The *baseline*
+        // is not re-taken either, for a different reason: it is what the project
+        // looked like before the crew touched it, and re-reading it now would
+        // fold this run's own breakage into the reading that exists to exclude
+        // it.
     }
 
     /// What the delegates said, handed back to the lead — and what never left.
@@ -3405,11 +3456,20 @@ final class Crew {
     private func verification(_ tag: String) -> String {
         guard let verdict else { return "" }
         let name = verdict.check.display
+        // Said whenever the reading predates this round, and it can now: a
+        // round that wrote nothing doesn't pay to be told what it already
+        // knows. Stating the age rather than hiding it, because a stale pass
+        // read as a fresh one is the one way this section could actively
+        // mislead — it would say the work holds together about work it never
+        // saw.
+        let age = verdictWave == waves ? "" : " This was taken after round "
+            + "\(verdictWave), not this one: nothing was written since, so it was not "
+            + "run again."
 
         switch verdict.outcome {
         case .passed:
             return "\n\n[ai: this project's own check — `\(name)` — passed after the "
-                + "work. Counted by this app, not reported by anyone in the run.]"
+                + "work. Counted by this app, not reported by anyone in the run.\(age)]"
 
         case .unavailable(let why):
             return "\n\n[ai: this project's check — `\(name)` — could not run at all, so "
@@ -3441,6 +3501,7 @@ final class Crew {
                     + "include problems that were already there. Check which is which "
                     + "before you rewrite anything."
             }
+            out += age
             out += "\n\n--- \(name) [\(tag)] ---\n\(output)\n--- end [\(tag)] ---]"
             return out
         }

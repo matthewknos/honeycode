@@ -555,6 +555,24 @@ final class Crew {
     /// The *value* is what makes the team half work. See `briefing`.
     private var briefed: [Seat: String] = [:]
 
+    /// Delegates that already hold the standing instructions for this run.
+    ///
+    /// Per run rather than per wave, because the thing being tracked is what a
+    /// *conversation* holds and a delegate's conversation outlives the wave —
+    /// `sessions` is keyed by seat for the life of the process. A second wave
+    /// hands the same seat another piece down the same pipe, so the preamble it
+    /// read in the first wave is still three screens up.
+    ///
+    /// Cleared in `start`, which is the boundary that matters: a new message is
+    /// a new job, and a delegate that took a piece of the last one is about to
+    /// be told about a different lead, a different team and a different set of
+    /// files it must not touch.
+    private var instructed: Set<Seat> = []
+    /// The roster each delegate was last shown, and the shared-file warning
+    /// each was last given. Compared rather than re-sent — see `instruction`.
+    private var rostered: [Seat: String] = [:]
+    private var warned: [Seat: String] = [:]
+
     /// Files this seat was given that somebody else was given too.
     ///
     /// Written at dispatch and read by `instruction`, so each of them learns
@@ -663,6 +681,12 @@ final class Crew {
             self.held = []
             self.refusals = []
             self.complained = []
+            // A new message is a new job: a different lead, a different team
+            // and a different set of files nobody may touch. Whatever a
+            // delegate was told last time is no longer what it needs to know.
+            self.instructed = []
+            self.rostered = [:]
+            self.warned = [:]
             self.check = nil
             self.baseline = nil
             self.verdict = nil
@@ -2361,11 +2385,33 @@ final class Crew {
     /// project. Telling it that plainly is not politeness — an agent that finds
     /// nothing where it expected a repository spends its turn hunting for the
     /// repository and reports back that the files are missing.
+    ///
+    /// **A second piece costs the task and nothing else.** The standing
+    /// instructions — the preamble, the sign-off, the note about a sibling on
+    /// the same subscription — are about the *job*, not about the piece, so a
+    /// delegate that already holds them holds them still. Re-sending was about
+    /// 1,150 tokens per queued piece, into the one conversation guaranteed to
+    /// contain them already, and it made a liar of the argument the briefing
+    /// puts to the lead for using the queue at all: *"a delegate taking a second
+    /// piece is still in the same conversation … so it pays only for the new
+    /// task."* Now it does.
+    ///
+    /// The two blocks that genuinely can change between pieces — who else is on
+    /// the job, and which of your files somebody else was also given — are
+    /// compared rather than assumed, so a second wave that reshuffles the crew
+    /// still says so and one that doesn't stays quiet. Same rule as `briefing`
+    /// and `announce`: a repeat carries no information, a change carries all
+    /// of it.
     private func instruction(_ task: String, from leader: Seat, to delegate: Seat,
                              retrying original: Seat? = nil) -> String {
         // Said first, and plainly. An agent handed a task it has no idea was
         // already tried has every reason to do exactly what was done before —
         // and what was done before produced nothing at all.
+        //
+        // Said on a repeat too. A re-issue usually goes to a fresh seat, which
+        // has heard nothing at all — but when the account has no free instance
+        // it goes back to the original, and that is exactly the agent most
+        // likely to do the same thing twice.
         let again = original == nil ? "" : """
             [ai: this piece was given to another agent first and came back with \
             nothing written and nothing run — no files were created or changed. \
@@ -2377,6 +2423,13 @@ final class Crew {
 
             """
         guard !offTenant.contains(delegate) else {
+            // Nothing varies for a confined delegate between one piece and the
+            // next: it has no colleagues to be introduced to, no shared
+            // directory and therefore no contested files. So the repeat form is
+            // the task and one sentence.
+            guard instructed.insert(delegate).inserted else {
+                return Self.resumed(again + Self.nextPiece, with: task)
+            }
             return """
             \(again)[honeycode: \(leader.mention) is leading this job and \
             has given you one piece of it. \(Tenancy.confinement) When you're \
@@ -2385,6 +2438,19 @@ final class Crew {
             \(task)
             """
         }
+        // The two that can change between pieces, built before the branch so
+        // both paths compare against the same thing.
+        let shared = collisionNote(for: delegate)
+        let team = roster(leader: leader, excluding: delegate)
+        let news = (warned[delegate] == shared ? "" : shared)
+                 + (rostered[delegate] == team ? "" : team)
+        warned[delegate] = shared
+        rostered[delegate] = team
+
+        guard instructed.insert(delegate).inserted else {
+            return Self.resumed(again + Self.nextPiece + news, with: task)
+        }
+
         // Said only when it is true, and it is true more often now: a numbered
         // seat shares a subscription with another agent in this same run, and
         // an agent that doesn't know that reads its neighbour's edits as its
@@ -2394,28 +2460,6 @@ final class Crew {
               + "as you, in this same directory — it is a separate agent, not "
               + "another turn of yours, and its files are not yours to change."
             : ""
-        // Said only to the agents it is true of, and said before they start.
-        // A delegate that learns this by finding its own file rewritten has
-        // learned it too late — the other's turn is already over.
-        let shared = contested[delegate].map { claims -> String in
-            let lines = claims.map { claim in
-                "- \(claim.file) — also given to \(Self.list(claim.with.map(\.mention)))"
-            }.joined(separator: "\n")
-            return """
-
-            [ai: these files are named in somebody else's piece as well as yours:
-            \(lines)
-            That may be nothing — one of you writes it and the other only reads \
-            it, which is the usual reason. But **if you are going to change one \
-            of these, say so to whoever else has it before you do.** Nothing \
-            locks a file: whoever writes last wins, the other's work is gone, and \
-            there is no error and nothing in either transcript to say it \
-            happened. Agreeing who owns which part costs one message, which is \
-            what the channel below is for. If the file already holds what your \
-            piece needs, read it and leave it alone.]
-
-            """
-        } ?? ""
         return """
         \(again)[ai: \(leader.mention) is leading this job and has given you \
         one piece of it. Other agents are working in the same directory at the \
@@ -2423,8 +2467,58 @@ final class Crew {
         beside it, and do not tidy, rename or rewrite files you weren't asked \
         for.\(sibling) When you're done, say briefly what you did and which \
         files you touched, and \(Self.signoff)]
-        \(shared)\(roster(leader: leader, excluding: delegate))
+        \(shared)\(team)
         \(task)
+        """
+    }
+
+    /// The whole of what a delegate that already has its instructions is told,
+    /// ahead of the next piece.
+    ///
+    /// One sentence, and it exists to say the one thing a second prompt in an
+    /// open conversation is genuinely ambiguous about: whether this replaces
+    /// what you were doing or is added to it.
+    private static let nextPiece = """
+        [ai: another piece of the same job, from the same lead. Everything you \
+        were told when you took the first one still holds — the same directory, \
+        the same rule about files you weren't given, and the same thing to end \
+        with. This is a new piece, not a correction of the last one.]
+        """
+
+    /// A short instruction and its task, with exactly one blank line between
+    /// them however many the pieces brought with them.
+    ///
+    /// The blocks either side of this are written with their own leading and
+    /// trailing newlines, because in the long form they sit between other
+    /// blocks. Composed the short way they collide, and a prompt that opens
+    /// with four blank lines reads as a truncated one.
+    private static func resumed(_ head: String, with task: String) -> String {
+        head.trimmingCharacters(in: .whitespacesAndNewlines) + "\n\n" + task
+    }
+
+    /// Which of this delegate's files somebody else was given too.
+    ///
+    /// Said only to the agents it is true of, and said before they start. A
+    /// delegate that learns this by finding its own file rewritten has learned
+    /// it too late — the other's turn is already over.
+    private func collisionNote(for delegate: Seat) -> String {
+        guard let claims = contested[delegate] else { return "" }
+        let lines = claims.map { claim in
+            "- \(claim.file) — also given to \(Self.list(claim.with.map(\.mention)))"
+        }.joined(separator: "\n")
+        return """
+
+        [ai: these files are named in somebody else's piece as well as yours:
+        \(lines)
+        That may be nothing — one of you writes it and the other only reads \
+        it, which is the usual reason. But **if you are going to change one \
+        of these, say so to whoever else has it before you do.** Nothing \
+        locks a file: whoever writes last wins, the other's work is gone, and \
+        there is no error and nothing in either transcript to say it \
+        happened. Agreeing who owns which part costs one message, which is \
+        what the channel below is for. If the file already holds what your \
+        piece needs, read it and leave it alone.]
+
         """
     }
 

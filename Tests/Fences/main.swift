@@ -26,6 +26,16 @@ check("the delegation fence is one of them",
 check("so is the message fence",
       MainActor.assumeIsolated { CrewFence.names.contains(Crew.messageFence) })
 
+// And the interface block is deliberately *not* one of them. The other two are
+// transport with a rendered counterpart on screen, so the raw copy is noise.
+// Nothing re-renders this one, it is written for a reader, and the person
+// watching a crew build something has as much use for the list of names as the
+// lead does — so it stays visible, as an ordinary code block.
+check("the interface block is left on screen",
+      MainActor.assumeIsolated { !CrewFence.names.contains(Crew.interfaceFence) })
+check("and is not mistaken for the start of one that isn't",
+      !CrewFence.opens("```" + MainActor.assumeIsolated { Crew.interfaceFence }))
+
 // --- whole-text stripping, for the card renderer ---
 let plan = """
 Splitting it four ways. I'll keep the swing.

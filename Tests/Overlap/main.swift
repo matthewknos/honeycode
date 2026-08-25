@@ -110,6 +110,64 @@ MainActor.assumeIsolated {
           + "wording is careful",
           Crew.overlaps(in: referenced).count == 1)
 
+    // --- what the lead declared, as against what its prose happened to say ---
+    //
+    // The regex could never tell "write this" from "read this", which is why
+    // every finding above had to be worded as "named in more than one piece".
+    // A `writes` list answers that question, and answering it is what turns the
+    // warning into a fault — and, more usefully, what makes the common false
+    // positive disappear.
+    func owns(_ seat: Seat, _ task: String, _ writes: [String]) -> CrewAssignment {
+        CrewAssignment(to: seat, task: task, writes: writes, model: nil, effort: nil)
+    }
+
+    // The false positive, gone. Both pieces talk about the shared types file;
+    // neither declares it, so neither is writing it.
+    let reading = [
+        owns(Seat(.kimi), "Write src/render.ts against src/shared/types.ts.",
+             ["src/render.ts"]),
+        owns(Seat(.copilot), "Write src/report.ts against src/shared/types.ts.",
+             ["src/report.ts"]),
+    ]
+    check("a file both pieces only read is no longer reported",
+          Crew.overlaps(in: reading).isEmpty)
+
+    // The real thing, and now stated as one.
+    let both = [
+        owns(Seat(.kimi), "Add the mesh types.", ["src/shared/types.ts"]),
+        owns(Seat(.copilot), "Add the animation types.", ["src/shared/types.ts"]),
+    ]
+    let certain = Crew.overlaps(in: both)
+    check("two pieces that declare the same file collide", certain.count == 1)
+    check("and the collision knows it was declared", certain.first?.declared == true)
+
+    // One declares, the other only mentions. The mention is a read — the
+    // declaring piece's own prose no longer counts as evidence either.
+    let lopsided = [
+        owns(Seat(.kimi), "Write src/shared/types.ts.", ["src/shared/types.ts"]),
+        piece(Seat(.copilot), "Read src/shared/types.ts and write src/report.ts."),
+    ]
+    let mixed = Crew.overlaps(in: lopsided)
+    check("a declared file the other side merely mentions still collides",
+          mixed.count == 1)
+    check("but is not stated as certain, because one half was inferred",
+          mixed.first?.declared == false)
+
+    // A declared list is tidied like every other path in here.
+    let spelt = [
+        owns(Seat(.kimi), "x", ["./src/a.ts"]),
+        owns(Seat(.copilot), "y", ["`src/a.ts`"]),
+    ]
+    check("declared paths are compared after tidying", Crew.overlaps(in: spelt).count == 1)
+
+    // What a piece is answerable for: the declared list where there is one,
+    // and the prose where there isn't. The two callers of this must agree —
+    // one excuses a delegate on it and the other accuses one.
+    check("a piece with a declared list is judged on it",
+          Crew.owned(by: owns(Seat(.kimi), "mentions src/z.ts", ["src/a.ts"])) == ["src/a.ts"])
+    check("and one without falls back to its prose",
+          Crew.owned(by: piece(Seat(.kimi), "Write src/z.ts")) == ["src/z.ts"])
+
     // Seats, not accounts. Two Kimis are two agents, and the whole reason a
     // plan can say "four ways" is that they are told apart everywhere else.
     let siblings = [

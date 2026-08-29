@@ -174,14 +174,11 @@ struct CrewPane: View {
 
     /// What is left, in whatever unit this account actually bills in.
     private func allowance(_ account: Account) -> String? {
-        if let reported = usage.usage[account], let binding = reported.binding {
-            return "\(binding.percent)% \(binding.label)"
+        guard let binding = usage.reading(for: account)?.binding else {
+            let spent = usage.monthlySpend[account] ?? 0
+            return spent > 0 ? String(format: "$%.2f this month", spent) : nil
         }
-        if let cap = usage.capUsage(account) {
-            return String(format: "%d%% of $%.0f", cap.percent, cap.cap)
-        }
-        let spent = usage.monthlySpend[account] ?? 0
-        return spent > 0 ? String(format: "$%.2f this month", spent) : nil
+        return "\(binding.percent)% \(binding.short)"
     }
 
     private func modelSummary(_ account: Account) -> String {

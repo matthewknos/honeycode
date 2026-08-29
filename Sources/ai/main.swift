@@ -328,21 +328,29 @@ final class Program {
     /// something and give the prompt back.
     private func cost() {
         let store = UsageStore.shared
-        let cap = store.monthlyCap
         let answer = Answer()
         var total = 0.0
+        var ceiling = 0.0
         Console.line()
         let column = Account.enabled
             .map { AgentMention.handle($0).count + 1 }.max() ?? 0
         for account in Account.enabled {
             let spent = store.monthlySpend[account] ?? 0
             total += spent
+            ceiling += store.cap(for: account)
             let handle = "@" + AgentMention.handle(account)
             let name = Console.paint(handle, Console.tint(account), bold: true)
             let pad = String(repeating: " ", count: max(0, column - handle.count))
-            answer.line(name + pad + Console.dim(String(format: "  $%.2f", spent)))
+            // What the agent says it has left, where it says anything. Money is
+            // the fallback rather than the headline: on three of the four
+            // accounts a dollar figure is this app's own tally and the
+            // percentage is the plan's own answer.
+            let left = store.reading(for: account)?.binding
+                .map { "  \($0.percent)% \($0.short)" } ?? ""
+            answer.line(name + pad + Console.dim(String(format: "  $%.2f", spent) + left))
         }
-        answer.line(Console.dim(String(format: "this month  $%.2f of $%.2f", total, cap)))
+        answer.line(Console.dim(String(format: "this month  $%.2f of $%.2f",
+                                       total, ceiling)))
     }
 
     /// `/models` for the line-up, `/models copilot` for everything that

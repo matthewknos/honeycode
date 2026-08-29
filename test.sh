@@ -102,6 +102,7 @@ kit Teams
 kit Changes
 kit Setup
 kit Library
+kit Usage
 
 # The terminal client's own logic: what Tab offers, what a slash command parses
 # to, what the up-arrow remembers. Not the whole of Sources/ai — `main.swift`

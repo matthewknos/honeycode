@@ -481,15 +481,15 @@ struct UsageMeter: View {
                         alarming: false,
                         help: "AI Units consumed by this conversation")
             }
-        } else if let account = usage.usage[session.account], let binding = account.binding {
-            readout("\(binding.percent)% \(binding.label)",
-                    alarming: binding.percent >= 90,
-                    help: account.summary)
-        } else if let cap = usage.capUsage(session.account) {
-            readout("\(cap.percent)% month",
-                    alarming: cap.percent >= 90,
-                    help: String(format: "$%.2f of $%.0f this month.", cap.spent, cap.cap)
-                        + "\nCounts turns run in Honeycode only.")
+        } else if let reading = usage.reading(for: session.account),
+                  let binding = reading.binding {
+            // One ladder, in `UsageStore.reading` — reported first, measured
+            // second, nothing third. This wrote its own copy of that order, the
+            // crew pane wrote another, and the two disagreed about which came
+            // first the moment an account had both.
+            readout("\(binding.percent)% \(binding.short)",
+                    alarming: binding.pressure.isAlarming,
+                    help: reading.summary)
         } else if session.costUSD > 0 {
             readout(String(format: "$%.3f", session.costUSD),
                     alarming: false, help: "Session cost so far")

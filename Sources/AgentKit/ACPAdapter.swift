@@ -673,6 +673,23 @@ final class ACPAdapter: AgentAdapter {
                     unitsBase = base
                     DispatchQueue.main.async { self.session.aiUnits = base + units }
                 }
+                // And the rest of the reply, which was being read and dropped.
+                //
+                // `aiUnits` is what this *conversation* has spent; the same
+                // answer also carries what the *subscription* has left, which
+                // is the figure a crew needs before it decides who gets the
+                // biggest piece and the only one Copilot publishes at all. It
+                // has been arriving after every turn since this adapter was
+                // written and going nowhere.
+                //
+                // Only here, and deliberately not under `.context`. Kimi
+                // answers `/usage` with its context window — a percentage, in
+                // the same shape, meaning something completely different — and
+                // ingesting that would put a ring on the rail claiming a
+                // subscription was two-thirds spent when what was two-thirds
+                // full was one conversation's prompt.
+                let account = session.account
+                Task { @MainActor in UsageStore.shared.ingest(text, for: account) }
             case .context:
                 adopt(Self.context(in: text))
             case .none:

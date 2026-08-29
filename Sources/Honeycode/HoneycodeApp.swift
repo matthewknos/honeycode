@@ -136,6 +136,10 @@ struct HoneycodeApp: App {
                 // the thing it changes. Also on the pill's context menu; both
                 // are `BundleToggles`, so they cannot disagree.
                 Menu("Bundles") { BundleToggles() }
+                // Beside the bundles rather than in Settings, and for the same
+                // reason: this is a switch you flip while looking at the thing
+                // it changes, not one you open a settings pane to find.
+                UsageRailToggle()
                 Divider()
             }
 

@@ -13,8 +13,9 @@ import Combine
 /// and an account has however many of them it has.
 ///
 /// `percent` is the whole point and is never optional. A window nothing can put
-/// a number on is not a window; it is a line of prose, and that goes in
-/// `AccountUsage.note` where it can be read rather than drawn.
+/// a number on is not a window; it is a line of prose, and prose does not go on
+/// a ring — an account whose answer carries no number reports no window at all,
+/// which is what `AccountUsage.read` returning nil means.
 struct UsageWindow: Equatable, Sendable, Codable, Identifiable {
     /// As the agent worded it — "Current session", "Premium requests".
     let title: String
@@ -86,8 +87,6 @@ struct AccountUsage: Equatable, Sendable, Codable {
     /// able to say "as of 11:04" rather than implying it is live.
     var measuredAt = Date()
     var source: Source = .reported
-    /// A limit line nothing could put a number on, kept verbatim.
-    var note: String?
 
     enum Source: String, Sendable, Codable {
         /// The agent's own answer to `/usage`.
@@ -114,7 +113,6 @@ struct AccountUsage: Equatable, Sendable, Codable {
             if let resets = window.resets { line += ", resets \(resets)" }
             return line
         }
-        if let note { parts.append(note) }
         if parts.isEmpty { return "No usage limits reported for this account" }
         parts.append(source.blurb)
         return parts.joined(separator: "\n")
@@ -403,13 +401,6 @@ final class UsageStore: ObservableObject {
                                   detail: String(format: "$%.2f of $%.0f",
                                                  cap.spent, cap.cap))],
             source: .measured)
-    }
-
-    /// Every account worth putting on the rail, in the app's own order.
-    func rail() -> [(account: Account, usage: AccountUsage)] {
-        Account.enabled.compactMap { account in
-            reading(for: account).map { (account: account, usage: $0) }
-        }
     }
 
     // MARK: Remembering the last reading

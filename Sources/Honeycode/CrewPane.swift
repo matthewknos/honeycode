@@ -48,6 +48,11 @@ struct CrewPane: View {
                 Diagnostic.readiness()
             }.value
             teams = TeamStore.all
+            // The rings above the seats are stale the moment you leave this
+            // pane, so they are refreshed on the way in. `refreshAll` keeps
+            // the per-account floors, so flipping between sidebar modes does
+            // not spawn a process per flip.
+            usage.refreshAll()
         }
     }
 
@@ -102,6 +107,7 @@ struct CrewPane: View {
     private var seats: some View {
         VStack(alignment: .leading, spacing: Theme.s5) {
             heading("Seats")
+            allowances
             VStack(spacing: 0) {
                 ForEach(readiness) { state in
                     seatRow(state)
@@ -170,6 +176,29 @@ struct CrewPane: View {
         .padding(.horizontal, Theme.s5)
         .padding(.vertical, Theme.s4 + 1)
         .help(state.remedy ?? "\(account.title) — ready")
+    }
+
+    /// The same rings the floating rail draws, in the pane that is about
+    /// exactly this question.
+    ///
+    /// Here as well as in the rail rather than instead of it, and the split is
+    /// deliberate. The rail floats over every other application and has to be
+    /// asked for; this costs nothing to ignore and is where somebody meets the
+    /// rings first, standing in front of the one screen in the app whose stated
+    /// job is "what have I got". A feature only reachable by finding a switch
+    /// in a menu is a feature most people never learn exists — which is the
+    /// same note `CrewPane` already makes about the check setting that lived
+    /// only inside a popover inside a composer.
+    private var allowances: some View {
+        HStack(alignment: .top, spacing: Theme.s7) {
+            ForEach(Account.enabled) { account in
+                UsageRing(account: account, reading: usage.reading(for: account))
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, Theme.s5)
+        .padding(.vertical, Theme.s5)
+        .modifier(InsetSurface(radius: Theme.cornerField))
     }
 
     /// What is left, in whatever unit this account actually bills in.

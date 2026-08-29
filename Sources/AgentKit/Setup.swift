@@ -38,6 +38,8 @@ enum Feature: String, CaseIterable, Identifiable, Sendable {
     case dictation
     /// A banner when a turn finishes in a session you aren't looking at.
     case notifications
+    /// A floating panel showing what every subscription has left.
+    case usageRail
     /// The animated background, and anything else that redraws when nothing
     /// has happened.
     case motion
@@ -66,7 +68,8 @@ enum Feature: String, CaseIterable, Identifiable, Sendable {
     var group: Group {
         switch self {
         case .git, .gitHub, .azure: return .tools
-        case .crew, .agents, .preview, .dictation, .notifications, .motion:
+        case .crew, .agents, .preview, .dictation, .notifications, .usageRail,
+             .motion:
             return .window
         }
     }
@@ -81,6 +84,7 @@ enum Feature: String, CaseIterable, Identifiable, Sendable {
         case .preview:       return "Preview"
         case .dictation:     return "Dictation"
         case .notifications: return "Notifications"
+        case .usageRail:     return "Usage rail"
         case .motion:        return "Motion"
         }
     }
@@ -113,6 +117,10 @@ enum Feature: String, CaseIterable, Identifiable, Sendable {
         case .notifications:
             return "A banner when a turn finishes in a session you aren't looking "
                  + "at. Never for the one in front of you."
+        case .usageRail:
+            return "A ring for each subscription, floating at the edge of the "
+                 + "screen over whatever you are doing, showing how much of "
+                 + "each allowance is left. Starts off."
         case .motion:
             return "The animated background. Starts off on a Mac with integrated "
                  + "graphics, where a surface redrawing behind the window costs "
@@ -164,6 +172,12 @@ enum Feature: String, CaseIterable, Identifiable, Sendable {
     var initialValue: Bool {
         switch self {
         case .notifications: return false
+        // Off, and not because it is expensive. It is a window that floats over
+        // every other application on every Space — the most intrusive surface
+        // this app has — and a thing that behaves like that has to be asked
+        // for. The same rings are in the Crew pane, where they cost nobody
+        // anything to ignore, which is where somebody meets them first.
+        case .usageRail:     return false
         case .motion:        return Machine.hasFastGraphics
         default:             return isAvailable
         }

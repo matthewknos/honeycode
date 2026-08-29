@@ -602,8 +602,30 @@ private struct CrewSettings: View {
             }
 
             Section {
-                TextField("Monthly cap", value: $monthlyCap,
+                TextField("Default monthly cap", value: $monthlyCap,
                           format: .currency(code: "USD"))
+                ForEach(Account.enabled) { account in
+                    LabeledContent(account.title) {
+                        TextField("", value: cap(for: account),
+                                  format: .currency(code: "USD"))
+                            .frame(width: 96)
+                    }
+                }
+                Text("What each subscription is measured against when its agent "
+                     + "reports no percentage of its own. One figure used to "
+                     + "serve all of them, which made the gauge meaningless on "
+                     + "most: $500 is a plausible ceiling for a usage-based "
+                     + "seat and nonsense for a $20 subscription, so a small "
+                     + "plan showed single digits while sitting on its actual "
+                     + "limit. Leave one at zero to use the default above.")
+                    .font(Theme.note)
+                    .foregroundStyle(.tertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } header: {
+                Text("Caps")
+            }
+
+            Section {
                 LabeledContent("Recorded spend") {
                     HStack(spacing: Theme.s4) {
                         TextField("", value: $recordedSpend,
@@ -632,6 +654,18 @@ private struct CrewSettings: View {
         .onChange(of: skipPermissions) {
             NotificationCenter.default.post(name: ClaudeAdapter.permissionsChanged, object: nil)
         }
+    }
+
+    /// Straight through to the store rather than into `@State` first.
+    ///
+    /// `TextField(value:format:)` writes on commit rather than per keystroke,
+    /// so this is one write when you leave the field — and going through the
+    /// store means the crew pane and the rail see the new denominator without
+    /// anything having to tell them.
+    private func cap(for account: Account) -> Binding<Double> {
+        Binding(get: { UsageStore.shared.hasOwnCap(account)
+                       ? UsageStore.shared.cap(for: account) : 0 },
+                set: { UsageStore.shared.setCap($0, for: account) })
     }
 }
 

@@ -215,6 +215,7 @@ greying them out:
 | **Preview** | the workbench's browser |
 | **Dictation** | the mic in the composer |
 | **Notifications** | a banner when a turn finishes somewhere you aren't looking |
+| **Usage rail** | a ring per subscription, floating at the edge of the screen — starts off |
 | **Motion** | the animated background — starts off on a Mac with integrated graphics |
 
 **Motion** is the other one that doesn't start on for everybody: it is off by
@@ -551,6 +552,41 @@ nothing. A choice sticks for the session and becomes that account's default.
 ai --models [account]     what's on offer, from a shell
 ai --describe             all of it as JSON, for other tools
 ```
+
+### What each subscription has left
+
+The point of holding four subscriptions is being able to spend the right one,
+and that decision is made several times a day — every time you pick who leads a
+crew and who gets the biggest piece. So it is worth being able to see the answer
+without opening a session to read it.
+
+Each account is asked in whatever way it can answer, and told apart by how much
+that answer is worth:
+
+| | |
+|---|---|
+| **Reported** | the agent's own answer to `/usage`. Claude gives a 5-hour window and a weekly one; Copilot gives its premium-request count. A fact about your plan. |
+| **Measured** | what Honeycode has spent this month against a cap you set for that account. An estimate — it cannot see the turns you ran in a terminal. |
+| **Nothing** | drawn as a hollow dot and a dash, not as an empty ring. An agent that publishes no allowance is a different thing from one with plenty left. |
+
+Caps are **per account**, in **Settings ▸ General ▸ Caps**. There used to be one
+figure for all of them, which made the gauge meaningless on most: $500 is a
+plausible ceiling for a usage-based enterprise seat and nonsense for a $20
+subscription, so a small plan sat on its actual limit showing single digits.
+Leave one at zero to fall back to the default.
+
+Three colours, and the thresholds are where a *choice* is still available rather
+than where trouble starts: green under 40%, amber to 70%, red past it. At ninety
+per cent of a five-hour window the decision it would have informed — give this
+piece to a different subscription — is already behind you.
+
+There are two places to read it. The **Crew** pane carries a row of rings above
+the seats, which costs nothing to ignore. **View ▸ Usage Rail** puts the same
+rings in a panel that floats over every other application, on every Space,
+where you can see them while you work in something else — hover one for the
+full breakdown, drag it anywhere, and it remembers where you put it. That one
+starts **off**: it is the most intrusive surface in the app and has to be asked
+for.
 
 ### What a crew actually does
 

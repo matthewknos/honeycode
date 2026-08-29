@@ -547,6 +547,138 @@ private struct SkillEditor: View {
     }
 }
 
+/// One account's two answers to "how much is left", side by side.
+///
+/// The command field is the reason this is a view rather than two more rows in
+/// the form. An agent that publishes its limits somewhere this app cannot guess
+/// — OpenAI's Codex is the one that prompted it — needs somebody to find the
+/// right incantation, and a field that fails silently makes that a guessing
+/// game played against a ring that never fills. So the field comes with a Test
+/// button that runs the command now and says what came back and what parsed
+/// out of it, which turns "watch a dash for a day" into one attempt.
+private struct UsageAccountRow: View {
+    let account: Account
+
+    @State private var command = ""
+    @State private var outcome: Outcome?
+    @State private var testing = false
+
+    private enum Outcome {
+        /// It ran and the parser found windows.
+        case found(String)
+        /// It ran, and nothing in what it printed looked like a limit. Carries
+        /// what it did print — the only thing that lets somebody fix it.
+        case unparsed(String)
+        /// It printed nothing at all, or never came back.
+        case silent
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Theme.s3) {
+            HStack(spacing: Theme.s4) {
+                AccountDot(account)
+                Text(account.title)
+                Spacer(minLength: Theme.s5)
+                TextField("Cap", value: cap, format: .currency(code: "USD"))
+                    .frame(width: 96)
+            }
+
+            HStack(spacing: Theme.s4) {
+                TextField("Command that prints its limits — optional",
+                          text: $command)
+                    .textFieldStyle(.roundedBorder)
+                    .font(Theme.monoSmall)
+                Button(testing ? "Testing…" : "Test") { probe() }
+                    .disabled(testing
+                              || command.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+
+            if let outcome { report(outcome) }
+        }
+        .padding(.vertical, Theme.s2)
+        // Written as you type rather than on Return. A shell command is fiddly
+        // enough to get right without also having to remember to commit it,
+        // and `setUsageCommand` deliberately publishes nothing — see its own
+        // note — so this costs a `UserDefaults` write per keystroke and no
+        // redraws anywhere else.
+        .onChange(of: command) { _, typed in
+            UsageStore.shared.setUsageCommand(typed, for: account)
+        }
+        .onAppear { command = UsageStore.shared.usageCommand(for: account) ?? "" }
+    }
+
+    @ViewBuilder
+    private func report(_ outcome: Outcome) -> some View {
+        switch outcome {
+        case .found(let summary):
+            Text(summary)
+                .font(Theme.note)
+                .foregroundStyle(Theme.stateDone)
+        case .unparsed(let output):
+            VStack(alignment: .leading, spacing: Theme.s1) {
+                Text("It ran, but nothing in the output looked like a limit. "
+                     + "A line has to read like \u{201C}name: 21% used\u{201D} "
+                     + "or \u{201C}name: 123 of 300\u{201D}.")
+                Text(output)
+                    .font(Theme.monoSmall)
+                    .textSelection(.enabled)
+            }
+            .font(Theme.note)
+            .foregroundStyle(Theme.stateHeld)
+            .fixedSize(horizontal: false, vertical: true)
+        case .silent:
+            Text("Nothing came back within 20 seconds. Check the command runs "
+                 + "on its own in a terminal — this has launchd\u{2019}s PATH "
+                 + "plus the usual install prefixes, not your shell\u{2019}s.")
+                .font(Theme.note)
+                .foregroundStyle(Theme.stateBad)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    /// Isolation spelled out rather than inferred. Everything else in this
+    /// view reaches `UsageStore.shared` from a closure SwiftUI already runs on
+    /// the main actor; this is the one method that starts a task of its own,
+    /// and a task inheriting the wrong context here would be a compile error
+    /// several files away from the cause.
+    @MainActor
+    private func probe() {
+        testing = true
+        outcome = nil
+        let candidate = command
+        Task {
+            let (output, reading) = await UsageStore.shared.test(candidate)
+            testing = false
+            guard let reading else {
+                outcome = output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    ? .silent
+                    : .unparsed(Self.excerpt(output))
+                return
+            }
+            // Read back, so what is confirmed is what the rail will draw rather
+            // than a second opinion formed here.
+            UsageStore.shared.refresh(account, force: true)
+            outcome = .found("Found " + reading.windows
+                .map { "\($0.title) \($0.percent)%" }
+                .joined(separator: ", "))
+        }
+    }
+
+    /// Enough of the output to recognise, not enough to take over the pane.
+    private static func excerpt(_ text: String, lines: Int = 6) -> String {
+        let kept = text.split(separator: "\n", omittingEmptySubsequences: false)
+            .prefix(lines)
+            .joined(separator: "\n")
+        return kept.count > 400 ? String(kept.prefix(400)) + "…" : kept
+    }
+
+    private var cap: Binding<Double> {
+        Binding(get: { UsageStore.shared.hasOwnCap(account)
+                       ? UsageStore.shared.cap(for: account) : 0 },
+                set: { UsageStore.shared.setCap($0, for: account) })
+    }
+}
+
 // MARK: - General
 
 /// What a crew is allowed to do, and what it may spend.
@@ -605,24 +737,24 @@ private struct CrewSettings: View {
                 TextField("Default monthly cap", value: $monthlyCap,
                           format: .currency(code: "USD"))
                 ForEach(Account.enabled) { account in
-                    LabeledContent(account.title) {
-                        TextField("", value: cap(for: account),
-                                  format: .currency(code: "USD"))
-                            .frame(width: 96)
-                    }
+                    UsageAccountRow(account: account)
                 }
-                Text("What each subscription is measured against when its agent "
-                     + "reports no percentage of its own. One figure used to "
-                     + "serve all of them, which made the gauge meaningless on "
-                     + "most: $500 is a plausible ceiling for a usage-based "
-                     + "seat and nonsense for a $20 subscription, so a small "
-                     + "plan showed single digits while sitting on its actual "
-                     + "limit. Leave one at zero to use the default above.")
+                Text("Two ways to fill a ring, and the first one wins. Ask "
+                     + "the agent: a command that prints this plan's limits, "
+                     + "run every half-minute or so while something is "
+                     + "watching — anything in its output shaped like "
+                     + "\u{201C}name: 21% used\u{201D} or "
+                     + "\u{201C}name: 123 of 300\u{201D} becomes a window. "
+                     + "Or measure it here: what Honeycode has spent this "
+                     + "month against the cap, which is per account because "
+                     + "$500 is a plausible ceiling for a usage-based seat and "
+                     + "nonsense for a $20 subscription. Leave a cap at zero "
+                     + "to use the default above.")
                     .font(Theme.note)
                     .foregroundStyle(.tertiary)
                     .fixedSize(horizontal: false, vertical: true)
             } header: {
-                Text("Caps")
+                Text("Usage")
             }
 
             Section {
@@ -656,17 +788,6 @@ private struct CrewSettings: View {
         }
     }
 
-    /// Straight through to the store rather than into `@State` first.
-    ///
-    /// `TextField(value:format:)` writes on commit rather than per keystroke,
-    /// so this is one write when you leave the field — and going through the
-    /// store means the crew pane and the rail see the new denominator without
-    /// anything having to tell them.
-    private func cap(for account: Account) -> Binding<Double> {
-        Binding(get: { UsageStore.shared.hasOwnCap(account)
-                       ? UsageStore.shared.cap(for: account) : 0 },
-                set: { UsageStore.shared.setCap($0, for: account) })
-    }
 }
 
 // MARK: - Reading

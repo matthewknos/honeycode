@@ -108,6 +108,46 @@ if let reading = AccountUsage.read("Premium requests: 41% used (123 of 300)") {
 check("a percentage past the end is clamped",
       AccountUsage.read("Current session: 143% used")?.windows.first?.percent == 100)
 
+// --- a status command written for a person, not for us ---
+//
+// The declared probe runs whatever prints an account's limits, which means the
+// text arriving here was written to be read in a terminal: a heading, some
+// lines that are not limits at all, and — from anything that ignores NO_COLOR
+// — escape codes wrapped round the numbers. Every one of those had to survive,
+// because the failure mode is silent. A parser that matches nothing draws a
+// dash, and a dash reads as "this plan has no limits" rather than as "nobody
+// asked properly".
+
+let status = """
+Signed in as someone@example.com
+Plan: Pro
+
+  5h limit: 21% used · resets 14:32
+  Weekly limit: 63% used · resets Mon 09:00
+
+Model: gpt-5.6-codex
+"""
+
+if let reading = AccountUsage.read(status) {
+    check("a limit indented under a heading is still found",
+          reading.windows.count == 2)
+    check("and the lines that are not limits are not windows",
+          reading.windows.allSatisfy { $0.title.contains("limit") })
+    check("the binding window is the tighter one", reading.binding?.percent == 63)
+    check("a 5h window shortens to something that fits a ring",
+          reading.windows.first?.short == "5h")
+} else {
+    check("a terminal status block is read", false)
+}
+
+let coloured = "5h limit: \u{1B}[32m21%\u{1B}[0m used · resets 14:32"
+check("colour codes don't hide the number",
+      AccountUsage.read(coloured)?.windows.first?.percent == 21)
+check("and don't end up in the window's name",
+      AccountUsage.read(coloured)?.windows.first?.title == "5h limit")
+check("text with no escapes in it is returned untouched",
+      AccountUsage.plain("plain text") == "plain text")
+
 // --- how worried to look ---
 //
 // The bands are where a *choice* is still available, which is why the top one

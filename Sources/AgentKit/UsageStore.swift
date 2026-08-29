@@ -137,7 +137,8 @@ struct AccountUsage: Equatable, Sendable, Codable {
     /// a parse failure: an enterprise usage-based seat genuinely has no
     /// percentage to report, and writing zeroes for it would invent a limit
     /// that does not exist and draw a reassuring empty ring for it.
-    static func read(_ text: String, at moment: Date = Date()) -> AccountUsage? {
+    static func read(_ raw: String, at moment: Date = Date()) -> AccountUsage? {
+        let text = plain(raw)
         var windows: [UsageWindow] = []
         var seen: Set<String> = []
 
@@ -154,8 +155,14 @@ struct AccountUsage: Equatable, Sendable, Codable {
     }
 
     /// `Current session: 34% used · resets …`
+    ///
+    /// The label may start with a digit — `5h limit:` is a real line from a
+    /// real status command, and an `[A-Za-z]` anchor silently skipped it. That
+    /// is the shape of every bug this parser can have: it does not throw, it
+    /// returns one fewer window, and a missing window is indistinguishable from
+    /// a plan with no limit.
     private static func stated(in text: String) -> [UsageWindow] {
-        matches(#"^[\s\-•*]*([A-Za-z][^:\n]{2,48}?)\s*:\s*(\d{1,3})\s*%\s*used\b[^\n]*"#,
+        matches(#"^[\s\-•*]*([A-Za-z0-9][^:\n]{1,48}?)\s*:\s*(\d{1,3})\s*%\s*used\b[^\n]*"#,
                 in: text).compactMap { match in
             guard let title = match.group(1, in: text),
                   let percent = match.group(2, in: text).flatMap(Int.init)
@@ -168,7 +175,7 @@ struct AccountUsage: Equatable, Sendable, Codable {
 
     /// `Premium requests: 123 of 300`, and `123/300` for the same thing.
     private static func counted(in text: String) -> [UsageWindow] {
-        matches(#"^[\s\-•*]*([A-Za-z][^:\n]{2,48}?)\s*:\s*([\d,]+)\s*(?:of|/)\s*([\d,]+)[^\n]*"#,
+        matches(#"^[\s\-•*]*([A-Za-z0-9][^:\n]{1,48}?)\s*:\s*([\d,]+)\s*(?:of|/)\s*([\d,]+)[^\n]*"#,
                 in: text).compactMap { match in
             guard let title = match.group(1, in: text),
                   let used = match.group(2, in: text).flatMap(number),
@@ -201,6 +208,23 @@ struct AccountUsage: Equatable, Sendable, Codable {
     /// doesn't.
     private static func tidy(_ title: String) -> String {
         title.trimmingCharacters(in: CharacterSet(charactersIn: " \t*_-•·"))
+    }
+
+    /// The same text with the terminal's colouring taken out.
+    ///
+    /// Every probe here is a command-line tool answering a question it normally
+    /// answers to a human, and a tool that draws its limits as a green bar
+    /// writes `\u{1B}[32m21%\u{1B}[0m` — where the digits are still there and
+    /// the line no longer starts where the regex thinks it does. `Shell.run`
+    /// sets `NO_COLOR`, which most tools honour and some ignore; this is for
+    /// the ones that ignore it, and costs one pass over a few hundred
+    /// characters.
+    static func plain(_ text: String) -> String {
+        guard text.contains("\u{1B}") else { return text }
+        guard let regex = try? NSRegularExpression(
+                pattern: "\u{1B}\\[[0-9;?]*[ -/]*[@-~]") else { return text }
+        return regex.stringByReplacingMatches(
+            in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "")
     }
 
     private static func number(_ text: String) -> Double? {
@@ -443,7 +467,115 @@ final class UsageStore: ObservableObject {
         remember(reading, for: account)
     }
 
-    // MARK: Polling Claude
+    // MARK: How an account is asked
+
+    /// What to run to ask this account what it has left.
+    ///
+    /// Claude is asked by spawning its own CLI with a `/usage` turn; the ACP
+    /// agents answer over the wire they are already on. Everything else
+    /// publishes its limits somewhere this app cannot guess — OpenAI's Codex
+    /// being the one that prompted this — and guessing is worse than not
+    /// guessing. A parser written against an invented format does not fail
+    /// loudly; it matches nothing, and the rail draws a dash forever, which
+    /// reads as "this plan has no limits" rather than as "nobody asked
+    /// properly".
+    ///
+    /// So it is a setting: whatever prints the numbers goes here, and its
+    /// output goes through the same parser as everything else. Any line of the
+    /// form `<name>: <n>% used` or `<name>: <n> of <m>` becomes a window, so
+    /// the bar for making a new agent work is finding its status command
+    /// rather than writing any code.
+    ///
+    /// It runs on the same schedule as everything else — every 30 seconds at
+    /// most while something is watching — so it has to be cheap and it has to
+    /// be read-only. Both are on whoever sets it; this is a preference on your
+    /// own machine, the same trust as `.honeycode-check`, and no more access
+    /// than the agent CLI this app already launches for you.
+    static func commandKey(_ account: Account) -> String {
+        "usage.command.\(account.id)"
+    }
+
+    func usageCommand(for account: Account) -> String? {
+        let stored = (Prefs.store.string(forKey: Self.commandKey(account)) ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return stored.isEmpty ? nil : stored
+    }
+
+    func setUsageCommand(_ command: String?, for account: Account) {
+        let trimmed = (command ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            Prefs.store.removeObject(forKey: Self.commandKey(account))
+        } else {
+            Prefs.store.set(trimmed, forKey: Self.commandKey(account))
+        }
+        // The floor is there to stop a burst of turns spawning a process each.
+        // Somebody who has just changed the command is not a burst, and making
+        // them wait half a minute to find out whether it worked is how a
+        // settings field gets abandoned.
+        //
+        // No `objectWillChange` here, unlike `setCap`: nothing on screen draws
+        // the command except the field that owns it, and this is written on
+        // every keystroke — publishing each one would redraw the rail and the
+        // crew pane while somebody types a shell command.
+        lastChecked[account] = nil
+    }
+
+    /// Which of the two ways this account can be asked, if either.
+    ///
+    /// A declared command wins. It is the more specific answer and the one
+    /// somebody typed on purpose — including, for a Claude account, as a way
+    /// to replace a probe that spawns 100MB of Node with something cheaper.
+    private enum Probe: Sendable {
+        case declared(String)
+        case claude(configDir: String)
+    }
+
+    private func probe(for account: Account) -> Probe? {
+        if let command = usageCommand(for: account) { return .declared(command) }
+        if let directory = account.configDir { return .claude(configDir: directory) }
+        return nil
+    }
+
+    /// Run one, and hand back exactly what it said.
+    ///
+    /// The raw text comes back as well as the parse, and that is the whole
+    /// point of the shape: the settings field has a Test button, and "it
+    /// printed this, and none of it looked like a limit" is the only answer
+    /// that lets somebody fix their command. A bare "no" would send them
+    /// looking for a bug in this app.
+    nonisolated private static func answer(from probe: Probe) -> String {
+        switch probe {
+        case .declared(let command):
+            let result = Shell.run("/bin/sh", ["-c", command], timeout: Self.patience)
+            if result.timedOut { return "" }
+            // Both streams: these tools disagree about which one a status
+            // report belongs on, and the useful half is whichever isn't empty.
+            return [result.out, result.err]
+                .filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+                .joined(separator: "\n")
+        case .claude(let configDir):
+            return run(configDir: configDir)
+        }
+    }
+
+    /// Short, because this is polled. A status command that takes longer than
+    /// this to say what your quota is has something else wrong with it, and
+    /// `Verification.patience` — five minutes, sized for a typecheck — would
+    /// leave a wedged probe holding a slot until the app quit.
+    private static let patience: TimeInterval = 20
+
+    /// Run a candidate command now and report what it produced, without
+    /// storing anything. What the Test button calls.
+    func test(_ command: String) async -> (output: String, reading: AccountUsage?) {
+        let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return ("", nil) }
+        return await Task.detached(priority: .userInitiated) {
+            let text = Self.answer(from: .declared(trimmed))
+            return (text, AccountUsage.read(text))
+        }.value
+    }
+
+    // MARK: Polling
 
     /// Even a forced refresh keeps a floor.
     ///
@@ -459,7 +591,7 @@ final class UsageStore: ObservableObject {
     private static let forcedInterval: TimeInterval = 120
 
     func refresh(_ account: Account, force: Bool = false) {
-        guard let configDir = account.configDir, !inFlight.contains(account) else { return }
+        guard !inFlight.contains(account), let probe = probe(for: account) else { return }
         if let last = lastChecked[account],
            Date().timeIntervalSince(last) < (force ? Self.forcedInterval : Self.minimumInterval) {
             return
@@ -469,7 +601,7 @@ final class UsageStore: ObservableObject {
         lastChecked[account] = Date()
 
         Task.detached(priority: .utility) {
-            let text = Self.run(configDir: configDir)
+            let text = Self.answer(from: probe)
             await MainActor.run {
                 self.inFlight.remove(account)
                 // An account with no limits to report — see `AccountUsage.read`

@@ -565,15 +565,36 @@ that answer is worth:
 
 | | |
 |---|---|
-| **Reported** | the agent's own answer to `/usage`. Claude gives a 5-hour window and a weekly one; Copilot gives its premium-request count. A fact about your plan. |
+| **Reported** | the agent's own answer. Claude is asked `/usage` in a throwaway process; the ACP agents answer over the wire they're already on; anything else runs the command you give it. A fact about your plan. |
 | **Measured** | what Honeycode has spent this month against a cap you set for that account. An estimate — it cannot see the turns you ran in a terminal. |
 | **Nothing** | drawn as a hollow dot and a dash, not as an empty ring. An agent that publishes no allowance is a different thing from one with plenty left. |
 
-Caps are **per account**, in **Settings ▸ General ▸ Caps**. There used to be one
-figure for all of them, which made the gauge meaningless on most: $500 is a
-plausible ceiling for a usage-based enterprise seat and nonsense for a $20
-subscription, so a small plan sat on its actual limit showing single digits.
-Leave one at zero to fall back to the default.
+Both are set per account in **Settings ▸ General ▸ Usage**.
+
+**The command** is how an agent Honeycode has never heard of gets a real ring —
+OpenAI's Codex being the case it was built for. Give it anything that prints
+that plan's limits and the output goes through the same parser as everything
+else: any line shaped like `name: 21% used` or `name: 123 of 300` becomes a
+window, indentation and terminal colouring and all. It runs at most every 30
+seconds while something is watching it, so it needs to be cheap and read-only.
+
+Finding the right command is the fiddly part, so the field has a **Test**
+button: it runs the command now and tells you what came back and what parsed
+out of it. That is deliberate — a probe that matches nothing fails silently, and
+a dash reads as "this plan has no limits" rather than as "nobody asked
+properly".
+
+**Caps** are the fallback. There used to be one figure for all of them, which
+made the gauge meaningless on most: $500 is a plausible ceiling for a
+usage-based enterprise seat and nonsense for a $20 subscription, so a small plan
+sat on its actual limit showing single digits. Leave one at zero to fall back to
+the default.
+
+Two accounts still show a dash and that is honest rather than broken. **Kimi**
+publishes no allowance and ACP reports no cost, so there is nothing to measure
+that wouldn't be invented; **Copilot** publishes its premium-request count and
+whether the wording matches what the parser expects is unverified. Both take a
+command like anything else.
 
 Three colours, and the thresholds are where a *choice* is still available rather
 than where trouble starts: green under 40%, amber to 70%, red past it. At ninety

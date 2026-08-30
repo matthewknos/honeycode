@@ -521,10 +521,22 @@ struct AgentDetail: View {
                 // Said once, where the decision is made, and not dressed up as
                 // a warning triangle. `Propose` is a paragraph in a prompt;
                 // this is the real thing.
-                Text("Runs unattended with full tool access in \(editing.subtitle). "
+                Text("Runs with full tool access in \(editing.subtitle). "
                      + "Isolation is the only limit that holds.")
                     .font(Theme.note)
                     .foregroundStyle(.secondary)
+                    .padding(.leading, Theme.s6)
+            }
+            // What the schedule takes back, said where the setting is chosen.
+            //
+            // A definition that quietly runs as something other than what it
+            // says is worse than one that refuses: you read "Act", watch
+            // nothing get written, and go looking for a bug in the agent.
+            if let downgrade = AgentStore.downgrade(editing) {
+                Text(downgrade)
+                    .font(Theme.note)
+                    .foregroundStyle(Theme.stateHeld)
+                    .fixedSize(horizontal: false, vertical: true)
                     .padding(.leading, Theme.s6)
             }
         }

@@ -693,6 +693,8 @@ private struct CrewSettings: View {
     /// SwiftUI, and a second stored copy would be a setting that disagreed with
     /// itself.
     @AppStorage("tenancy.gateDelegation") private var gateDelegation = true
+    /// The key `Agents.unattendedWritesAllowed` reads, same arrangement.
+    @AppStorage("agents.unattendedWrites") private var unattendedWrites = false
     @AppStorage("usage.monthlyCap") private var monthlyCap: Double = 500
     @State private var recordedSpend: Double = UsageStore.shared.baseline(for: .work)
 
@@ -706,6 +708,21 @@ private struct CrewSettings: View {
                        + "there is no middle setting over its headless protocol."
                      : "Claude can read and search, but every edit is refused. "
                        + "Copilot still asks per action.")
+                    .font(Theme.note)
+                    .foregroundStyle(.tertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Toggle("Let scheduled agents write", isOn: $unattendedWrites)
+                Text(unattendedWrites
+                     ? "An agent set to Act edits files and runs commands when "
+                       + "its schedule fires, with nobody watching. It is still "
+                       + "confined to its own folder — that part isn't optional "
+                       + "for an unattended run."
+                     : "Scheduled runs are held to propose only, whatever the "
+                       + "agent is set to. Running one by hand uses its own "
+                       + "setting, because you are sitting there. Either way an "
+                       + "unattended run is confined to its folder: Propose is a "
+                       + "paragraph asking an agent not to write, and the folder "
+                       + "is the fence that actually holds.")
                     .font(Theme.note)
                     .foregroundStyle(.tertiary)
                     .fixedSize(horizontal: false, vertical: true)

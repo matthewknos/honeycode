@@ -418,7 +418,13 @@ endpoint would mean writing the agent loop here, which is a different program.
 Three modes in the sidebar. **Code** is conversations, one column each, up to
 three side by side. **Crew** is who is running right now across every session,
 what each subscription can do and what it has left, and your saved teams.
-**Agents** is the ones that run on their own.
+**Agents** is the ones that run on their own — a saved prompt, a folder and a
+schedule. An unattended run is **always confined to its folder** and is held to
+**propose only** whatever the agent is set to, unless *Let scheduled agents
+write* is on in Settings ▸ General. Running one by hand uses its own settings,
+because you are sitting there. The reason for the split is in the code and worth
+repeating: Propose is a paragraph asking an agent not to write, and the folder
+is the fence that actually holds.
 
 Every column carries a **header bar**: which conversation, which folder, which
 branch, whether it's fenced, what it's doing, who else is on the message and

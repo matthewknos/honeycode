@@ -353,6 +353,7 @@ final class AgentStore: ObservableObject {
         }
 
         let why = trigger ?? (agent.schedule.isManual ? .hand : .schedule)
+        let agent = Self.asRun(agent, why: why)
         let run = Session(account: agent.account, directory: agent.directory,
                           name: "\(agent.name) · \(Self.stamp(now))",
                           modelID: agent.modelID, effort: agent.effort,
@@ -425,6 +426,42 @@ final class AgentStore: ObservableObject {
         RateLimit.clock.string(from: date)
     }
 
+    /// The definition as it will actually run, which is not always the one
+    /// that was saved.
+    ///
+    /// Two things are taken away from a run nobody is watching, and neither is
+    /// negotiable from the definition:
+    ///
+    /// - **It is confined.** `isolated` is a launch argument and is the only
+    ///   fence here that actually holds — `Autonomy.propose` says so itself:
+    ///   it is a paragraph telling the agent not to write, and an agent that
+    ///   ignores it is not stopped by anything in this app. A scheduled run
+    ///   with the fence off is full tool access on a timer, in whatever
+    ///   directory was typed into a form once, with nobody in the room.
+    /// - **It proposes rather than acts**, unless somebody has said otherwise
+    ///   in Settings. `.act` unattended is the most powerful thing this
+    ///   application can do and it was reachable by filling in a form. Now it
+    ///   is reachable by filling in a form *and* turning on a switch that says
+    ///   what it means.
+    ///
+    /// Running one by hand is untouched. You are sitting there; that is the
+    /// difference the whole distinction rests on.
+    static func asRun(_ agent: AgentDefinition, why: Trigger) -> AgentDefinition {
+        guard why != .hand else { return agent }
+        var run = agent
+        run.isolated = true
+        if !unattendedWritesAllowed { run.autonomy = .propose }
+        return run
+    }
+
+    /// Whether a scheduled agent may write.
+    ///
+    /// Off unless asked for, and read live rather than cached so turning it off
+    /// takes effect on the next firing rather than the next launch.
+    static var unattendedWritesAllowed: Bool {
+        Prefs.store.object(forKey: "agents.unattendedWrites") as? Bool ?? false
+    }
+
     /// The line at the top of a run, saying who started it and under what.
     private static func opening(_ agent: AgentDefinition, why: Trigger) -> String {
         let cause = why == .hand ? "run by hand" : agent.schedule.title.lowercased()
@@ -432,6 +469,23 @@ final class AgentStore: ObservableObject {
             ? "full tool access" : "propose only — told not to write anything"
         return "\(agent.name) — \(cause), \(fence)"
             + (agent.isolated ? ", confined to \(agent.subtitle)." : ".")
+    }
+
+    /// What `asRun` took away, for the row that has to say so.
+    ///
+    /// A definition that quietly runs as something other than what it says is
+    /// worse than one that refuses: the person reads "Act", watches nothing get
+    /// written, and goes looking for a bug in the agent.
+    static func downgrade(_ agent: AgentDefinition) -> String? {
+        guard !agent.schedule.isManual else { return nil }
+        var taken: [String] = []
+        if !agent.isolated { taken.append("confined to its folder") }
+        if agent.autonomy == .act && !unattendedWritesAllowed {
+            taken.append("held to propose only")
+        }
+        guard !taken.isEmpty else { return nil }
+        return "Unattended, so it runs " + taken.joined(separator: " and ")
+            + ". Running it by hand uses the settings above."
     }
 }
 

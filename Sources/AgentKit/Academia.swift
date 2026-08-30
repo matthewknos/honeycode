@@ -90,14 +90,9 @@ enum Academia {
     that gets sent is always the one you did not update.
     """
 
-    /// The half that pays for itself.
-    ///
-    /// `ChartBlock`'s JSON contract is "deliberately tiny", with an explicit
-    /// note that a grammar is only worth it once that proves too small.
-    /// Publication figures are the first thing that might prove it, and this
-    /// skill is the cheap version of finding out: the conventions written down,
-    /// so that what a figure needs is stated before anybody decides whether the
-    /// contract has to grow to carry it.
+    /// The half that pays for itself: the conventions written down, so an
+    /// agent drawing a figure for a paper is held to what a journal expects
+    /// rather than to what looks good in a README.
     private static let figureSkill = """
     Use this for any figure that is going into a paper, as opposed to a chart
     that is going into a README.
@@ -125,12 +120,9 @@ enum Academia {
 
     ## In this app
 
-    Honeycode renders a ```chart fence natively — see `ChartBlock` for the
-    contract. It is deliberately small and does not yet carry error bars or
-    panel labels. Where a figure needs those, produce it as a script (matplotlib
-    or ggplot) written into the project so it can be re-run when the data
-    changes, and say in the message why the fence was not enough. That last part
-    matters: the list of things it could not do is what decides whether the
-    contract grows.
+    Produce the figure as a script — matplotlib or ggplot — written into the
+    project, so it can be re-run when the data changes. Nothing here renders a
+    chart for you, and a figure that exists only as an image is one nobody can
+    correct.
     """
 }

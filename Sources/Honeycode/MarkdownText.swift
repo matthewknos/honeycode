@@ -241,7 +241,6 @@ struct MarkdownText: View {
         case quote([Block])
         case rule
         case table(Table)
-        case chart(ChartSpec)
         /// `![alt](path)` on its own line. Agents produce screenshots and
         /// generated diagrams and then link them; drawing the literal markdown
         /// was showing you the reference instead of the thing.
@@ -344,12 +343,7 @@ struct MarkdownText: View {
                 }
                 index += 1
                 let source = body.joined(separator: "\n")
-                // A `chart` fence whose JSON doesn't parse falls back to being
-                // a code block. Showing the raw spec beats showing nothing, and
-                // it's the only way to tell that the chart was *attempted*.
-                if language.lowercased() == "chart", let spec = ChartSpec.parse(source) {
-                    out.append(.chart(spec))
-                } else if language.lowercased() == "svg",
+                if language.lowercased() == "svg",
                           let vector = VectorArtifact.write(source) {
                     // Vectors go down the image path rather than the web view:
                     // `NSImage` reads SVG natively, so there's no JavaScript to
@@ -620,9 +614,6 @@ private struct BlockView: View {
 
         case .table(let table):
             TableBlock(table: table)
-
-        case .chart(let spec):
-            ChartBlock(spec: spec)
 
         case .image(let path, let alt):
             MarkdownImage(path: path, alt: alt)

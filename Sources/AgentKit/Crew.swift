@@ -1764,10 +1764,31 @@ final class Crew {
                 switch Tenancy.verdict(reply) {
                 case .clear:
                     cleared.append(assignment)
+                    // The whole point of the record is that it has both halves.
+                    // A log of refusals alone answers "what was stopped" and
+                    // not "what got through", and the second is the question
+                    // somebody actually comes to it with.
+                    //
+                    // `wire`, not `task`: the hash has to be of what would have
+                    // been sent, brief and declared files included, or two
+                    // entries about the same piece under different briefs look
+                    // like the same event.
+                    Audit.record(.crossingAllowed, from: leader.account,
+                                 to: assignment.to.account,
+                                 task: assignment.wire, run: self.runID)
                 case .blocked(let reason):
                     self.held.append((assignment: assignment, reason: reason))
                     self.reporter.held(assignment, reason: reason)
                     self.queued.remove(assignment.to)
+                    // The reason is the inspector's own sentence about material
+                    // it just read, so it does not go in the file — see
+                    // `Audit`'s note about writing the thing you are protecting
+                    // into the log beside it. What is recorded is that a
+                    // crossing was refused, between whom, and for which piece.
+                    Audit.record(.crossingBlocked, from: leader.account,
+                                 to: assignment.to.account,
+                                 task: assignment.wire, reason: "refused by inspection",
+                                 run: self.runID)
                 }
                 outstanding -= 1
                 guard outstanding == 0 else { return }
@@ -3657,6 +3678,14 @@ final class Crew {
     private func delegate(for seat: Seat) -> Session? {
         guard offTenant.contains(seat) else { return session(for: seat) }
 
+        // The other half of the fence, and the wider one — see `Tenancy`. The
+        // text check gets a line per piece; this gets one per seat, the first
+        // time a confined session is built for it, because "which agents never
+        // saw this project" is a per-agent fact and repeating it per piece
+        // would bury the crossings.
+        if confined[seat] == nil {
+            Audit.record(.delegateConfined, to: seat.account, run: runID)
+        }
         if let existing = confined[seat] {
             // A `@kimi:free` earlier in the conversation applies here too. The
             // model was resolved against this account's catalogue by `apply`,

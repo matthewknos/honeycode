@@ -2128,6 +2128,11 @@ final class Workspace: ObservableObject {
         // change. A roster in preferences means this app has been used here
         // before, and a returning install is never shown the flow.
         Setup.prepare(returning: Prefs.store.object(forKey: Self.storeKey) != nil)
+        // Trim the record and say what an organisation is holding. Here rather
+        // than in `Setup.prepare`, which guards on `needsRun` and so runs once
+        // in the life of an install — this has to happen every launch or a log
+        // read next year says nothing about the policy that was live.
+        Audit.begin()
 
         let stored = Self.load()
         // Model and effort were being written to the store and then dropped on

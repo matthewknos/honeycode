@@ -60,6 +60,7 @@ final class Program {
         Migration.run()
         Support.prepare()
         if !Setup.hasRun { Setup.seedDefaults() }
+        Audit.begin()
     }
 
     /// One message, printed, then out. `ai -p "…"`.

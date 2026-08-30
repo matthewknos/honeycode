@@ -637,22 +637,46 @@ private struct UsageAccountRow: View {
 /// in the case of the per-project verification command, buried inside a popover
 /// inside the composer. They are one subject: the rules a run operates under.
 private struct CrewSettings: View {
-    @AppStorage("agent.skipPermissions") private var skipPermissions = true
-    /// The key `Tenancy.gates` reads. `@AppStorage` and that property are the
-    /// same `UserDefaults` entry seen from two sides — the engine can't import
-    /// SwiftUI, and a second stored copy would be a setting that disagreed with
-    /// itself.
-    @AppStorage("tenancy.gateDelegation") private var gateDelegation = true
-    /// The key `Agents.unattendedWritesAllowed` reads, same arrangement.
-    @AppStorage("agents.unattendedWrites") private var unattendedWrites = false
+    /// The three governed switches, read and written through `Policy` rather
+    /// than through `@AppStorage`.
+    ///
+    /// `@AppStorage` was right while these were only ever this Mac's business.
+    /// It is wrong now: it writes straight to `UserDefaults`, which a managed
+    /// key ignores — so the toggle would move, the value would not, and the
+    /// control would spring back looking broken. `Policy.set` reports whether
+    /// the write landed, and a managed control is disabled rather than allowed
+    /// to lie.
+    ///
+    /// Mirrored into `@State` because `Policy` is plain preferences with no
+    /// Combine in it — the same arrangement, and for the same reason, as
+    /// `FeatureSettings`.
+    @State private var governed: [Policy.Key: Bool] = [:]
     @AppStorage("usage.monthlyCap") private var monthlyCap: Double = 500
     @State private var recordedSpend: Double = UsageStore.shared.baseline(for: .work)
+    @State private var auditLines = 0
+
+    private func on(_ key: Policy.Key, default fallback: Bool) -> Binding<Bool> {
+        Binding(get: { governed[key] ?? Policy.value(key, default: fallback) },
+                set: { governed[key] = $0; Policy.set(key, $0) })
+    }
+
+    /// The line under a control an organisation is holding.
+    @ViewBuilder
+    private func managed(_ key: Policy.Key) -> some View {
+        if Policy.isManaged(key) {
+            Label(Policy.note, systemImage: "lock.fill")
+                .font(Theme.note)
+                .foregroundStyle(.secondary)
+        }
+    }
 
     var body: some View {
         Form {
             Section {
-                Toggle("Skip permission prompts", isOn: $skipPermissions)
-                Text(skipPermissions
+                Toggle("Skip permission prompts", isOn: on(.skipPermissions, default: true))
+                    .disabled(Policy.isManaged(.skipPermissions))
+                managed(.skipPermissions)
+                Text(Policy.value(.skipPermissions, default: true)
                      ? "Agents edit files and run commands without asking. Turn "
                        + "this off and Claude can read but every write is refused — "
                        + "there is no middle setting over its headless protocol."
@@ -661,8 +685,11 @@ private struct CrewSettings: View {
                     .font(Theme.note)
                     .foregroundStyle(.tertiary)
                     .fixedSize(horizontal: false, vertical: true)
-                Toggle("Let scheduled agents write", isOn: $unattendedWrites)
-                Text(unattendedWrites
+                Toggle("Let scheduled agents write",
+                       isOn: on(.unattendedWrites, default: false))
+                    .disabled(Policy.isManaged(.unattendedWrites))
+                managed(.unattendedWrites)
+                Text(Policy.value(.unattendedWrites, default: false)
                      ? "An agent set to Act edits files and runs commands when "
                        + "its schedule fires, with nobody watching. It is still "
                        + "confined to its own folder — that part isn't optional "
@@ -681,8 +708,11 @@ private struct CrewSettings: View {
             }
 
             Section {
-                Toggle("Keep Enterprise work inside Enterprise", isOn: $gateDelegation)
-                Text(gateDelegation
+                Toggle("Keep Enterprise work inside Enterprise",
+                       isOn: on(.tenancyGate, default: true))
+                    .disabled(Policy.isManaged(.tenancyGate))
+                managed(.tenancyGate)
+                Text(Policy.value(.tenancyGate, default: true)
                      ? "When an Enterprise session hands a piece of work to "
                        + "Kimi, Copilot or your personal Claude, the task is "
                        + "checked on this account before it is sent, and those "
@@ -725,6 +755,36 @@ private struct CrewSettings: View {
             }
 
             Section {
+                Toggle("Keep a record of policy decisions",
+                       isOn: on(.auditing, default: true))
+                    .disabled(Policy.isManaged(.auditing))
+                managed(.auditing)
+                LabeledContent("Entries") {
+                    HStack(spacing: Theme.s4) {
+                        Text("\(auditLines)").monospacedDigit()
+                        Button("Show in Finder") {
+                            NSWorkspace.shared.activateFileViewerSelecting([Audit.url])
+                        }
+                        .disabled(auditLines == 0)
+                    }
+                }
+                Text("One line of JSON per decision: a piece of work refused at "
+                     + "the tenancy fence or cleared through it, a delegate given "
+                     + "a confined folder, a scheduled run held to propose only. "
+                     + "Kept for 90 days and trimmed at launch.\n\nWhat it does "
+                     + "not contain is the work itself — a task is recorded as a "
+                     + "hash, which can tell you two entries are about the same "
+                     + "piece and nothing else. Writing the material this app is "
+                     + "protecting into a log beside it would defeat the thing "
+                     + "doing the protecting.")
+                    .font(Theme.note)
+                    .foregroundStyle(.tertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } header: {
+                Text("Record")
+            }
+
+            Section {
                 LabeledContent("Recorded spend") {
                     HStack(spacing: Theme.s4) {
                         TextField("", value: $recordedSpend,
@@ -749,10 +809,14 @@ private struct CrewSettings: View {
         }
         .formStyle(.grouped)
         .frame(maxHeight: .infinity)
-        // Both flags are fixed at process launch, so live sessions restart.
-        .onChange(of: skipPermissions) {
+        // Fixed at process launch, so live sessions restart. Watched through
+        // the mirror rather than through `@AppStorage`, which this no longer
+        // has — and the mirror only moves when the write actually landed, so a
+        // managed key can't fire this by being clicked at.
+        .onChange(of: governed[.skipPermissions]) { _, _ in
             NotificationCenter.default.post(name: ClaudeAdapter.permissionsChanged, object: nil)
         }
+        .onAppear { auditLines = Audit.all().count }
     }
 
 }

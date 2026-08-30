@@ -645,6 +645,57 @@ something unparseable blocks the assignment.
 
 ---
 
+### Policy, and the record of it
+
+Two things a fence needs before anybody will rely on it: somebody other than
+the person it constrains has to be able to set it, and it has to leave evidence.
+
+**Four settings can be pinned by a configuration profile.** They are the ones
+with a security answer rather than a preference answer:
+
+| | |
+|---|---|
+| `tenancy.gateDelegation` | whether work leaving Enterprise is inspected first |
+| `agents.unattendedWrites` | whether a scheduled agent may write with nobody watching |
+| `agent.skipPermissions` | whether agents act without a permission prompt |
+| `audit.enabled` | whether policy decisions are recorded |
+
+Push a profile into this app's own domain — `com.matthewquigley.honeycode` —
+and the control goes read-only with **Set by your organisation** under it, in
+Settings and in the first-run flow both. `Policy.sampleProfile` in the source
+holds a working payload with the identifier already correct, because the one
+place that cannot drift from the bundle identifier is this repository.
+
+It is a **closed list on purpose.** "Anything in the managed domain wins" would
+mean every setting silently became forceable, and a profile that pinned the
+model, the working directory and the spend cap would be administering somebody's
+work rather than fencing it. Nothing here phones home, and nothing here can be
+switched on by anyone who isn't already administering the Mac.
+
+**Decisions are recorded**, one line of JSON each, in
+`~/Library/Application Support/Honeycode/audit.jsonl` at `0600`:
+
+```json
+{"at":"2026-08-30T11:04:12Z","event":"crossingBlocked","from":"claude-w",
+ "to":"kimi","task":"9f2c41ab77de0315","reason":"refused by inspection",
+ "run":"7C1E…"}
+```
+
+Both directions, because a log of refusals answers "what was stopped" and not
+"what got through", and the second is what somebody actually comes to it with.
+Kept 90 days, trimmed at launch.
+
+**The task is a hash, not the text.** Writing the material this app protects
+into a plaintext log beside the thing protecting it is the classic own-goal, and
+a log people have to be careful with is one that ends up switched off. A hash
+answers the question a hash can answer — *is this the same piece of work* — and
+refuses the one it shouldn't. The inspector's reason isn't quoted either; the
+event says a crossing was refused, between whom, and for which piece.
+
+It is not tamper-proof, and pretending otherwise would be the kind of assurance
+that fails exactly when it matters: the file belongs to whoever is using the
+Mac. What it is, is a record that exists — which is more than there was.
+
 ## Where your data lives
 
 | | |

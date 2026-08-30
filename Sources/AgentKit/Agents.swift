@@ -451,15 +451,27 @@ final class AgentStore: ObservableObject {
         var run = agent
         run.isolated = true
         if !unattendedWritesAllowed { run.autonomy = .propose }
+        // Recorded only when it actually changed something. An agent already
+        // set to propose-and-confine is not being downgraded, and a line
+        // saying so on every firing would be most of the log.
+        if run.isolated != agent.isolated || run.autonomy != agent.autonomy {
+            Audit.record(.unattendedDowngraded, to: agent.account,
+                         task: agent.prompt,
+                         reason: run.autonomy != agent.autonomy
+                             ? "held to propose" : "confined")
+        }
         return run
     }
 
     /// Whether a scheduled agent may write.
     ///
     /// Off unless asked for, and read live rather than cached so turning it off
-    /// takes effect on the next firing rather than the next launch.
+    /// takes effect on the next firing rather than the next launch. Through
+    /// `Policy`, so an organisation can pin it off and have that hold — this is
+    /// the most powerful thing in the app and the one a profile most obviously
+    /// wants a say in.
     static var unattendedWritesAllowed: Bool {
-        Prefs.store.object(forKey: "agents.unattendedWrites") as? Bool ?? false
+        Policy.value(.unattendedWrites, default: false)
     }
 
     /// The line at the top of a run, saying who started it and under what.

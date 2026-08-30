@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import Combine
 
 /// Background variants the library can hold.
 ///
@@ -51,7 +52,14 @@ final class BackgroundStore: ObservableObject {
 
     /// Whether the current selection is a visual background that content
     /// should render as glass over.
-    var isGlassy: Bool { image != nil }
+    ///
+    /// Never, when Reduce Transparency is on. Every `isGlassy` call site
+    /// chooses between a translucent surface and an opaque one, so this is the
+    /// single switch that turns the whole window opaque — and the blurred
+    /// artwork behind it goes too, in `PaneBackground`.
+    var isGlassy: Bool {
+        image != nil && !Accessibility.shared.reduceTransparency
+    }
 
     // MARK: Locations
 
@@ -77,11 +85,22 @@ final class BackgroundStore: ObservableObject {
 
     // MARK: Lifecycle
 
+    /// Forwarded from `Accessibility`, because `isGlassy` reads it.
+    ///
+    /// Every view that draws a translucent surface observes this store and not
+    /// that one — there are around a dozen of them and thirty observers for one
+    /// boolean would be worse. So the answer changes here, once, and the
+    /// window redraws opaque the moment somebody turns Reduce Transparency on.
+    private var accessibility: AnyCancellable?
+
     init() {
         Migration.run()
         load()
         adoptLegacySelection()
         refreshImage()
+        accessibility = Accessibility.shared.objectWillChange.sink { [weak self] _ in
+            self?.objectWillChange.send()
+        }
         Task { await loadThumbnails() }
     }
 
@@ -282,6 +301,7 @@ final class BackgroundStore: ObservableObject {
 /// as exactly the whitening this was meant to remove.
 struct PaneBackground: View {
     @ObservedObject var store: BackgroundStore
+    @ObservedObject private var accessibility = Accessibility.shared
     /// Settings previews its own swatch and must show the artwork whatever the
     /// pane behind it is currently doing.
     var honoursCodingMode = true
@@ -297,9 +317,16 @@ struct PaneBackground: View {
     /// without being so large that mid-slider positions all look identical.
     private static let maxBlur: CGFloat = 60
 
-    /// Which background to actually draw. Nil for coding mode.
+    /// Which background to actually draw. Nil for coding mode, and nil for
+    /// Reduce Transparency.
+    ///
+    /// The artwork is drawn under a blur — a full-window offscreen pass on
+    /// every frame that touches it, and comfortably the most expensive thing
+    /// left in the app now the animated background has gone. Somebody who has
+    /// asked the system for less of that has asked for less of this.
     private var shown: BackgroundKind? {
         guard !(honoursCodingMode && terminal) else { return nil }
+        guard !accessibility.reduceTransparency else { return nil }
         return store.selected?.backgroundKind
     }
 

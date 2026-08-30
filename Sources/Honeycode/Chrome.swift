@@ -72,7 +72,16 @@ enum Chrome {
 extension View {
     @ViewBuilder
     func glassy(in shape: some Shape) -> some View {
-        if #available(macOS 26, *) {
+        // Reduce Transparency first, because it is an answer about the person
+        // rather than about the API. What the system does with its own chrome
+        // when this is on is exactly this — the material becomes an opaque
+        // fill — and following it is not a concession: a surface that samples
+        // what is behind it is unreadable to whoever turned this on, which is
+        // why they turned it on. It also happens to be the cheapest thing this
+        // app can do on a Mac that feels every offscreen pass.
+        if Accessibility.shared.reduceTransparency {
+            background(Theme.surface, in: shape)
+        } else if #available(macOS 26, *) {
             glassEffect(.regular, in: shape)
         } else {
             background(.regularMaterial, in: shape)

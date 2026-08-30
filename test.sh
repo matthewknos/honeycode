@@ -18,24 +18,20 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# What to build for.
+# What to check against.
 #
-# Both of these were a string literal — `arm64-apple-macos26.0` — and neither
-# was a requirement anybody measured. The architecture was the machine this was
-# written on, and on any other one it produces a binary that cannot execute and
-# no hint as to why. The deployment target is the version it happened to be
-# built against: there is not a single `@available` in the source, so nothing
-# in it has ever declared needing 26.
+# The same floor `build.sh` ships, and that is the point of it being here: a
+# deployment target nobody typechecks is a claim, and this is the loop that
+# turns it into a fact. `--typecheck` at 15.0 is the cheapest way to find out
+# whether the app still fits under it.
 #
-# So both follow this Mac, and both can be overridden. Lowering the floor is
-# the experiment:
+#     HONEYCODE_DEPLOY=14.0 ./test.sh --typecheck   # push it lower
+#     HONEYCODE_DEPLOY=26.0 ./test.sh --typecheck   # or back to where it began
 #
-#     HONEYCODE_DEPLOY=14.0 ./build.sh
-#
-# and read what the compiler rejects. Whatever it accepts, it accepts — a
-# deployment target is checked, not guessed at.
+# Whatever swiftc accepts, it accepts — a deployment target is checked, not
+# guessed at.
 ARCH="${HONEYCODE_ARCH:-$(uname -m)}"
-DEPLOY="${HONEYCODE_DEPLOY:-26.0}"
+DEPLOY="${HONEYCODE_DEPLOY:-15.0}"
 TARGET="$ARCH-apple-macos$DEPLOY"
 WORK="$(mktemp -d)"
 SERVER=""

@@ -211,7 +211,6 @@ private struct FeatureSettings: View {
     /// observable object — the engine has no Combine in it and shouldn't grow
     /// some for eight booleans. Seeded on appear, written through on change.
     @State private var on: [Feature: Bool] = [:]
-    @State private var bundles: [DLC: Bool] = [:]
 
     var body: some View {
         Form {
@@ -225,29 +224,6 @@ private struct FeatureSettings: View {
                 }
             }
 
-            // DLCs, below the features and in their own section rather than
-            // in a pane of their own. They are not features — a feature adds a
-            // control, a DLC changes what the window is for — but there is one
-            // of them, and a whole tab holding a single switch says the app has
-            // a DLC store when what it has is Academia.
-            Section {
-                ForEach(DLC.allCases) { dlc in
-                    dlcRow(dlc)
-                }
-            } header: {
-                Text("Bundles")
-            } footer: {
-                Text("A bundle brings a whole way of working with it rather than "
-                     + "one control — its own half of the sidebar, its own pane, "
-                     + "and skills every agent can read.\n\nThese same switches "
-                     + "are in the View menu under Bundles, and on the right-click "
-                     + "menu of the sidebar's own switcher — this pane is where a "
-                     + "bundle explains itself, not somewhere to keep coming back "
-                     + "to.")
-                    .font(Theme.note)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
 
             Section {
                 HStack {
@@ -271,33 +247,7 @@ private struct FeatureSettings: View {
         .frame(maxHeight: .infinity)
         .onAppear {
             on = Dictionary(uniqueKeysWithValues: Feature.allCases.map { ($0, Features.isOn($0)) })
-            bundles = Dictionary(uniqueKeysWithValues: DLC.allCases.map { ($0, DLCs.isOn($0)) })
         }
-    }
-
-    private func dlcRow(_ dlc: DLC) -> some View {
-        VStack(alignment: .leading, spacing: Theme.s2) {
-            Toggle(dlc.title, isOn: dlcBinding(dlc))
-            Text(dlc.blurb)
-                .font(Theme.note)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            // Only once it is on. What happens to your papers when you switch
-            // it off is the question somebody has *after* they have papers, and
-            // a promise not to delete something you don't have yet is noise.
-            if bundles[dlc] == true {
-                Text(dlc.settingsBlurb)
-                    .font(Theme.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .padding(.vertical, Theme.s1)
-    }
-
-    private func dlcBinding(_ dlc: DLC) -> Binding<Bool> {
-        Binding(get: { bundles[dlc] ?? DLCs.isOn(dlc) },
-                set: { bundles[dlc] = $0; DLCs.set(dlc, $0) })
     }
 
     private func row(_ feature: Feature) -> some View {

@@ -129,16 +129,10 @@ struct HoneycodeApp: App {
                         .keyboardShortcut(option.shortcut, modifiers: [.command, .option])
                 }
                 Divider()
-                // Which halves of the sidebar exist, in the menu that already
-                // holds what the window is showing. Settings is where a bundle
-                // explains itself and is the wrong place to keep going back to
-                // — a switch you use is a switch that has to be one click from
-                // the thing it changes. Also on the pill's context menu; both
-                // are `BundleToggles`, so they cannot disagree.
-                Menu("Bundles") { BundleToggles() }
-                // Beside the bundles rather than in Settings, and for the same
-                // reason: this is a switch you flip while looking at the thing
-                // it changes, not one you open a settings pane to find.
+                // In the menu that already holds what the window is showing,
+                // rather than in Settings: this is a switch you flip while
+                // looking at the thing it changes, not one you open a settings
+                // pane to find.
                 UsageRailToggle()
                 Divider()
             }

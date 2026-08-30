@@ -418,9 +418,8 @@ private final class RailPanel: NSPanel {
 
 /// The rail's switch, as a menu item.
 ///
-/// Same shape and same reasoning as `BundleToggle`: read through `@AppStorage`
-/// so the tick follows a change made from the Settings pane, written through
-/// `Features.set` so there is one writer. The window itself is not opened
+/// Read through `@AppStorage` so the tick follows a change made from the
+/// Settings pane, written through `Features.set` so there is one writer. The window itself is not opened
 /// here — `RootView` watches the same key and reconciles, which is what keeps
 /// the menu, the Settings switch and a relaunch on one path.
 struct UsageRailToggle: View {

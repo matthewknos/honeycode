@@ -35,15 +35,6 @@ struct RootView: View {
     @AppStorage(Setup.featureKey(.usageRail), store: Setup.store)
     private var usageRailOn = Feature.usageRail.initialValue
 
-    /// Academia's shelf.
-    ///
-    /// Owned here rather than passed down from `HoneycodeApp`, because unlike
-    /// the workspace and the agents nothing outside this view tree has any use
-    /// for it — `honeycoded` does not read papers. It costs nothing when the
-    /// DLC is off: it holds an empty array until the library is on screen and
-    /// asks it to read.
-    @StateObject private var library = LibraryStore()
-
     /// Which half of the app the sidebar is showing.
     ///
     /// The pill switches the *sidebar*, not the app: the window, the pane and
@@ -51,14 +42,13 @@ struct RootView: View {
     /// arrangement while you're off looking at an agent. Persisted, because
     /// which half you were last in is the same kind of fact as which session.
     enum SidebarMode: String, CaseIterable {
-        case code, crew, agents, library
+        case code, crew, agents
 
         var title: String {
             switch self {
             case .code:    return "Code"
             case .crew:    return "Crew"
             case .agents:  return "Agents"
-            case .library: return "Library"
             }
         }
 
@@ -67,7 +57,6 @@ struct RootView: View {
             case .code:    return "chevron.left.forwardslash.chevron.right"
             case .crew:    return "person.2"
             case .agents:  return "sparkles"
-            case .library: return DLC.academia.symbol
             }
         }
 
@@ -79,20 +68,6 @@ struct RootView: View {
             case .code:    return nil
             case .crew:    return .crew
             case .agents:  return .agents
-            case .library: return nil
-            }
-        }
-
-        /// The bundle that brings this half with it, if it isn't part of the
-        /// app on its own.
-        ///
-        /// The whole of what `RootView` knows about DLCs, and deliberately the
-        /// same shape as `feature` above — a declaration, read by the filter
-        /// that was already there. Nothing below branches on which DLC it is.
-        var dlc: DLC? {
-            switch self {
-            case .library: return .academia
-            case .code, .crew, .agents: return nil
             }
         }
     }
@@ -101,10 +76,7 @@ struct RootView: View {
 
     /// The halves that are switched on.
     private var modes: [SidebarMode] {
-        SidebarMode.allCases.filter {
-            ($0.feature.map(Features.isOn) ?? true)
-                && ($0.dlc.map(DLCs.isOn) ?? true)
-        }
+        SidebarMode.allCases.filter { $0.feature.map(Features.isOn) ?? true }
     }
 
     /// Which one is actually showing.
@@ -157,7 +129,6 @@ struct RootView: View {
                         case .code:   SessionColumns(workspace: workspace)
                         case .crew:   CrewPane(workspace: workspace)
                         case .agents: AgentsPane(store: agents, workspace: workspace)
-                        case .library: LibraryPane(library: library, workspace: workspace)
                         }
                     }
                 }
@@ -306,7 +277,6 @@ struct RootView: View {
                                   withAnimation(Motion.hover) { mode = .code }
                               }
                 case .agents: AgentList(store: agents)
-                case .library: LibrarySidebar(library: library)
                 }
                 footer
             }
@@ -403,8 +373,7 @@ struct RootView: View {
             // Off `modes`, like the expanded pill, rather than a hand-written
             // list. The list had the symbols spelled out a second time and did
             // not consult the switches at all, so a collapsed sidebar offered
-            // Crew on a Mac with Crew switched off — and would have offered
-            // Library to everyone.
+            // Crew on a Mac with Crew switched off.
             ForEach(modes, id: \.self) { railMode($0) }
 
             // `shownMode` for the same reason `newButton` reads it: the
@@ -687,11 +656,6 @@ struct RootView: View {
                             around: Theme.cornerChip, inset: Theme.s1)))
             .padding(.horizontal, Theme.s5)
             .padding(.bottom, Theme.s5)
-            // Right on the control that switches halves, because "which halves
-            // are there" is the same question one step out. Not the only route
-            // — the pill isn't drawn at all when Code is the only half left, so
-            // the View menu carries the same items.
-            .contextMenu { BundleToggles() }
         }
     }
 
@@ -736,7 +700,6 @@ struct RootView: View {
         case .code:    return "Conversations you started"
         case .crew:    return "Who is running, what you have, and your saved teams"
         case .agents:  return "Agents that run on their own"
-        case .library: return "Papers you are reading and the ones you are writing"
         }
     }
 
@@ -745,7 +708,6 @@ struct RootView: View {
         case .code:    return "Sessions"
         case .crew:    return "Crew"
         case .agents:  return "Agents"
-        case .library: return "Library"
         }
     }
 
@@ -775,16 +737,6 @@ struct RootView: View {
             }
             .buttonStyle(.plain)
             .help("New agent — describe it in a sentence")
-        case .library:
-            Button { library.importFromPanel() } label: {
-                Image(systemName: "plus")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 24, height: 24)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .help("Add a paper — a PDF to read, or a Word document you are writing")
         }
     }
 

@@ -63,7 +63,7 @@ fi
 echo "==> Typechecking Honeycode"
 "${SWIFTC[@]}" -typecheck \
   -framework AppKit -framework SwiftUI \
-  -framework Quartz -framework PDFKit \
+  -framework Quartz \
   $(find "$ROOT/Sources/AgentKit" "$ROOT/Sources/Honeycode" -name '*.swift' | sort)
 
 # shellcheck disable=SC2046
@@ -100,7 +100,6 @@ kit Checks
 kit Teams
 kit Changes
 kit Setup
-kit Library
 kit Usage
 
 # The terminal client's own logic: what Tab offers, what a slash command parses

@@ -54,10 +54,10 @@ echo "==> Building Honeycode ($CONFIGURATION)"
 # behind it — so the boundary is checked here instead. It failed exactly once,
 # in the direction you would expect: a `Color` on `Account`.
 #
-# PDFKit is on the list for the same reason and was added with the library: a
-# paper is a path, some facts about it and the marks you made, all of which are
-# answerable without a renderer. The moment `Paper` holds a `PDFDocument` the
-# model stops being testable and the daemon stops linking.
+# PDFKit stays on the list even though nothing links it now. The rule is about
+# what AgentKit is allowed to reach for, not about what it currently reaches
+# for, and a guard that only names the frameworks somebody already tried to
+# import is one that has to be edited every time it would have earned its keep.
 if grep -lE '^import (SwiftUI|AppKit|WebKit|Charts|Quartz|PDFKit)$' "$ROOT"/Sources/AgentKit/*.swift 2>/dev/null | grep -q .; then
   echo "==> AgentKit must not import UI frameworks:" >&2
   grep -lE '^import (SwiftUI|AppKit|WebKit|Charts|Quartz|PDFKit)$' "$ROOT"/Sources/AgentKit/*.swift >&2
@@ -95,7 +95,7 @@ xcrun --sdk macosx swiftc \
   -swift-version 5 \
   "${SWIFT_FLAGS[@]}" \
   -framework AppKit -framework SwiftUI \
-  -framework Quartz -framework PDFKit \
+  -framework Quartz \
   -o "$APP/Contents/MacOS/Honeycode" \
   $(find "$ROOT/Sources/AgentKit" "$ROOT/Sources/Honeycode" -name '*.swift' | sort)
 

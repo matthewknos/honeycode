@@ -1335,10 +1335,7 @@ final class Crew {
     with its own conversation, working at the same time as the others — so \
     four pieces for one handle genuinely run four ways instead of queueing. \
     The bare handle is #1, so `<handle>` and `<handle>#1` are the \
-    same agent. Up to \(Seat.limit) per agent. **Each instance costs a full \
-    share of that subscription**, so split an agent's work across several \
-    only when the pieces are genuinely independent and large enough to be \
-    worth it — not to look busy.
+    same agent. Up to \(Seat.limit) per agent.
     - One piece per instance **in `assignments`**. A second task there for \
     the same handle *and number* is refused, and you will be told — put the \
     rest in `queue`, where it will reach that agent anyway once it is free.
@@ -1365,17 +1362,11 @@ final class Crew {
 
     Keep a real piece. Anything you *don't* put in `mine` and still intend \
     to do yourself gets done in the assembly turn instead — alone, after \
-    everyone has reported, with every paid seat idle beside you. That was \
-    the only option before `mine` existed, and it is what makes a lead the \
-    longest pole in a run that was supposed to be parallel: three delegates \
-    once wrote 1,860 lines in parallel in eight minutes, and the lead then \
-    spent twenty-one minutes writing 1,549 more on its own. Seventy-two per \
-    cent of the wall clock was one agent.
-
-    What is still not yours is the **seam**. It is the piece that needs the \
-    whole picture, so keeping it feels right, and it is the single most \
-    expensive habit a lead has — hand it out at the start, as its own piece, \
-    written from the contract before the parts exist.
+    everyone has reported, with every paid seat idle beside you. Three \
+    delegates once wrote 1,860 lines in parallel in eight minutes, and the \
+    lead then spent twenty-one minutes writing 1,549 more on its own: \
+    seventy-two per cent of the wall clock was one agent. Not the seam, \
+    though — see above.
     - **Don't try to size the pieces evenly — queue the extras instead.** \
     You cannot tell in advance which piece is the long one; two files each \
     is not a balanced split when one is a render loop and the other is a \

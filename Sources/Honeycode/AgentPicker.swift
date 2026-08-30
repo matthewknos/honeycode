@@ -127,18 +127,6 @@ struct AgentPicker: View {
                     Text("@\(agent.handle)")
                         .font(Theme.monoSmall)
                         .foregroundStyle(.tertiary)
-                    // Said on the row, because it is the one thing that
-                    // changes what happens after you press Add: an `npx` agent
-                    // works immediately and this one waits on a download you
-                    // have to go and start yourself.
-                    if !agent.isFetched {
-                        Text("installs itself")
-                            .font(Theme.label)
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, Theme.s3)
-                            .padding(.vertical, 1)
-                            .background(Theme.well, in: Capsule())
-                    }
                 }
                 Text(agent.blurb)
                     .font(Theme.note)

@@ -43,7 +43,7 @@ replace them — it never talks to a model endpoint directly.
 | `@kimi` Kimi Code | `kimi` | [MoonshotAI/kimi-cli](https://github.com/MoonshotAI/kimi-cli) (Node) |
 | `@copilot` GitHub Copilot | `copilot` | [github/copilot-cli](https://github.com/github/copilot-cli) |
 
-The rest of the ACP registry is one click away in **Settings ▸ Accounts ▸ Add** — Gemini, Codex, Cursor, OpenCode, Cline, goose and the rest. See [Adding another agent](#adding-another-agent).
+Six more are one click away in **Settings ▸ Accounts ▸ Add** — Gemini, Codex, Cursor, OpenCode, Cline and goose. Anything else goes in by hand. See [Adding another agent](#adding-another-agent).
 
 ---
 
@@ -339,19 +339,28 @@ newline-delimited JSON-RPC 2.0 over stdio — can be a fifth, and most of the on
 worth having are already in the list.
 
 **Settings ▸ Accounts ▸ Add**, or **Add an agent** on the second step of setup,
-opens the catalogue: Gemini CLI, Codex, Cursor, OpenCode, Cline, goose, Qwen
-Code, Amp, Devin, Factory Droid and the rest, each with its command,
-arguments and environment already filled in. One click adds it, picks a handle
-that isn't taken and a colour that isn't in use, and switches it on.
+opens the catalogue: Gemini CLI, Codex, Cursor, OpenCode, Cline and goose, each
+with its command, arguments and environment already filled in. One click adds
+it, picks a handle that isn't taken and a colour that isn't in use, and switches
+it on.
 
-Most of them need nothing installed: the entry runs `npx -y <package>`, which
-fetches the agent the first time you send a message. The ones that ship their
-own binary are marked **installs itself** and their row carries a **Get…** link
-to where it lives.
+**None of them installs itself, deliberately.** The npm ones run
+`npx --no-install <package>`, so the package has to be on the machine already —
+otherwise pressing Add would mean this app fetching unpinned code from the
+public registry and executing it, which is not something a managed Mac allows
+and not something it should do unasked. Each row carries the one command or
+link that puts it there.
+
+**Six, of thirty-five in the registry.** The other twenty-nine were a
+compatibility claim nobody could stand behind — "does it work with Cline?" had
+no answer — and twenty-nine packages in one file for a question nobody had
+asked. Anything left out still goes in by hand; that is what the form below is
+for.
 
 The list is generated from the protocol's own registry by
-`tools/acp-catalogue.py`, which writes `Sources/AgentKit/AgentCatalogue+Generated.swift`.
-Re-run it to pick up new agents:
+`tools/acp-catalogue.py`, which writes `Sources/AgentKit/AgentCatalogue+Generated.swift`
+and emits only the allowlist at the top of that script. Re-run it to refresh
+what is there:
 
 ```sh
 ./tools/acp-catalogue.py

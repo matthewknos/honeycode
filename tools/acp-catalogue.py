@@ -17,10 +17,18 @@ diff.
     ./tools/acp-catalogue.py            # rewrite the Swift file
     ./tools/acp-catalogue.py --dry-run  # print what would change
 
-Versions are stripped from package specs on purpose. The registry pins them so
-that Zed can install a known-good build; here the package name reaches `npx`,
-which should fetch whatever is current rather than whatever was current the day
-this file was regenerated.
+Two rules do most of the work here, and both were reversed once:
+
+Nothing is fetched at run time. `npx -y` installs whatever was published this
+morning and runs it, which made pressing Add in the account picker equivalent
+to executing unpinned code off the public registry. Entries are emitted with
+`npx --no-install` and an install line instead — the same call `Verification`
+makes, for the same stated reason.
+
+Only KEEP is emitted. Thirty-five agents in the registry was a compatibility
+claim nobody could stand behind and thirty-five packages in one file for a
+question nobody asked. Anything left out is still addable by hand through
+`CustomAccount`, which is a form with six fields.
 """
 
 import json, re, shutil, subprocess, sys
@@ -31,8 +39,18 @@ OUT = (Path(__file__).resolve().parent.parent
        / "Sources/AgentKit/AgentCatalogue+Generated.swift")
 
 # Already built in, and a second row for either would be the same subscription
-# under two names. See `Account.allCases`.
-SKIP = {"kimi", "github-copilot-cli"}
+# under two names. See `Account.allCases`. `claude-acp` is here for the same
+# reason: it is an ACP wrapper around the CLI two of the built-in accounts
+# already drive.
+SKIP = {"kimi", "github-copilot-cli", "claude-acp"}
+
+# The only ones emitted, and the order they appear in.
+#
+# An allowlist rather than a filter with exceptions, because the failure
+# direction matters: a registry that grows should not silently grow this app's
+# list of things it will launch. Anything new lands here only when somebody
+# decides it should.
+KEEP = ["gemini", "codex-acp", "cursor", "opencode", "cline", "goose"]
 
 # The ones most people are looking for, in front.
 #
@@ -47,11 +65,7 @@ SKIP = {"kimi", "github-copilot-cli"}
 # them, and everything else alphabetically after. Anything dropped from the
 # registry simply falls out of this; anything added lands in the alphabetical
 # tail, which is the safe place for a name nobody has vouched for.
-FIRST = [
-    "gemini", "codex-acp", "claude-acp", "cursor", "opencode", "cline",
-    "goose", "qwen-code", "amp-acp", "factory-droid", "auggie", "devin",
-    "mistral-vibe", "grok-build", "kilo", "antigravity-acp",
-]
+FIRST = KEEP
 
 # A release-artefact name is not a command. `pool-darwin-arm64` is what the
 # tarball unpacks to, not what lands on anybody's PATH, so an entry whose
@@ -68,24 +82,28 @@ def unpinned(spec):
 def launch(agent):
     """How to start this one, or None if it cannot be said.
 
-    Three shapes come out of the registry. `npx` and `uvx` are the good case:
-    the runner fetches the package on first use, so adding the account is the
-    whole of the job and there is nothing to install. A binary distribution
-    means the tool installs itself, and all that can be taken from it is the
-    executable's name and its arguments — Honeycode looks for that on your
-    PATH the same way it looks for `kimi`.
+    Three shapes come out of the registry, and none of them installs anything.
+    `npx --no-install` and `uvx --no-sync` run a package that is already there
+    and fail cleanly when it isn't; a binary distribution gives up only the
+    executable's name and its arguments, which Honeycode looks for on your PATH
+    the same way it looks for `kimi`. Every one carries a `site` saying how to
+    put it on the machine, because none of them will do it themselves.
     """
     dist = agent.get("distribution", {})
     if "npx" in dist:
         d = dist["npx"]
         package = unpinned(d["package"])
-        return dict(command="npx", arguments=["-y", package] + (d.get("args") or []),
-                    isNode=True, environment=d.get("env") or {}, site=None)
+        return dict(command="npx",
+                    arguments=["--no-install", package] + (d.get("args") or []),
+                    isNode=True, environment=d.get("env") or {},
+                    site=f"npm i -g {package}")
     if "uvx" in dist:
         d = dist["uvx"]
         package = d["package"].split("==")[0]
-        return dict(command="uvx", arguments=[package] + (d.get("args") or []),
-                    isNode=False, environment=d.get("env") or {}, site=None)
+        return dict(command="uvx",
+                    arguments=["--no-sync", package] + (d.get("args") or []),
+                    isNode=False, environment=d.get("env") or {},
+                    site=f"uv tool install {package}")
     binary = dist.get("binary", {}).get("darwin-aarch64")
     if not binary:
         return None
@@ -153,7 +171,7 @@ def main():
 
     rows, skipped = [], []
     for agent in sorted(registry["agents"], key=order):
-        if agent["id"] in SKIP:
+        if agent["id"] in SKIP or agent["id"] not in KEEP:
             continue
         run = launch(agent)
         if not run:

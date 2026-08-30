@@ -14,12 +14,19 @@ import Foundation
 /// Node program and any environment it needs, and the rest of an account — a
 /// handle, a colour — has a sensible answer that can be changed afterwards.
 ///
-/// Two kinds are in here. Most are fetched on demand by `npx` or `uvx`, so
-/// there is nothing to install and the row works the moment it is added; the
-/// first launch pays for the download, and `ACPAdapter` queues anything typed
-/// before the handshake finishes. The rest ship a binary you install yourself,
-/// and for those this holds the name it lands on your PATH as, and a `site` to
-/// go and get it from.
+/// **Nothing here installs itself.** The npm-distributed ones are launched with
+/// `npx --no-install`, so the package must already be on the machine — the same
+/// reasoning `Verification` gives for its own `npx --no-install`, which is that
+/// a tool quietly downloading a compiler mid-run is a tool doing something
+/// nobody asked for. Each entry carries the command or the page that puts it
+/// there, and `Diagnostic.readiness` says so when it isn't found.
+///
+/// **It is a short list on purpose.** The registry holds thirty-five; this
+/// holds six. The other twenty-nine were a compatibility claim nobody could
+/// support — "does it work with Cline?" had no answer — and twenty-nine
+/// unpinned packages in one file for a question nobody had asked. Anything not
+/// here is still addable by hand: that is what `CustomAccount` is for, and the
+/// form is six fields.
 ///
 /// **Generated, not fetched.** `tools/acp-catalogue.py` rewrites
 /// `AgentCatalogue+Generated.swift` from the registry, and the app makes no
@@ -48,12 +55,17 @@ struct CatalogueAgent: Identifiable, Hashable, Sendable {
     let isNode: Bool
     let environment: [String: String]
 
-    /// Where to get it, for one that ships a binary. Nil means `npx` or `uvx`
-    /// fetches it, so there is nothing to install and nowhere to send you.
-    let site: String?
-
-    /// Whether adding it is the whole of the job.
-    var isFetched: Bool { site == nil }
+    /// How to get it — a command to run, or a page to go to.
+    ///
+    /// Never nil now, and that is the change. Half these entries used to be
+    /// `npx -y`, which fetches whatever was published this morning and runs it,
+    /// so adding the account really was the whole job. It was also the app
+    /// executing unpinned code off the public registry on somebody's machine
+    /// the first time they pressed Add, which is not a thing any managed Mac
+    /// permits and not a thing this app should be doing unasked. `--no-install`
+    /// means the package has to be there already; this says how to put it
+    /// there.
+    let site: String
 }
 
 extension AgentCatalogue {

@@ -203,11 +203,19 @@ struct AccountReadiness: Equatable, Sendable, Identifiable {
         // The runners are worth naming: an `npx` agent that reports itself
         // missing has nothing wrong with it at all — the machine has no Node.
         case .get:
-            if let site = account.custom?.site { return "Get it from \(site)" }
+            // A catalogue entry now carries either a page to open or a command
+            // to run — see `CatalogueAgent.site`, which stopped being optional
+            // when these stopped installing themselves. Told apart by whether
+            // it parses as a link, because "Get it from npm i -g …" reads as a
+            // typo and "Run https://…" reads as worse.
+            if let site = account.custom?.site {
+                return site.hasPrefix("http") ? "Get it from \(site)"
+                                              : "Install it: \(site)"
+            }
             switch account.custom?.command {
             case "npx":
-                return "`npx` comes with Node.js. Install Node and this works — "
-                     + "there is nothing else to install, npx fetches the agent."
+                return "`npx` comes with Node.js. Install Node, then install "
+                     + "the agent's package — nothing here fetches it for you."
             case "uvx":
                 return "`uvx` comes with uv — docs.astral.sh/uv. There is nothing "
                      + "else to install; uvx fetches the agent."

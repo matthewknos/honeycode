@@ -70,27 +70,33 @@ ARCH="$(uname -m)"
 if [[ "$ARCH" == "arm64" ]]; then
   ok "Apple silicon ($ARCH)"
 else
-  warn "$ARCH — this will build for it, and nobody has ever tried"
-  note "The build scripts take the architecture from uname rather than"
-  note "hardcoding arm64, so this attempts a real build instead of quietly"
-  note "producing a binary that cannot execute. Whether it compiles is the"
-  note "open question, and the compiler is the only thing that can answer it."
+  warn "$ARCH — supported by the build, never run by anybody"
+  note "The build scripts take the architecture from uname and ./build.sh"
+  note "--universal emits both slices, so there is a real binary for this Mac"
+  note "rather than one that cannot execute. What nobody has checked is what"
+  note "happens after it launches — and the agent CLIs are the more likely"
+  note "problem than this app: they are separate programs with their own"
+  note "architecture support, and Honeycode only drives them."
+  note ""
+  note "If something is missing below, check whether that CLI ships an"
+  note "$ARCH build before assuming the app is at fault."
 fi
 
 VERSION="$(sw_vers -productVersion)"
 MAJOR="${VERSION%%.*}"
-if (( MAJOR >= 26 )); then
+FLOOR=15
+if (( MAJOR >= FLOOR )); then
   ok "macOS $VERSION"
 else
-  warn "macOS $VERSION — the default deployment target is 26.0"
-  note "That 26 is what this was built against, not a floor anybody measured:"
-  note "there is not one @available in the whole source, so nothing in it has"
-  note "ever declared needing a version of anything. Try"
+  warn "macOS $VERSION — below the floor the build targets (macOS $FLOOR)"
+  note "That floor is measured rather than assumed: five call sites are behind"
+  note "#available, and two more — ScrollPosition and onScrollGeometryChange in"
+  note "the transcript — are macOS 15 API with no fallback. Try"
   note ""
   note "    HONEYCODE_DEPLOY=$MAJOR.0 ./build.sh"
   note ""
   note "and read what the compiler rejects. Every rejection names an API and a"
-  note "version, which between them is the real floor."
+  note "version, which between them is the real floor for this Mac."
 fi
 
 # ------------------------------------------------------------- the toolchain

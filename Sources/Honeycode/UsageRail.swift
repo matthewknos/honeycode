@@ -269,13 +269,19 @@ struct UsageRailView: View {
         .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.cornerFloat))
         .overlay(RoundedRectangle(cornerRadius: Theme.cornerFloat)
                     .strokeBorder(Theme.rule, lineWidth: 1))
-        // Kept fresh while it is on screen and not otherwise. `refreshAll`
-        // keeps the per-account floors, so a rail open all day costs one
-        // process per account per half-minute at worst, and a rail nobody has
-        // opened costs nothing at all — which is the reason this is here rather
+        // Kept fresh while it is on screen and not otherwise — a rail nobody
+        // has opened costs nothing at all, which is why this is here rather
         // than on a timer somewhere central.
+        //
+        // Five minutes, not one. Asking Claude costs a `claude` process, which
+        // is north of 100MB of Node and about a second of wall clock; at sixty
+        // seconds a rail left open all day was two of those a minute, forever,
+        // to redraw a ring measuring a five-hour window. Nothing it reports can
+        // move enough in five minutes to be worth more than that, and the two
+        // things that *do* move it — a turn finishing, the command being
+        // changed — already force a refresh of their own.
         .task { usage.refreshAll() }
-        .onReceive(Timer.publish(every: 60, on: .main, in: .common).autoconnect()) { _ in
+        .onReceive(Timer.publish(every: 300, on: .main, in: .common).autoconnect()) { _ in
             usage.refreshAll()
         }
     }

@@ -29,7 +29,7 @@ Both link `AgentKit`, which is the engine and has no UI in it.
 
 | | |
 |---|---|
-| **Mac** | Apple silicon on macOS 26 is what it is developed and used on. The build follows whatever Mac you run it on — see [Older Macs](#older-macs). |
+| **Mac** | **macOS 15 or later, Apple silicon or Intel.** Apple silicon on macOS 26 is what it is developed on and the only combination anybody has run it on — see [Older Macs](#older-macs) for how that floor was worked out and how to check it. |
 | **Toolchain** | Xcode Command Line Tools (`xcode-select --install`). Full Xcode is not required and there is no `.xcodeproj` — each target is one `swiftc` invocation. |
 | **At least one agent CLI** | See below. The app is useful with one; it is interesting with three. |
 
@@ -95,26 +95,41 @@ commands that fix it rather than half-replacing an app.
 
 ### Older Macs
 
-Apple silicon on macOS 26 is what this is developed on, and the only combination
-anybody has run it on. As far as anything in the source is concerned it is not a
-requirement:
+**The floor is macOS 15 (Sequoia), and both architectures.** That matters more
+than one number usually does: Sequoia runs on a 2018-and-later MacBook Pro, so
+the Intel machines this was written off for are reachable by a free update
+rather than a new laptop.
 
 ```sh
-./build.sh                        # takes the architecture from uname -m
-HONEYCODE_DEPLOY=14.0 ./build.sh  # and see what the compiler says
-HONEYCODE_ARCH=x86_64 ./build.sh  # if you need to be explicit
+./build.sh                          # this Mac's architecture, macOS 15
+./build.sh --universal              # arm64 + x86_64 in one .app
+HONEYCODE_DEPLOY=14.0 ./build.sh    # push the floor lower and read the errors
+HONEYCODE_DEPLOY=26.0 ./build.sh    # or back to where this started
 ```
 
-Both build scripts read the architecture from `uname -m` and the deployment
-target from `HONEYCODE_DEPLOY`, which defaults to 26.0. `build.sh` writes
-whatever it actually compiled for into the bundle's `LSMinimumSystemVersion`, so
-the plist and the linker can't disagree — that particular mistake produces an app
-that builds cleanly and then refuses to open.
+Two things used to stop this running anywhere else, and neither was in the
+source.
 
-There is not one `@available` in the whole source, so nothing in it has ever
-declared needing a version of anything — 26.0 is what it was built against, not
-a floor somebody measured. `./tools/availability.py` works out what it *would*
-be, by reading Apple's own availability data for every symbol the app uses:
+**The deployment target defaulted to 26.0**, which was never a requirement —
+just the version it happened to be built against. `build.sh` writes whatever it
+compiled for into the bundle's `LSMinimumSystemVersion`, so every build refused
+to open on an older Mac regardless of whether the code would have worked.
+
+**A build on Apple silicon produced an arm64-only app**, which on an Intel Mac
+is not a slow app but a refusal to launch. `--universal` compiles both slices
+and `lipo`s them. It is a flag rather than the default because there is no
+single `swiftc` invocation that emits a fat binary — it genuinely is two
+compiles, and a build you are about to run yourself shouldn't pay for a slice it
+will never execute. Anything anybody else will run wants it.
+
+`./test.sh --typecheck` checks the same floor the build ships, so 15.0 is a
+claim the compiler re-checks every time rather than a number in a README.
+
+#### How the floor was worked out
+
+There is not one `@available` in the source, so nothing in it ever declared
+needing a version of anything. `./tools/availability.py` reads Apple's own
+availability data for every symbol the app uses:
 
 ```
 $ ./tools/availability.py --floor 14.0
@@ -127,7 +142,7 @@ $ ./tools/availability.py --floor 14.0
 ```
 
 Seven call sites across three files stood between this and macOS 14. **Five are
-now behind `#available`:**
+behind `#available`:**
 
 | | | |
 |---|---|---|
@@ -135,37 +150,29 @@ now behind `#available`:**
 | `PopOut.swift` | `WindowDragGesture` | macOS 15 → **gated**, `View.windowDraggable()` |
 | `TranscriptView.swift` 57, 280 | `ScrollPosition`, `onScrollGeometryChange` | macOS 15 → **open** |
 
-So the believed floor is **macOS 15**, which matters more than one number
-usually does: Sequoia runs on a 2018-and-later MacBook Pro, so the Intel
-machines this was written off for are reachable by a free update rather than a
-new laptop.
+The two open ones are what hold the floor at 15 rather than 14. They drive the
+follow-the-bottom behaviour, and the comments around them record three failed
+attempts at doing it another way — so they are worth a release of headroom
+rather than a rewrite nobody can test.
 
-The two that are left are deliberately left. `TranscriptView` drives its scroll
-through `ScrollPosition` alone, and the comment above it records why: it used to
-be bound *and* driven through a `ScrollViewReader` proxy, the binding read the
-proxy's own scroll as a user scroll, and following switched itself off after the
-first drag. A `ScrollViewReader` fallback re-creates exactly that arrangement, in
-the view that renders every streamed token, and that is not a change to make
-without a compiler and a real transcript to scroll. It is the one remaining step
-from 15 to 14.
-
-Re-run the tool after any of this: it skips symbols already behind an
-`#available`, so the report gets shorter as the work gets done rather than
-repeating itself.
-
-One known false positive: `Context` resolves to `PreviewModifier.Context`
-(macOS 15) when the source means `NSViewRepresentable.Context`, which is
-ancient. A name that means two things is only as old as the oldest one the tool
-can find, and it cannot find that one.
-
-That is a *lower bound*, not a clearance. The tool resolves what it can name,
-125 symbols went unresolved, and an unresolved symbol is one it could not ask
+It is a **lower bound**, not a clearance: the tool resolves what it can name and
+leaves the rest unresolved, and an unresolved symbol is one it could not ask
 about rather than one it cleared. `swiftc` at a lower target is still the only
-authority; this just means nobody has to start from nothing.
+authority; this means nobody has to start from nothing.
 
-Of the two targets, `ai` is the better bet. `build-ai.sh` compiles `AgentKit`
-and `Sources/ai` and links no UI framework at all, so it has none of the SwiftUI
-surface that a deployment target usually gets rejected over.
+Of the two targets, `ai` is the better bet on anything old. `build-ai.sh`
+compiles `AgentKit` and `Sources/ai`, links no UI framework at all, and takes
+the same `--universal` flag — so it has none of the SwiftUI surface a deployment
+target usually gets rejected over.
+
+#### What it does on a slower machine
+
+**Reduce Transparency is honoured.** Every translucent surface here is an
+offscreen compositing pass per frame and the artwork behind them is a
+full-window blur, which is the most expensive thing left in the app. Turning
+that setting on in System Settings ▸ Accessibility ▸ Display makes every
+surface opaque and leaves the artwork out of the hierarchy entirely — not
+hidden, absent. It is also just what the system does with its own chrome.
 
 ### The first run
 

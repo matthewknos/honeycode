@@ -44,8 +44,7 @@ BASE = "https://developer.apple.com/tutorials/data"
 
 # AgentKit links none of these, which is why it isn't swept — and is also why
 # `ai` is the better bet on an old Mac.
-FRAMEWORKS = ["swiftui", "appkit", "charts", "webkit", "speech",
-              "avfoundation", "combine", "foundation"]
+FRAMEWORKS = ["swiftui", "appkit", "webkit", "combine", "foundation"]
 
 # Tried in this order against `swiftui/view/<name>…`. Ordered by how often they
 # turn out to be the answer, so the common case costs one request.

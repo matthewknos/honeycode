@@ -113,29 +113,26 @@ check("and Files comes back with it",
       WorkbenchTab.available.contains(.files))
 Features.set(.preview, false)
 
-// --- the one switch that is about the Mac rather than about what's installed ---
+// --- a default that is off rather than detected ---
 //
-// Every other default answers "is the tool here". Motion answers "can this
-// machine afford to redraw a surface behind the window sixty times a second",
-// which nothing on disk can be asked about — so it is the architecture that
-// decides, and it is the one default that would silently stop being checked if
-// somebody folded it back into `isAvailable`.
+// Every other default answers "is the tool here". The usage rail answers
+// "should a window that floats over every other application appear before
+// somebody asked for one", which nothing on disk can be asked about — so it is
+// written down, and it is the one default that would silently stop being
+// checked if somebody folded it back into `isAvailable`.
 
-check("motion is a window feature, not a tool", Feature.motion.group == .window)
-check("its default is the graphics rather than the toolchain — "
-      + "on this build, \(Machine.hasFastGraphics ? "on" : "off")",
-      Feature.motion.initialValue == Machine.hasFastGraphics)
+check("the rail is a window feature, not a tool", Feature.usageRail.group == .window)
+check("and it starts off", Feature.usageRail.initialValue == false)
 
-check("a fresh install decides it either way", {
-    let fresh = "com.matthewquigley.honeycode.tests.motion"
+check("a fresh install writes that decision down", {
+    let fresh = "com.matthewquigley.honeycode.tests.usagerail"
     let store = UserDefaults(suiteName: fresh)!
     store.removePersistentDomain(forName: fresh)
     let previous = Setup.store
     Setup.store = store
     defer { Setup.store = previous; store.removePersistentDomain(forName: fresh) }
     Setup.seedDefaults()
-    return store.object(forKey: Setup.featureKey(.motion)) as? Bool
-        == Machine.hasFastGraphics
+    return store.object(forKey: Setup.featureKey(.usageRail)) as? Bool == false
 }())
 
 print(failures == 0 ? "Setup: all ok" : "Setup: \(failures) failed")

@@ -213,7 +213,6 @@ greying them out:
 | **Crew** | the Crew half of the sidebar, the Team control, the Run tab |
 | **Agents** | the Agents half of the sidebar |
 | **Preview** | the workbench's browser |
-| **Dictation** | the mic in the composer |
 | **Notifications** | a banner when a turn finishes somewhere you aren't looking |
 | **Usage rail** | a ring per subscription, floating at the edge of the screen — starts off |
 | **Motion** | the animated background — starts off on a Mac with integrated graphics |

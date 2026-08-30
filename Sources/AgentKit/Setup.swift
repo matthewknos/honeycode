@@ -34,8 +34,6 @@ enum Feature: String, CaseIterable, Identifiable, Sendable {
     case agents
     /// The workbench's Preview tab: a page, a dev server, a rendered artifact.
     case preview
-    /// The mic in the composer.
-    case dictation
     /// A banner when a turn finishes in a session you aren't looking at.
     case notifications
     /// A floating panel showing what every subscription has left.
@@ -68,8 +66,7 @@ enum Feature: String, CaseIterable, Identifiable, Sendable {
     var group: Group {
         switch self {
         case .git, .gitHub, .azure: return .tools
-        case .crew, .agents, .preview, .dictation, .notifications, .usageRail,
-             .motion:
+        case .crew, .agents, .preview, .notifications, .usageRail, .motion:
             return .window
         }
     }
@@ -82,7 +79,6 @@ enum Feature: String, CaseIterable, Identifiable, Sendable {
         case .crew:          return "Crew"
         case .agents:        return "Agents"
         case .preview:       return "Preview"
-        case .dictation:     return "Dictation"
         case .notifications: return "Notifications"
         case .usageRail:     return "Usage rail"
         case .motion:        return "Motion"
@@ -111,9 +107,6 @@ enum Feature: String, CaseIterable, Identifiable, Sendable {
         case .preview:
             return "A browser in the workbench for a page, a dev server or "
                  + "whatever an agent just drew."
-        case .dictation:
-            return "Speak into the composer. Asks for the microphone the first "
-                 + "time you press it, and transcribes on-device."
         case .notifications:
             return "A banner when a turn finishes in a session you aren't looking "
                  + "at. Never for the one in front of you."

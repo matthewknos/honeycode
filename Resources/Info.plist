@@ -24,9 +24,5 @@
     <true/>
     <key>NSSupportsAutomaticTermination</key>
     <true/>
-    <key>NSMicrophoneUsageDescription</key>
-    <string>Honeycode uses the microphone to dictate messages into the composer.</string>
-    <key>NSSpeechRecognitionUsageDescription</key>
-    <string>Honeycode transcribes your dictation on-device so you can talk instead of type.</string>
 </dict>
 </plist>

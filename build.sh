@@ -97,7 +97,6 @@ xcrun --sdk macosx swiftc \
   -swift-version 5 \
   "${SWIFT_FLAGS[@]}" \
   -framework AppKit -framework SwiftUI \
-  -framework Speech -framework AVFoundation \
   -framework Quartz -framework PDFKit \
   -o "$APP/Contents/MacOS/Honeycode" \
   $(find "$ROOT/Sources/AgentKit" "$ROOT/Sources/Honeycode" -name '*.swift' | sort)
@@ -122,9 +121,12 @@ else
   echo "    Documents/Desktop permission prompts)"
 fi
 
-# Hardened runtime + entitlements are not optional: without
-# com.apple.security.device.audio-input the microphone is blocked with no
-# prompt and no error, and dictation silently never starts.
+# Hardened runtime, and an entitlements file that is now deliberately empty.
+#
+# It used to carry com.apple.security.device.audio-input, which was the whole
+# of what this app asked the system for. Dictation is gone and nothing else
+# here needs a permission the runtime doesn't grant by default — so the file
+# stays, as the place the next one would go, and says nothing.
 codesign --force --sign "$SIGN" \
   --identifier com.matthewquigley.honeycode \
   --options runtime \

@@ -27,7 +27,7 @@ struct ComposerView: View {
     var subtitle: String?
     /// Coding mode. Sheds the card, the rail and the proportional type, and
     /// keeps everything that makes the field worth having — mentions, slash
-    /// commands, attachments, dictation.
+    /// commands and attachments.
     ///
     /// A flag rather than a second composer, because the alternative is
     /// reimplementing `@` completion for the sake of a font. What a terminal
@@ -39,7 +39,6 @@ struct ComposerView: View {
     let onSend: (String) -> Void
 
     @FocusState private var focused: Bool
-    @StateObject private var dictation = Dictation()
     @StateObject private var files = FileIndex()
     // `UsageStore` was observed here for the rail's readouts. Those moved to
     // `UsageMeter`, and with them the subscription — a composer that redraws on
@@ -114,10 +113,8 @@ struct ComposerView: View {
     }
 
     private var hint: String {
-        if let error = dictation.errorMessage { return error }
         if completionCount > 0 { return "↑↓ to choose · Return to insert · Esc to dismiss" }
         if dropTargeted { return "Drop to attach" }
-        if dictation.isRecording { return "Listening — click the mic again to stop." }
         if !session.queued.isEmpty {
             let count = session.queued.count
             return "\(count) message\(count == 1 ? "" : "s") queued — sending when this turn ends"
@@ -192,11 +189,6 @@ struct ComposerView: View {
             // destination wasn't on screen when it arrived, which is the
             // ordinary case rather than the odd one.
             consumeRelay()
-            // Every revision replaces the dictated span — not the field — so
-            // speaking and typing in the same message don't fight each other.
-            dictation.onTranscript = { text in
-                draft = text
-            }
             installKeyMonitor()
         }
         .onDisappear {
@@ -504,7 +496,6 @@ struct ComposerView: View {
             Spacer(minLength: Theme.s4)
 
             ModelPicker(session: session)
-            if Features.isOn(.dictation) { micButton }
             // Stop and send are both present while a turn runs: you might want
             // to add to it *or* abandon it, and folding them into one control
             // meant picking one at build time.
@@ -597,31 +588,6 @@ struct ComposerView: View {
         }
     }
 
-    private var micButton: some View {
-        Button { dictation.toggle(continuing: draft) } label: {
-            ZStack {
-                // The ring reads as level, not as a spinner — it tracks the
-                // mic so you can see it's actually hearing you.
-                if dictation.isRecording {
-                    Circle()
-                        .fill(Color.accentColor.opacity(0.16))
-                        .scaleEffect(1 + CGFloat(dictation.level) * 0.5)
-                }
-                Image(systemName: dictation.isRecording ? "waveform" : "mic")
-                    .font(.system(size: 12))
-                    .foregroundStyle(dictation.isRecording
-                                     ? AnyShapeStyle(Color.accentColor)
-                                     : AnyShapeStyle(.secondary))
-            }
-            .frame(width: 24, height: 24)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(HoverCapsule())
-        .disabled(!dictation.isAvailable)
-        .help(dictation.isRecording ? "Stop dictation" : "Dictate")
-        .animation(Motion.hover, value: dictation.level)
-    }
-
     private var stopButton: some View {
         Button { session.interrupt() } label: {
             Image(systemName: "stop.fill")
@@ -661,9 +627,7 @@ struct ComposerView: View {
         HStack(spacing: 0) {
             Text(hint)
                 .font(Theme.note)
-                .foregroundStyle(dictation.errorMessage != nil
-                                 ? AnyShapeStyle(Color.diffDelText)
-                                 : AnyShapeStyle(.tertiary))
+                .foregroundStyle(.tertiary)
                 .lineLimit(1)
             Spacer(minLength: 0)
             // Which conversation this is, opposite the hint.
@@ -746,7 +710,6 @@ struct ComposerView: View {
     }
 
     private func send() {
-        if dictation.isRecording { dictation.stop() }
         // Attachments ride along as `@path` references — the CLI resolves those
         // itself and reads whatever's behind them, which beats us guessing at
         // encodings or inlining base64 for file types it already handles.

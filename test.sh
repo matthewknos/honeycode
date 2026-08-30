@@ -63,7 +63,6 @@ fi
 echo "==> Typechecking Honeycode"
 "${SWIFTC[@]}" -typecheck \
   -framework AppKit -framework SwiftUI \
-  -framework Speech -framework AVFoundation \
   -framework Quartz -framework PDFKit \
   $(find "$ROOT/Sources/AgentKit" "$ROOT/Sources/Honeycode" -name '*.swift' | sort)
 

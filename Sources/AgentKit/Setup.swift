@@ -38,9 +38,6 @@ enum Feature: String, CaseIterable, Identifiable, Sendable {
     case notifications
     /// A floating panel showing what every subscription has left.
     case usageRail
-    /// The animated background, and anything else that redraws when nothing
-    /// has happened.
-    case motion
 
     var id: String { rawValue }
 
@@ -66,7 +63,7 @@ enum Feature: String, CaseIterable, Identifiable, Sendable {
     var group: Group {
         switch self {
         case .git, .gitHub, .azure: return .tools
-        case .crew, .agents, .preview, .notifications, .usageRail, .motion:
+        case .crew, .agents, .preview, .notifications, .usageRail:
             return .window
         }
     }
@@ -81,7 +78,6 @@ enum Feature: String, CaseIterable, Identifiable, Sendable {
         case .preview:       return "Preview"
         case .notifications: return "Notifications"
         case .usageRail:     return "Usage rail"
-        case .motion:        return "Motion"
         }
     }
 
@@ -114,10 +110,6 @@ enum Feature: String, CaseIterable, Identifiable, Sendable {
             return "A ring for each subscription, floating at the edge of the "
                  + "screen over whatever you are doing, showing how much of "
                  + "each allowance is left. Starts off."
-        case .motion:
-            return "The animated background. Starts off on a Mac with integrated "
-                 + "graphics, where a surface redrawing behind the window costs "
-                 + "more than it gives."
         }
     }
 
@@ -158,10 +150,7 @@ enum Feature: String, CaseIterable, Identifiable, Sendable {
     /// that arrives in the first four seconds of an app's life — before there
     /// is anything to be notified about — is the one people deny out of hand.
     ///
-    /// Motion is the other one, and the question it asks is about the Mac
-    /// rather than about what is installed. `isAvailable` would say yes: there
-    /// is no tool to look for, and an animation is always *possible*. What it
-    /// isn't, on integrated graphics, is free.
+    /// The usage rail is the other one, for a different reason — see below.
     var initialValue: Bool {
         switch self {
         case .notifications: return false
@@ -171,7 +160,6 @@ enum Feature: String, CaseIterable, Identifiable, Sendable {
         // for. The same rings are in the Crew pane, where they cost nobody
         // anything to ignore, which is where somebody meets them first.
         case .usageRail:     return false
-        case .motion:        return Machine.hasFastGraphics
         default:             return isAvailable
         }
     }

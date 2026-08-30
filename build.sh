@@ -88,8 +88,6 @@ echo "==> Target $TARGET"
 # Contents/Resources, not in a subdirectory.
 cp "$ROOT"/Resources/Highlight/* "$APP/Contents/Resources/"
 cp "$ROOT/Resources/Icon/Honeycode.icns" "$APP/Contents/Resources/"
-mkdir -p "$APP/Contents/Resources/Flux"
-cp "$ROOT/Resources/Flux/flux.html" "$APP/Contents/Resources/Flux/flux.html"
 
 # shellcheck disable=SC2046
 xcrun --sdk macosx swiftc \

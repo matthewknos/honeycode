@@ -114,15 +114,6 @@ struct RootView: View {
     /// back in Code, and switching it on again puts you back where you were
     /// rather than somewhere the app chose.
     private var shownMode: SidebarMode { modes.contains(mode) ? mode : .code }
-    /// Read here only to cancel `forcesLightContent` — coding mode leaves the
-    /// artwork out of the hierarchy, so the light it was compensating for
-    /// isn't there any more.
-    @AppStorage("transcript.terminal") private var codingMode = false
-
-    /// The appearance the window is actually in, so the flux override below has
-    /// something to hand back when it isn't overriding.
-    @Environment(\.colorScheme) private var systemScheme
-
     @AppStorage("sidebarExpanded") private var expanded = true
     @State private var railTarget: RailTarget?
     @State private var railHovering = false
@@ -171,23 +162,6 @@ struct RootView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    // The one place the app overrides appearance for a region
-                    // rather than for the window — see `forcesLightContent`.
-                    //
-                    // Written as a ternary rather than an `if`, so switching
-                    // backgrounds doesn't change the structural identity of the
-                    // columns and throw away every transcript's scroll position
-                    // along with it. Assigning the inherited scheme is a no-op.
-                    //
-                    // Not while Settings is up. The override exists because
-                    // the pane sits *over* the artwork; the Settings pane
-                    // paints an opaque `Theme.canvas` and never does, so it
-                    // keeps your chosen appearance for the same reason the
-                    // sidebar does — see `BackgroundStore.forcesLightContent`.
-                    .environment(\.colorScheme,
-                                 background.forcesLightContent && !codingMode
-                                     && !workspace.showingSettings
-                                     ? .light : systemScheme)
             }
         }
         .animation(Motion.reveal, value: expanded)

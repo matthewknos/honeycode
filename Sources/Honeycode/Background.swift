@@ -2,9 +2,14 @@ import SwiftUI
 import AppKit
 
 /// Background variants the library can hold.
+///
+/// One case, and kept as an enum rather than collapsed away: `library.json`
+/// stores this string against every item somebody has added, so the type is
+/// a persisted format as much as a switch. There was a second case — an
+/// animated `WKWebView` artwork — and removing it cost nothing on disk
+/// because that item was deliberately never persisted.
 enum BackgroundKind: String, Codable, Hashable {
     case image
-    case flux
 }
 
 /// One background in the library.
@@ -45,53 +50,8 @@ final class BackgroundStore: ObservableObject {
     var selected: BackgroundItem? { items.first { $0.file == selectedFile } }
 
     /// Whether the current selection is a visual background that content
-    /// should render as glass over. True for photos and for the built-in
-    /// animated flux background.
-    var isGlassy: Bool {
-        guard let selected else { return false }
-        return selected.backgroundKind == .flux || image != nil
-    }
-
-    /// Whether content over this background has to render light, whatever
-    /// appearance the app is in.
-    ///
-    /// Flux is a *light* artwork and only a light one — `flux.html` fixes its
-    /// palette at script load, so the theme it's handed afterwards has never
-    /// reached the canvas. In Dark the result was white type on a near-white
-    /// field: the greeting, the composer placeholder and the permissions line
-    /// all effectively invisible.
-    ///
-    /// Treated as a property of the background rather than fixed in the page,
-    /// because the pale version is the one worth looking at. A background this
-    /// bright wants dark content on it, and that's true regardless of what the
-    /// rest of the system is doing — the same call any light wallpaper would
-    /// force if the app let you put text straight onto one.
-    ///
-    /// Scoped to the content pane. The sidebar keeps your chosen appearance,
-    /// because it paints its own opaque surface and never sits over this.
-    var forcesLightContent: Bool {
-        selected?.backgroundKind == .flux
-    }
-
-    // MARK: Built-ins
-
-    /// The animated flux background extracted from the CORTEX homepage.
-    /// It is bundled as a resource, not stored in the user library folder,
-    /// so it is always available and never persisted to `library.json`.
-    static let fluxItem = BackgroundItem(
-        file: "flux",
-        name: "Flux",
-        addedAt: Date(timeIntervalSince1970: 0),
-        category: "Animated",
-        kind: .flux
-    )
-
-    /// Insert built-in items into the library without writing them to disk.
-    private func ensureBuiltIns() {
-        if !items.contains(where: { $0.file == Self.fluxItem.file }) {
-            items.insert(Self.fluxItem, at: 0)
-        }
-    }
+    /// should render as glass over.
+    var isGlassy: Bool { image != nil }
 
     // MARK: Locations
 
@@ -120,7 +80,6 @@ final class BackgroundStore: ObservableObject {
     init() {
         Migration.run()
         load()
-        ensureBuiltIns()
         adoptLegacySelection()
         refreshImage()
         Task { await loadThumbnails() }
@@ -134,17 +93,14 @@ final class BackgroundStore: ObservableObject {
             return
         }
         // Drop entries whose file has gone missing, so a hand-cleaned folder
-        // doesn't leave dead thumbnails in the grid. Built-in items have no
-        // file on disk and are re-added separately by `ensureBuiltIns`.
+        // doesn't leave dead thumbnails in the grid.
         let present = Set((try? FileManager.default.contentsOfDirectory(
             atPath: libraryURL.path)) ?? [])
-        items = decoded.filter { $0.backgroundKind == .flux || present.contains($0.file) }
+        items = decoded.filter { present.contains($0.file) }
     }
 
     private func save() {
-        // Only persist user-added images; built-ins are recreated on launch.
-        let persistable = items.filter { $0.backgroundKind != .flux }
-        guard let data = try? JSONEncoder().encode(persistable) else { return }
+        guard let data = try? JSONEncoder().encode(items) else { return }
         try? data.write(to: manifestURL, options: .atomic)
     }
 
@@ -250,9 +206,6 @@ final class BackgroundStore: ObservableObject {
     }
 
     func rename(_ item: BackgroundItem, to name: String) {
-        // Built-in items are recreated on launch; mutating them would appear to
-        // work but be silently lost on the next run.
-        guard item.backgroundKind != .flux else { return }
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, let index = items.firstIndex(of: item) else { return }
         items[index].name = trimmed
@@ -260,7 +213,6 @@ final class BackgroundStore: ObservableObject {
     }
 
     func categorise(_ item: BackgroundItem, as category: String?) {
-        guard item.backgroundKind != .flux else { return }
         guard let index = items.firstIndex(of: item) else { return }
         items[index].category = category
         save()
@@ -281,7 +233,6 @@ final class BackgroundStore: ObservableObject {
     }
 
     func remove(_ item: BackgroundItem) {
-        guard item.backgroundKind != .flux else { return }
         try? FileManager.default.removeItem(at: url(for: item))
         items.removeAll { $0.id == item.id }
         thumbnails[item.file] = nil
@@ -304,46 +255,14 @@ final class BackgroundStore: ObservableObject {
         for item in items where thumbnails[item.file] == nil {
             // Capture the file URL on the main actor before hopping to a
             // detached task for decoding.
-            let source = item.backgroundKind == .image ? url(for: item) : nil
+            let source = url(for: item)
             let thumb: NSImage? = await Task.detached(priority: .utility) {
-                if item.backgroundKind == .flux {
-                    return Self.fluxThumbnail()
-                }
-                guard let source else { return nil }
-                return imageThumbnail(at: source, fitting: 480)
+                imageThumbnail(at: source, fitting: 480)
             }.value
             if let thumb { thumbnails[item.file] = thumb }
         }
     }
 
-    /// A static green-to-blue gradient thumbnail for the built-in flux item.
-    private nonisolated static func fluxThumbnail() -> NSImage? {
-        let size = CGSize(width: 240, height: 135)
-        guard let cg = CGContext(
-            data: nil,
-            width: Int(size.width),
-            height: Int(size.height),
-            bitsPerComponent: 8,
-            bytesPerRow: 0,
-            space: CGColorSpaceCreateDeviceRGB(),
-            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-        ) else { return nil }
-
-        let colors = [
-            NSColor(srgbRed: 0.149, green: 0.208, blue: 0.518, alpha: 1).cgColor,
-            NSColor(srgbRed: 0.380, green: 0.659, blue: 0.247, alpha: 1).cgColor,
-            NSColor(srgbRed: 0.000, green: 0.624, blue: 0.890, alpha: 1).cgColor
-        ]
-        guard let gradient = CGGradient(colorsSpace: nil, colors: colors as CFArray, locations: [0, 0.55, 1]) else { return nil }
-        cg.drawLinearGradient(
-            gradient,
-            start: CGPoint(x: 0, y: size.height),
-            end: CGPoint(x: size.width, y: 0),
-            options: []
-        )
-        guard let image = cg.makeImage() else { return nil }
-        return NSImage(cgImage: image, size: .zero)
-    }
 }
 
 /// The content pane's backdrop: the image, frosted by the glass slider.
@@ -369,30 +288,19 @@ struct PaneBackground: View {
 
     /// Coding mode turns the artwork off outright.
     ///
-    /// Not for taste — the pane is opaque above it either way — but because
-    /// `flux` is a `WKWebView` running a canvas animation continuously, and a
-    /// photograph is a full-window blur pass. Both are spending the frame
-    /// budget of the mode you switched into *because* you wanted the frames.
-    /// Leaving the view out of the hierarchy is what tears the web process
-    /// down; hiding it would keep it drawing.
+    /// Not for taste — the pane is opaque above it either way — but because a
+    /// photograph here is a full-window blur pass, spending the frame budget
+    /// of the mode you switched into *because* you wanted the frames.
     @AppStorage("transcript.terminal") private var terminal = false
 
     /// Enough at full strength to reduce any photograph to colour fields,
     /// without being so large that mid-slider positions all look identical.
     private static let maxBlur: CGFloat = 60
 
-    /// Which background to actually draw.
-    ///
-    /// Nil for coding mode, and nil for `flux` on a Mac that has motion
-    /// switched off. That second one is a decision about the machine rather
-    /// than about taste: the choice stays selected and comes straight back the
-    /// moment the switch does, because somebody who picked this background on
-    /// one Mac has not changed their mind by opening it on another.
+    /// Which background to actually draw. Nil for coding mode.
     private var shown: BackgroundKind? {
         guard !(honoursCodingMode && terminal) else { return nil }
-        let kind = store.selected?.backgroundKind
-        guard kind != .flux || Features.isOn(.motion) else { return nil }
-        return kind
+        return store.selected?.backgroundKind
     }
 
     var body: some View {
@@ -400,19 +308,6 @@ struct PaneBackground: View {
             Theme.canvas
 
             switch shown {
-            case .flux:
-                // The veil goes *into* the animation rather than over it.
-                //
-                // A SwiftUI `.blur` here wrapped a continuously-redrawing
-                // WKWebView in an offscreen render pass, so every frame the
-                // canvas produced was composited twice — once by the web
-                // process and again by us — across the full window. The page
-                // applies the same radius as a CSS filter on the layer it is
-                // already drawing into, which the compositor does for free.
-                Color.clear
-                    .overlay(FluxBackground(blur: store.veil * Self.maxBlur))
-                    .clipped()
-                    .allowsHitTesting(false)
             case .image:
                 if let image = store.image {
                     // `Color.clear.overlay(…).clipped()` keeps a fill-scaled image

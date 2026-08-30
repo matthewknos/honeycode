@@ -167,13 +167,6 @@ Of the two targets, `ai` is the better bet. `build-ai.sh` compiles `AgentKit`
 and `Sources/ai` and links no UI framework at all, so it has none of the SwiftUI
 surface that a deployment target usually gets rejected over.
 
-The animated **flux** background is the one thing that will definitely be slow
-on integrated graphics — a `WKWebView` drawing a couple of hundred scaled strips
-per frame behind the entire window. You don't have to know that: **Motion** in
-Settings ▸ Features starts off on an Intel build, and everything else in the
-background picker is a still image that costs nothing. Switch it on if the Mac
-turns out to cope.
-
 ### The first run
 
 The first time the window opens it asks four questions, in the order they
@@ -215,14 +208,6 @@ greying them out:
 | **Preview** | the workbench's browser |
 | **Notifications** | a banner when a turn finishes somewhere you aren't looking |
 | **Usage rail** | a ring per subscription, floating at the edge of the screen — starts off |
-| **Motion** | the animated background — starts off on a Mac with integrated graphics |
-
-**Motion** is the other one that doesn't start on for everybody: it is off by
-default on an Intel build, because the animated background is a `WKWebView`
-drawing a couple of hundred scaled strips per frame behind the whole window and
-integrated graphics feel every one of them. The background stays *selected* —
-switch motion back on and it comes straight back, because somebody who chose it
-on one Mac hasn't changed their mind by opening it on another.
 
 Notifications start **off**, and switching them on is what raises the system's
 permission dialog — rather than raising it four seconds into a first launch,

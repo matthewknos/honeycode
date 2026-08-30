@@ -137,7 +137,7 @@ final class ClaudeAdapter: AgentAdapter {
     /// Whether to launch with permissions skipped. Read at process start, so
     /// toggling it restarts live sessions via the notification below.
     static var skipPermissions: Bool {
-        Prefs.store.object(forKey: "agent.skipPermissions") as? Bool ?? true
+        Policy.value(.skipPermissions, default: true)
     }
 
     /// Posted by Settings when the permission toggle changes.

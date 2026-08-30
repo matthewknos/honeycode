@@ -65,9 +65,18 @@ struct SetupFlow: View {
     @State private var picking = false
     @State private var editing: CustomAccount?
 
-    @AppStorage("agent.skipPermissions") private var skipPermissions = true
-    @AppStorage("tenancy.gateDelegation") private var gateDelegation = true
+    /// The two governed switches, through `Policy` — see `CrewSettings` for
+    /// why not `@AppStorage`. It matters more here than there: this is the one
+    /// screen where somebody is *deciding* these, and offering a choice that
+    /// an organisation has already taken is worse on a first run than anywhere
+    /// else in the app.
+    @State private var governed: [Policy.Key: Bool] = [:]
     @AppStorage("usage.monthlyCap") private var monthlyCap: Double = 500
+
+    private func governedSwitch(_ key: Policy.Key, default fallback: Bool) -> Binding<Bool> {
+        Binding(get: { governed[key] ?? Policy.value(key, default: fallback) },
+                set: { governed[key] = $0; Policy.set(key, $0) })
+    }
 
     enum Step: Int, CaseIterable, Identifiable {
         case welcome, accounts, features, safety
@@ -517,7 +526,9 @@ struct SetupFlow: View {
 
     private var safety: some View {
         VStack(alignment: .leading, spacing: Theme.s6) {
-            rule(isOn: $skipPermissions, title: "Let agents work without asking",
+            rule(isOn: governedSwitch(.skipPermissions, default: true),
+                 managed: Policy.isManaged(.skipPermissions),
+                 title: "Let agents work without asking",
                  on: "Files are edited and commands run without a prompt for each "
                    + "one. This is what makes an unattended run possible, and it "
                    + "is exactly as powerful as it sounds.",
@@ -529,7 +540,9 @@ struct SetupFlow: View {
             // exist; on a Mac with one Claude account it is a paragraph about
             // a situation that cannot arise.
             if Account.work.isEnabled && Account.enabled.count > 1 {
-                rule(isOn: $gateDelegation, title: "Keep Enterprise work inside Enterprise",
+                rule(isOn: governedSwitch(.tenancyGate, default: true),
+                     managed: Policy.isManaged(.tenancyGate),
+                     title: "Keep Enterprise work inside Enterprise",
                      on: "Work handed from an Enterprise session to Kimi, Copilot or "
                        + "your personal Claude is checked on the Enterprise account "
                        + "first, and those agents work in an empty folder rather than "
@@ -572,17 +585,27 @@ struct SetupFlow: View {
 
     /// A switch whose explanation changes with it, rather than one sentence
     /// describing the on position and leaving you to invert it yourself.
-    private func rule(isOn: Binding<Bool>, title: String,
+    private func rule(isOn: Binding<Bool>, managed: Bool = false, title: String,
                       on: String, off: String) -> some View {
         VStack(alignment: .leading, spacing: Theme.s3) {
             Toggle(title, isOn: isOn)
                 .toggleStyle(.switch)
+                .disabled(managed)
                 .controlSize(.mini)
                 .font(Theme.row)
             Text(isOn.wrappedValue ? on : off)
                 .font(Theme.note)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+            // Said here rather than left as a switch that simply refuses to
+            // move. A control you cannot change and that does not say why is
+            // read as a bug, and this is somebody's first four minutes with
+            // the app.
+            if managed {
+                Label(Policy.note, systemImage: "lock.fill")
+                    .font(Theme.note)
+                    .foregroundStyle(.tertiary)
+            }
         }
     }
 

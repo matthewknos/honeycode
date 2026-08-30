@@ -57,18 +57,22 @@ enum Tenancy {
 
     // MARK: The preference
 
-    private static let key = "tenancy.gateDelegation"
-
-    /// Whether crossings are inspected. On unless turned off.
+    /// Whether crossings are inspected. On unless turned off — and not always
+    /// turnable off.
     ///
-    /// Default-on is the whole disagreement in one line. A privacy fence that
-    /// ships off costs one forgotten checkbox to become nothing at all, and the
-    /// person who forgets is exactly the person it was for. The cost of
-    /// default-on is a slower first crew run and a lead that sometimes keeps a
-    /// piece it could have handed away.
+    /// Default-on was half the argument: a privacy fence that ships off costs
+    /// one forgotten checkbox to become nothing at all, and the person who
+    /// forgets is exactly the person it was for. The other half is that a
+    /// checkbox is still a checkbox, and the person it protects against is the
+    /// one who can clear it. So this reads through `Policy`, which lets an
+    /// organisation pin it with a configuration profile — at which point the
+    /// setter does nothing and the control says who decided.
+    ///
+    /// The cost of default-on is unchanged: a slower first crew run and a lead
+    /// that sometimes keeps a piece it could have handed away.
     static var gates: Bool {
-        get { Prefs.store.object(forKey: key) as? Bool ?? true }
-        set { Prefs.store.set(newValue, forKey: key) }
+        get { Policy.value(.tenancyGate, default: true) }
+        set { Policy.set(.tenancyGate, newValue) }
     }
 
     /// The test every dispatch runs.

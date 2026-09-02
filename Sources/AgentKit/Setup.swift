@@ -28,7 +28,7 @@ enum Feature: String, CaseIterable, Identifiable, Sendable {
     /// Which Azure tenant you're in, and the project chip.
     case azure
     /// Several agents on one message: the Crew half of the sidebar, the Team
-    /// control in a header bar, the Run tab.
+    /// control in the tab strip, the Run tab.
     case crew
     /// Agents that run on their own — the third half of the sidebar.
     case agents
@@ -168,7 +168,7 @@ enum Feature: String, CaseIterable, Identifiable, Sendable {
 /// Which features are on.
 ///
 /// A plain read of one boolean per feature, because these are consulted from
-/// `body` — several of them on every redraw of a header bar. Nothing here
+/// `body` — several of them on every redraw of the tab strip. Nothing here
 /// stats a file or launches a process; the detection that decides the *initial*
 /// answer happens once, in `Setup.prepare`.
 enum Features {

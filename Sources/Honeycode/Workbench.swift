@@ -1,11 +1,11 @@
 import SwiftUI
 import AppKit
 
-/// The work, beside the conversation about the work.
+/// The work, beside the conversation about the work — or instead of it.
 ///
-/// One panel down the trailing edge with four tabs, in place of four surfaces
-/// that each arrived by a different route and none of which could be on screen
-/// at the same time as another:
+/// One surface for the artefact, in place of four that each arrived by a
+/// different route and none of which could be on screen at the same time as
+/// another:
 ///
 /// - the **browser** was a panel that split the column, and had to grow a
 ///   full-width mode with a floating chat over it because there was nowhere
@@ -17,159 +17,45 @@ import AppKit
 ///   that pushed both around once a second and vanished when the run ended.
 ///
 /// They are all the same kind of thing — the artefact rather than the dialogue
-/// — so they share one place, one width, one resizer and one close. Which one
-/// you are looking at is a tab, which is a decision you can change in one click
-/// instead of a modal you have to dismiss.
+/// — so they share one place, one width, one resizer and one close.
+///
+/// What this no longer owns is *which* of them is showing. That was a tab strip
+/// inside the panel, which meant the panel had to be open before you could see
+/// what was in it, and the tabs sat at a second altitude two hundred points in
+/// from the pane's own edge. `PaneTabs` puts them across the top of the pane
+/// instead, where they name the conversation as one of their number — so the
+/// strip can show you where you are even when the answer is "talking".
 ///
 /// The panel is per-session, because everything in it is: the dev server
 /// belongs to a session, so do the edits, the working directory and the run.
 struct Workbench: View {
     @ObservedObject var session: Session
     @ObservedObject var workspace: Workspace
-
-    @State private var openingPullRequest = false
-
-    /// The tabs this panel is showing.
-    ///
-    /// `WorkbenchTab.available` plus one exception: a crew run that is actually
-    /// in flight brings Run back even with Crew switched off. The switch hides
-    /// the Team control; it does not refuse a message naming three accounts,
-    /// and a run nobody can watch is a worse outcome than a tab nobody asked
-    /// for.
-    private var available: [WorkbenchTab] {
-        var out = WorkbenchTab.available
-        if session.crewRun != nil, !out.contains(.run) { out.append(.run) }
-        return out
-    }
-
-    /// Which one is on screen. A stored tab whose feature has been switched off
-    /// since it was last open has no button in the row above, so leaving it
-    /// there would be a panel you cannot navigate out of.
-    private var shownTab: WorkbenchTab {
-        available.contains(session.workbenchTab) ? session.workbenchTab : .changes
-    }
+    /// Owned by the pane, because the tab strip offers this too. See
+    /// `SessionView.openingPullRequest`.
+    @Binding var openingPullRequest: Bool
 
     var body: some View {
-        VStack(spacing: 0) {
-            tabs
-            Divider().overlay(Theme.rule)
-
-            Group {
-                switch shownTab {
-                case .preview:
-                    BrowserPanel(session: session, workspace: workspace, embedded: true)
-                case .changes:
-                    ChangesTab(session: session, openingPullRequest: $openingPullRequest)
-                case .files:
-                    FilesTab(session: session)
-                case .run:
-                    RunTab(session: session)
-                }
+        Group {
+            switch session.paneTab {
+            case .preview:
+                BrowserPanel(session: session, workspace: workspace)
+            case .changes:
+                ChangesTab(session: session, openingPullRequest: $openingPullRequest)
+            case .files:
+                FilesTab(session: session)
+            case .run:
+                RunTab(session: session)
+            case .agent:
+                // Unreachable — the pane doesn't build a workbench for the
+                // conversation tab. An empty view rather than a fatal error
+                // because a layout bug should be a blank panel you can navigate
+                // out of, not a crash.
+                Color.clear
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.canvas)
-        .sheet(isPresented: $openingPullRequest) {
-            // Still a sheet, and the one thing in here that should be. Opening
-            // a pull request is a form with a commit at the end of it — a
-            // decision you finish or abandon — which is what a sheet is for.
-            // What it is no longer is a sheet *inside another sheet*.
-            PullRequestSheet(session: session,
-                             changes: Changes.summarise(session.items),
-                             isPresented: $openingPullRequest)
-        }
-    }
-
-    /// Four tabs and a close, on one line.
-    ///
-    /// Icons with labels rather than icons alone. There are four of them, they
-    /// are the panel's whole vocabulary, and a row of unlabelled glyphs is how
-    /// the browser and the changes list stayed undiscovered in the first place.
-    /// The labels drop below `Theme.workbenchMinWidth`, where the row would
-    /// otherwise wrap.
-    private var tabs: some View {
-        GeometryReader { geometry in
-            let labelled = geometry.size.width >= 420
-            HStack(spacing: Theme.s2) {
-                ForEach(available) { tab in
-                    tabButton(tab, labelled: labelled)
-                }
-                Spacer(minLength: Theme.s3)
-                Button {
-                    withAnimation(Motion.panel) {
-                        session.browserVisible = false
-                        session.browserFull = false
-                    }
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 9.5, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 22, height: 22)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(HoverCapsule())
-                .help("Close the workbench")
-            }
-            .padding(.horizontal, Theme.s5)
-            .frame(height: Theme.headerHeight)
-            .frame(maxHeight: .infinity, alignment: .bottom)
-        }
-        .frame(height: Theme.headerHeight + Chrome.trafficLightClearance - Theme.s6)
-    }
-
-    private func tabButton(_ tab: WorkbenchTab, labelled: Bool) -> some View {
-        let on = shownTab == tab
-        let badge = self.badge(for: tab)
-        return Button {
-            withAnimation(Motion.hover) { session.workbenchTab = tab }
-        } label: {
-            HStack(spacing: Theme.s2) {
-                Image(systemName: tab.symbol)
-                    .font(.system(size: 10.5, weight: .medium))
-                if labelled {
-                    Text(tab.title)
-                        .font(Theme.label)
-                }
-                if let badge {
-                    Text(badge)
-                        .font(.system(size: Theme.t1, weight: .semibold))
-                        .monospacedDigit()
-                        .foregroundStyle(tab == .run ? Theme.stateLive : Theme.stateDone)
-                }
-            }
-            .foregroundStyle(on ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
-            .padding(.horizontal, Theme.s4)
-            .frame(height: 24)
-            .background(on ? Theme.well : .clear,
-                        in: RoundedRectangle(cornerRadius: Theme.cornerChip))
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .help(help(for: tab))
-    }
-
-    /// Counts, where a count is the thing you would have gone looking for.
-    private func badge(for tab: WorkbenchTab) -> String? {
-        switch tab {
-        case .changes:
-            let count = Changes.fileCount(session.items)
-            return count == 0 ? nil : "\(count)"
-        case .run:
-            guard let run = session.crewRun, run.isBusy else { return nil }
-            let live = run.members.filter { $0.state == .working || $0.state == .answering }
-            return live.isEmpty ? nil : "\(live.count)"
-        default:
-            return nil
-        }
-    }
-
-    private func help(for tab: WorkbenchTab) -> String {
-        switch tab {
-        case .preview: return "The page, the dev server, or a rendered artifact"
-        case .changes: return "Every file this session has edited"
-        case .files:   return "The working directory as it stands now"
-        case .run:     return "The crew, while it is running"
-        }
     }
 }
 
@@ -194,7 +80,7 @@ private struct ChangesTab: View {
     /// while a reply streams this view redraws on every delta — so computing it
     /// in `body` would rebuild the whole edit history of the session thirty
     /// times a second to answer a question whose answer only changes when an
-    /// item is appended. That is precisely the cost the old status rail went
+    /// item is appended. That is precisely the cost the old header bar went
     /// out of its way to avoid, and it would have come straight back the moment
     /// the sheet became a tab that can be left open.
     ///
@@ -353,9 +239,18 @@ private struct ChangesTab: View {
 private struct FilesTab: View {
     @ObservedObject var session: Session
 
+    /// A plain `VStack`, and it has to be.
+    ///
+    /// This was a `LazyVStack`, which drew nothing at all: its single child is
+    /// `DirectoryRows`, which is empty — and so zero points tall — until its
+    /// `.task` has read the directory, and a lazy stack does not appear a child
+    /// with no height. The task therefore never ran, the rows never arrived,
+    /// and the tab was permanently blank. There is one child anyway, so there
+    /// was nothing to be lazy about; `DirectoryRows` builds its own rows
+    /// eagerly and always did.
     var body: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 0) {
                 DirectoryRows(url: session.directory, depth: 0, session: session)
             }
             .padding(.vertical, Theme.s4)
@@ -372,6 +267,11 @@ private struct DirectoryRows: View {
 
     @State private var entries: [Entry] = []
     @State private var loaded = false
+    /// The read failed rather than came back empty. On this platform that is
+    /// nearly always a privacy grant — `~/Desktop`, `~/Documents` and iCloud
+    /// Drive are all gated — and "this folder is empty" is a confident wrong
+    /// answer to a question about permissions.
+    @State private var unreadable = false
     @State private var open: Set<URL> = []
     @State private var truncated = 0
 
@@ -400,9 +300,15 @@ private struct DirectoryRows: View {
                     .padding(.vertical, Theme.s2)
             }
             if loaded && entries.isEmpty && depth == 0 {
-                WorkbenchEmpty(symbol: "folder",
-                               title: "Nothing here",
-                               blurb: "This session's folder is empty.")
+                WorkbenchEmpty(
+                    symbol: unreadable ? "lock" : "folder",
+                    title: unreadable ? "Can't read this folder" : "Nothing here",
+                    blurb: unreadable
+                        ? "macOS is not letting Honeycode list "
+                          + "\(url.lastPathComponent). Allow it under Privacy & "
+                          + "Security ▸ Files and Folders, or open the session in a "
+                          + "folder that isn't protected."
+                        : "This session's folder is empty.")
                     .frame(height: 220)
             }
         }
@@ -423,11 +329,10 @@ private struct DirectoryRows: View {
                 // A file opens in Preview, which is the tab that already knows
                 // how to render one safely — and is why the two are in the same
                 // panel rather than in two places that don't know about each
-                // other. It is also why `WorkbenchTab.files` hangs off the
+                // other. It is also why `PaneTab.files` hangs off the
                 // Preview switch: with nowhere to open a file, this row has
                 // nothing to do and the tab has no reason to be in the strip.
                 session.open(file: entry.url)
-                session.workbenchTab = .preview
             }
         } label: {
             HStack(spacing: Theme.s3) {
@@ -467,12 +372,12 @@ private struct DirectoryRows: View {
     /// to read rather than scan.
     private func load() async {
         let url = url
-        let result: ([Entry], Int) = await Task.detached(priority: .userInitiated) {
+        let result: ([Entry], Int, Bool) = await Task.detached(priority: .userInitiated) {
             let manager = FileManager.default
             guard let contents = try? manager.contentsOfDirectory(
                 at: url,
                 includingPropertiesForKeys: [.isDirectoryKey],
-                options: [.skipsHiddenFiles]) else { return ([], 0) }
+                options: [.skipsHiddenFiles]) else { return ([], 0, true) }
 
             let mapped = contents.map { child -> Entry in
                 let isDirectory = (try? child.resourceValues(forKeys: [.isDirectoryKey]))?
@@ -487,12 +392,13 @@ private struct DirectoryRows: View {
 
             let cap = 400
             return mapped.count > cap
-                ? (Array(mapped.prefix(cap)), mapped.count - cap)
-                : (mapped, 0)
+                ? (Array(mapped.prefix(cap)), mapped.count - cap, false)
+                : (mapped, 0, false)
         }.value
 
         entries = result.0
         truncated = result.1
+        unreadable = result.2
         loaded = true
     }
 }

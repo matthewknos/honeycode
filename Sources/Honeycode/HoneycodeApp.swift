@@ -12,7 +12,6 @@ struct HoneycodeApp: App {
     /// before this type's own `init` body and before `workspace` exists.
     @StateObject private var agents = AgentStore()
     @State private var showPalette = false
-    @State private var paletteOpensBeside = false
 
     /// Every colour in the app is semantic, so the whole thing follows the
     /// system appearance for free. This override exists only so you can judge
@@ -20,6 +19,20 @@ struct HoneycodeApp: App {
     @AppStorage("appearance") private var appearance = Appearance.system
     @AppStorage("transcript.mode") private var transcriptMode = TranscriptMode.normal
     @AppStorage("transcript.terminal") private var codingMode = false
+    /// The two panels either side of the pane. Owned by `RootView`; watched
+    /// here on the same keys so the View menu can drive them.
+    ///
+    /// A second wrapper on one key is exactly what the `appearance` binding
+    /// above is threaded down to avoid — but that one is different: the app
+    /// also hangs `NSApp.appearance` off its `onChange`. These two have no side
+    /// effect beyond the layout, so two views of one default is all they are.
+    ///
+    /// They are in this menu because the collapsed rail lost its own expand
+    /// button in the redesign — deliberately, so there is one of it — and a
+    /// window switch reachable from exactly one 24pt glyph and no menu and no
+    /// key is a switch somebody will not find.
+    @AppStorage("sidebarExpanded") private var sidebarExpanded = true
+    @AppStorage("inspector.shown") private var inspectorShown = true
 
     enum Appearance: String, CaseIterable, Identifiable {
         case system, light, dark
@@ -55,13 +68,39 @@ struct HoneycodeApp: App {
             case .dark:   return NSAppearance(named: .darkAqua)
             }
         }
+
+        /// The glyph for the state this *is*, not for what pressing it does.
+        ///
+        /// The title bar cycles the three from one button, and a button whose
+        /// icon described the next state would be a control you have to press
+        /// to find out what it currently says. A sun means light.
+        var symbol: String {
+            switch self {
+            case .system: return "circle.lefthalf.filled"
+            case .light:  return "sun.max"
+            case .dark:   return "moon"
+            }
+        }
+
+        /// Light → Dark → Match System, and round.
+        ///
+        /// Three states on one button works because the cycle is short and the
+        /// glyph says where you are. A popup menu for three options that are
+        /// each one word is a menu you open to press the item next to the one
+        /// already selected.
+        var next: Appearance {
+            switch self {
+            case .light:  return .dark
+            case .dark:   return .system
+            case .system: return .light
+            }
+        }
     }
 
     var body: some Scene {
         Window("Honeycode", id: "main") {
             RootView(workspace: workspace, background: background, agents: agents,
-                     showPalette: $showPalette, paletteOpensBeside: $paletteOpensBeside,
-                     appearance: $appearance)
+                     showPalette: $showPalette, appearance: $appearance)
                 .preferredColorScheme(appearance.scheme)
                 .environmentObject(background)
                 .environmentObject(workspace)
@@ -70,6 +109,9 @@ struct HoneycodeApp: App {
                     // this" — everything the engine hands back to its host.
                     AppHost.shared.attach(to: workspace)
                     NSApp.appearance = appearance.appKit
+                    // `kill -USR1 $(pgrep Honeycode)` writes a PNG of this
+                    // window. Costs nothing until the signal arrives.
+                    SelfCapture.install()
                     // Starts the clock. Also the catch-up pass — an interval
                     // agent that missed fourteen fires while the app was quit
                     // runs once, not fourteen times.
@@ -108,6 +150,17 @@ struct HoneycodeApp: App {
             }
 
             CommandGroup(after: .toolbar) {
+                Button(sidebarExpanded ? "Hide Sidebar" : "Show Sidebar") {
+                    withAnimation(Motion.panel) { sidebarExpanded.toggle() }
+                }
+                .keyboardShortcut(Shortcuts.toggleSidebar.key,
+                                  modifiers: Shortcuts.toggleSidebar.modifiers)
+                Button(inspectorShown ? "Hide Inspector" : "Show Inspector") {
+                    withAnimation(Motion.panel) { inspectorShown.toggle() }
+                }
+                .keyboardShortcut(Shortcuts.toggleInspector.key,
+                                  modifiers: Shortcuts.toggleInspector.modifiers)
+                Divider()
                 Picker("Appearance", selection: $appearance) {
                     ForEach(Appearance.allCases) { option in
                         Text(option.title).tag(option)
@@ -151,10 +204,7 @@ struct HoneycodeApp: App {
             }
 
             CommandMenu("Session") {
-                Button("Quick Open…") {
-                    paletteOpensBeside = false
-                    showPalette = true
-                }
+                Button("Quick Open…") { showPalette = true }
                     .keyboardShortcut(Shortcuts.quickOpen.key,
                                       modifiers: Shortcuts.quickOpen.modifiers)
 
@@ -183,28 +233,6 @@ struct HoneycodeApp: App {
 
                 Divider()
 
-                // Goes through the palette rather than acting on the
-                // selection. "Open beside" needs a subject, and the focused
-                // session can't be it — it's the thing you'd be opening beside.
-                // So this asks which one, in the search field that already
-                // exists for finding a session.
-                Button("Open Beside…") {
-                    paletteOpensBeside = true
-                    showPalette = true
-                }
-                .keyboardShortcut(Shortcuts.openBeside.key,
-                                  modifiers: Shortcuts.openBeside.modifiers)
-                .disabled(workspace.sessions.count < 2
-                          || workspace.columns.count >= Workspace.maxColumns)
-
-                Button("Close Column") {
-                    guard let id = workspace.selection else { return }
-                    workspace.closeColumn(id)
-                }
-                .keyboardShortcut(Shortcuts.closeColumn.key,
-                                  modifiers: Shortcuts.closeColumn.modifiers)
-                .disabled(workspace.columns.count < 2)
-
                 // One title for both directions, because it's one window and
                 // one key: press it on the conversation that's already out
                 // there and it comes back.
@@ -221,15 +249,6 @@ struct HoneycodeApp: App {
                 .keyboardShortcut(Shortcuts.popOut.key,
                                   modifiers: Shortcuts.popOut.modifiers)
                 .disabled(workspace.selected == nil)
-
-                Button("Focus Next Column") { workspace.focusColumn(by: 1) }
-                    .keyboardShortcut(Shortcuts.nextColumn.key,
-                                      modifiers: Shortcuts.nextColumn.modifiers)
-                    .disabled(workspace.columns.count < 2)
-                Button("Focus Previous Column") { workspace.focusColumn(by: -1) }
-                    .keyboardShortcut(Shortcuts.previousColumn.key,
-                                      modifiers: Shortcuts.previousColumn.modifiers)
-                    .disabled(workspace.columns.count < 2)
 
                 Divider()
 

@@ -319,7 +319,7 @@ struct PopoverChoice: Identifiable {
 /// explanation the other pickers all carry. One control, one look.
 struct PopoverMenu<Label: View>: View {
     var header: String?
-    var width: CGFloat = 240
+    var width: CGFloat = Theme.popoverWidth
     let choices: [PopoverChoice]
     @ViewBuilder var label: Label
 
@@ -351,7 +351,7 @@ struct PopoverMenu<Label: View>: View {
 
 /// The account identity dot.
 ///
-/// `HeaderBar` states the rule it exists to keep: "Identity is the dot, and
+/// `TitleBar` states the rule it exists to keep: "Identity is the dot, and
 /// only ever the dot. Everything else in this bar that carries colour carries a
 /// *state* colour — so the two can never be confused." Twenty-eight call sites
 /// wrote `Circle().fill(account.accent).frame(width:height:)` out by hand, at

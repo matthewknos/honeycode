@@ -562,7 +562,10 @@ final class UsageStore: ObservableObject {
     /// this to say what your quota is has something else wrong with it, and
     /// `Verification.patience` — five minutes, sized for a typecheck — would
     /// leave a wedged probe holding a slot until the app quit.
-    private static let patience: TimeInterval = 20
+    ///
+    /// `nonisolated` because `answer(from:)` is: the probe runs off the main
+    /// actor, so the timeout it runs under has to be readable from there.
+    nonisolated private static let patience: TimeInterval = 20
 
     /// Run a candidate command now and report what it produced, without
     /// storing anything. What the Test button calls.

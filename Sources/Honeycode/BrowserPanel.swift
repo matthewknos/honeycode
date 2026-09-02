@@ -11,10 +11,6 @@ import AppKit
 struct BrowserPanel: View {
     @ObservedObject var session: Session
     @ObservedObject var workspace: Workspace
-    /// Inside the workbench, which supplies the tab strip, the titlebar
-    /// clearance and the close button. Without this the panel drew its own
-    /// close directly under the workbench's own, one point apart.
-    var embedded = false
     @StateObject private var web = WebController()
     @StateObject private var watch = FileWatch()
     @State private var address = ""
@@ -52,7 +48,7 @@ struct BrowserPanel: View {
                         empty
                     }
 
-                    if session.browserFull && session.miniChatVisible {
+                    if !session.splitOpen && session.miniChatVisible {
                         MiniChat(session: session, workspace: workspace,
                                  bounds: geometry.size)
                             .padding(Theme.s6)
@@ -127,42 +123,23 @@ struct BrowserPanel: View {
             }
             navButton("folder", "Open a file…", enabled: true) { pick() }
             navButton("safari", "Open in browser", enabled: loaded) { openExternally() }
-            // Only in full width. Beside the transcript there's already a
-            // composer six inches to the left.
-            if session.browserFull {
+            // Only with the conversation hidden. Beside the transcript
+            // there's already a composer six inches to the left.
+            if !session.splitOpen {
                 navButton("bubble.left.and.text.bubble.right",
                           session.miniChatVisible ? "Hide chat" : "Chat about this page",
                           enabled: true) {
                     withAnimation(Motion.reveal) { session.miniChatVisible.toggle() }
                 }
             }
-            navButton(session.browserFull
-                      ? "arrow.down.right.and.arrow.up.left"
-                      : "arrow.up.left.and.arrow.down.right",
-                      session.browserFull ? "Exit full width" : "Full width",
-                      enabled: true) {
-                // The conversation hides rather than the web view being
-                // re-created, so the page keeps its scroll position, its form
-                // state and whatever you'd already clicked.
-                withAnimation(Motion.panel) {
-                    session.browserFull.toggle()
-                    // Leaving full width brings the real transcript back, so
-                    // the floating copy has nothing left to do.
-                    if !session.browserFull { session.miniChatVisible = false }
-                }
-            }
-            if !embedded {
-                navButton("xmark", "Close panel", enabled: true) {
-                    withAnimation(Motion.panel) {
-                        session.browserVisible = false
-                        session.browserFull = false
-                    }
-                }
-            }
+            // The full-width toggle that used to live here is the tab strip's
+            // split button now — see `PaneTabs.splitButton`. It was the same
+            // switch reached two ways, and the strip's version is the one that
+            // is on screen whichever tab you are on.
         }
         .padding(.horizontal, Theme.s5)
         .padding(.vertical, Theme.s4)
-        .padding(.top, embedded ? 0 : Chrome.trafficLightClearance - Theme.s6)
+
     }
 
     /// Out as a real file, so the browser renders it unsandboxed — which is the

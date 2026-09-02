@@ -14,14 +14,26 @@ import Foundation
 final class Crew {
 
     /// Everything after this marker in the lead's reply is assignments.
-    static let fence = "ai-delegate"
+    ///
+    /// `nonisolated`, like the two below it: these three name a wire format
+    /// rather than any state of a run, and `split` takes one as a default
+    /// argument — which Swift 6 evaluates at the call site, outside this
+    /// class's actor. Referencing an isolated constant from there is an error
+    /// in the Swift 6 language mode.
+    ///
+    /// The briefings below interpolate these as `Crew.fence`, not `Self.fence`,
+    /// and have to: they are stored `static let` strings, and Swift refuses a
+    /// covariant `Self` in a stored property initialiser. The error lands on
+    /// the closing `"""` rather than on the interpolation, which is why it is
+    /// worth saying here.
+    nonisolated static let fence = "ai-delegate"
     /// The channel the delegates talk to each other on.
     ///
     /// A second fence rather than a second meaning for the first: a delegate
     /// that emitted `ai-delegate` would be handing out work, which is the lead's
     /// job and nobody else's. Two names is the cheapest way to make that
     /// impossible rather than merely discouraged.
-    static let messageFence = "ai-message"
+    nonisolated static let messageFence = "ai-message"
     /// The block a delegate ends its piece with: the names another file will
     /// call, and what it changed about them.
     ///
@@ -33,7 +45,7 @@ final class Crew {
     /// person watching a crew build something has as much use for the list of
     /// names as the lead does. So it stays visible and renders as an ordinary
     /// code block.
-    static let interfaceFence = "ai-interface"
+    nonisolated static let interfaceFence = "ai-interface"
 
     private let directory: URL
     /// The conversation the lead runs in, when there already is one.
@@ -957,24 +969,36 @@ final class Crew {
         let step: TimeInterval = 0.25
         var announced = false
 
-        func poll() {
-            let now = Set(session.availableModels.map(\.id))
-            if now != before && !now.isEmpty { proceed(); return }
-            guard waited < Self.connectPatience else {
-                // Carry on with what we have rather than refusing to run. A
-                // stale list still contains working models.
-                reporter.problem("\(seat.mention) didn’t send its model list — using the last known one")
-                proceed()
-                return
+        // An awaited loop rather than a local `poll()` that re-arms itself on
+        // `DispatchQueue.main`. Handing a local function to `asyncAfter` means
+        // converting it into a `@Sendable` block, and this one closes over
+        // `session`, `reporter` and `proceed` — none of them Sendable, all of
+        // them main-actor state. Nothing here ever left the main actor; this
+        // is the same wait, written so the compiler can see that.
+        //
+        // Losing the synchronous first `poll()` costs nothing: it compared
+        // `availableModels` against a set read from it one line earlier, so it
+        // could only ever fall through to the sleep.
+        Task { @MainActor in
+            while true {
+                if waited >= Self.connectPatience {
+                    // Carry on with what we have rather than refusing to run.
+                    // A stale list still contains working models.
+                    reporter.problem("\(seat.mention) didn’t send its model list — using the last known one")
+                    proceed()
+                    return
+                }
+                if !announced, waited > 1 {
+                    announced = true
+                    reporter.status("connecting to \(seat.mention)…")
+                }
+                waited += step
+                try? await Task.sleep(for: .seconds(step))
+
+                let now = Set(session.availableModels.map(\.id))
+                if now != before && !now.isEmpty { proceed(); return }
             }
-            if !announced, waited > 1 {
-                announced = true
-                reporter.status("connecting to \(seat.mention)…")
-            }
-            waited += step
-            DispatchQueue.main.asyncAfter(deadline: .now() + step, execute: poll)
         }
-        poll()
     }
 
     /// Copilot answered `session/new` in 5.9s on this machine; this is that
@@ -1285,7 +1309,7 @@ final class Crew {
     lines of prose saying how you've split it — no preamble, no restating \
     the request — and then end with a fenced block, exactly:
 
-    ```\(Self.fence)
+    ```\(Crew.fence)
     {"brief":"…","assignments":[
       {"to":"<handle>","task":"…","writes":["src/a.ts","src/b.ts"]}]}
     ```
@@ -1354,7 +1378,7 @@ final class Crew {
     clock at all. Write it like any other — what to build, where, and a \
     `writes` list:
 
-    ```\(Self.fence)
+    ```\(Crew.fence)
     {"brief":"…",
      "mine":{"task":"…","writes":["src/app.ts"]},
      "assignments":[{"to":"<handle>","task":"…","writes":["…"]}]}
@@ -1374,7 +1398,7 @@ final class Crew {
     the last one reports. So write **more pieces than you have seats** and \
     leave the extras unaddressed, in a `queue` beside `assignments`:
 
-    ```\(Self.fence)
+    ```\(Crew.fence)
     {"brief":"…",
      "assignments":[{"to":"<handle>#2","task":"…","writes":["…"]},
                     {"to":"<handle>#3","task":"…","writes":["…"]}],
@@ -1416,7 +1440,7 @@ final class Crew {
     pieces genuinely have to run at the same time.
     - **You get more than one round.** After they report, you are asked to \
     assemble — and you can hand out more work from that turn, with this same \
-    block, up to \(Self.waveCap) rounds in all. They keep their \
+    block, up to \(Crew.waveCap) rounds in all. They keep their \
     conversations and remember what they wrote, so a piece that comes back \
     wrong is cheaper handed back to whoever wrote it than fixed by you \
     reading it cold. So plan the first round for what can be done in \
@@ -1433,7 +1457,7 @@ final class Crew {
     - **You can send to them too, the same way they send to you.** End a \
     turn with a fenced block, exactly:
 
-    ```\(Self.messageFence)
+    ```\(Crew.messageFence)
     {"messages":[{"to":"<handle>","text":"…"}]}
     ```
 
@@ -2976,7 +3000,7 @@ final class Crew {
         [ai: end your last turn on this piece with the interface you actually \
         built, in a fenced block, exactly:
 
-        ```\(Self.interfaceFence)
+        ```\(Crew.interfaceFence)
         name(argument: Type) -> Return
         OTHER_NAME: Type
         changed: renamed `foo` to `bar`; did not build `baz`
@@ -3032,7 +3056,7 @@ final class Crew {
         type or interface they own, a name, a decision that changes what you \
         write — ask, rather than assuming. End your turn with a fenced block:
 
-        ```\(Self.messageFence)
+        ```\(Crew.messageFence)
         {"messages":[{"to":"<handle>","text":"your question"}]}
         ```
 

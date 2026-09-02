@@ -183,11 +183,43 @@ enum Theme {
     /// which is a rendering fault, not a message.
     static let dotAttention: CGFloat = 4
 
-    /// The header bar above every column.
+    /// A bar of controls inside a pane — Settings' own tab row, and the
+    /// workbench toolbars. Every column used to carry one; the pane has a tab
+    /// strip instead, which is taller. See `tabStripHeight`.
     static let headerHeight: CGFloat = 34
     /// How narrow the workbench may be dragged. Below this its tab strip loses
     /// its labels and its toolbars start wrapping.
     static let workbenchMinWidth: CGFloat = 340
+
+    /// The bar across the top of the *window*, above everything else.
+    ///
+    /// Tall enough to hold the traffic lights on their own baseline rather than
+    /// tucking content up beside them. The old layout had no bar, so every
+    /// column dodged the lights itself and carried a clearance to do it with;
+    /// with a bar there, the lights live in it and dodging stops being every
+    /// other view's problem.
+    static let titleBarHeight: CGFloat = 44
+    /// The strip along the foot of the window. A line of text and nothing else,
+    /// so it is sized to the text: 22 is `t2` plus four points of air.
+    static let statusBarHeight: CGFloat = 22
+    /// The inspector down the trailing edge.
+    ///
+    /// Wider than the sidebar because it holds label→value *pairs* rather than
+    /// single lines, and a pair that wraps is two rows pretending to be one.
+    static let inspectorWidth: CGFloat = 268
+    /// A tab in the pane's own strip, and the strip that holds them.
+    static let tabStripHeight: CGFloat = 38
+
+    /// A menu popover: a header and a column of `PopoverRow`s.
+    ///
+    /// `PopoverMenu` has always defaulted to 240 and the rail built the same
+    /// control by hand at 240 in one place and 250 in the other, which is drift
+    /// rather than a decision. Named so the next one doesn't have to guess.
+    ///
+    /// Not for the panels that happen to be popovers — the model picker, the
+    /// identity menu, the usage breakdown, the browser's bookmarks. Those are
+    /// sized to what is in them, and they say so at their own call sites.
+    static let popoverWidth: CGFloat = 240
 
     // MARK: Surfaces
 

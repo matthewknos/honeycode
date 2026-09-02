@@ -68,10 +68,11 @@ struct SettingsPane: View {
 
     /// The tabs, and the way out.
     ///
-    /// Same shape as the workbench's strip — icons with labels, a `Theme.well`
-    /// fill on the selected one — because it is the same control doing the same
+    /// Same shape as the pane's own strip — icons with labels, a `Theme.surface`
+    /// chip on the selected one — because it is the same control doing the same
     /// job, and the app having two ideas of what a tab looks like is how the
-    /// last review found four ideas of what a shadow looks like.
+    /// last review found four ideas of what a shadow looks like. `PaneTabs` and
+    /// the sidebar's segmented pill draw the selected one the same way.
     ///
     /// All six labels or none, which is the workbench's rule and not a
     /// coincidence: keeping the label on the selected tab and dropping the
@@ -106,10 +107,16 @@ struct SettingsPane: View {
                 .help("Back to what you were looking at")
             }
             .padding(.horizontal, Theme.s5)
-            .frame(height: Theme.headerHeight)
-            .frame(maxHeight: .infinity, alignment: .bottom)
+            .frame(maxHeight: .infinity)
         }
-        .frame(height: Theme.headerHeight + Chrome.trafficLightClearance - Theme.s6)
+        // The pane's own strip height, so this row sits on the same line as the
+        // tab strip a session shows — Settings covers the pane and leaves the
+        // rest of the window alone, and a header half a centimetre off the one
+        // it replaced is the tell that it is a different kind of thing.
+        //
+        // It used to add a traffic-light clearance, because there was no bar
+        // above it and the lights were its problem. There is now.
+        .frame(height: Theme.tabStripHeight)
     }
 
     private func button(_ candidate: SettingsTab, labelled: Bool) -> some View {
@@ -128,8 +135,10 @@ struct SettingsPane: View {
             .foregroundStyle(on ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
             .padding(.horizontal, Theme.s4)
             .frame(height: 24)
-            .background(on ? Theme.well : .clear,
+            .background(on ? Theme.surface : .clear,
                         in: RoundedRectangle(cornerRadius: Theme.cornerChip))
+            .shadow(color: on ? Theme.shadowLow.colour : .clear,
+                    radius: Theme.shadowLow.radius, y: Theme.shadowLow.y)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -976,7 +985,7 @@ private struct ShortcutSettings: View {
             }
 
             Section {
-                ForEach(Shortcuts.columns) { shortcut in
+                ForEach(Shortcuts.conversation) { shortcut in
                     LabeledContent(shortcut.title) {
                         Text(shortcut.display)
                             .font(Self.keyCap)
@@ -984,10 +993,11 @@ private struct ShortcutSettings: View {
                     }
                 }
             } header: {
-                Text("Columns")
+                Text("This conversation")
             } footer: {
-                Text("Up to three conversations side by side. How many fit is "
-                     + "decided by the window width.")
+                Text("The pop-out is a small window that stays above other "
+                     + "apps, so a long run stays watchable while you work in "
+                     + "something else.")
             }
 
             Section {

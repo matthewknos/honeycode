@@ -97,20 +97,20 @@ check("and every account stays offered",
 
 Features.set(.crew, false)
 Features.set(.preview, false)
-check("a workbench tab whose feature is off is not offered",
-      !WorkbenchTab.available.contains(.run)
-          && !WorkbenchTab.available.contains(.preview))
+check("a pane tab whose feature is off is not offered",
+      !PaneTab.available.contains(.run)
+          && !PaneTab.available.contains(.preview))
 // Files has no switch of its own but goes with Preview anyway, because
 // opening a file in Preview is the only thing a row in it does. On its own it
 // listed a directory in which every row silently landed you on Changes.
 check("and Files goes with Preview, having nowhere else to open a file",
-      !WorkbenchTab.available.contains(.files))
-check("the one that depends on nothing is always offered",
-      WorkbenchTab.available.contains(.changes))
+      !PaneTab.available.contains(.files))
+check("the ones that depend on nothing are always offered",
+      PaneTab.available.contains(.changes) && PaneTab.available.contains(.agent))
 
 Features.set(.preview, true)
 check("and Files comes back with it",
-      WorkbenchTab.available.contains(.files))
+      PaneTab.available.contains(.files))
 Features.set(.preview, false)
 
 // --- a default that is off rather than detected ---

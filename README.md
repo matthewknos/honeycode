@@ -375,42 +375,66 @@ endpoint would mean writing the agent loop here, which is a different program.
 ### The window
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│  sidebar   │  ● session · ~/proj · main   @chips  ⌸  ⋯  │  W  │
-│  Code      │                                            │  o  │
-│  Crew      │  transcript                                │  r  │
-│  Agents    │                                            │  k  │
-│  ────────  │                                            │  b  │
-│  sessions  │  ┌──────────────────────────────────────┐  │  e  │
-│            │  │ composer                             │  │  n  │
-│  identity  │  └──────────────────────────────────────┘  │  c  │
-│  settings  │                                            │  h  │
-└──────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│ ◈ Honeycode / ● Personal / proj   [search  ⌘K]    ◐ 4% ☾ ▣ ◉    │
+├────────────┬────────────────────────────────────────┬────────────┤
+│  SESSIONS  │ ⬤Agent ±Changes ▤Files ◷Preview ⚇Run  │ INSPECTOR  │
+│  Code      ├────────────────────────────────────────┤ ▸ Workspace│
+│  [filter]  │                                        │ ▸ Plan     │
+│  ────────  │  transcript                            │ ▸ Changed  │
+│  P  name   │                                        │ ▸ Usage    │
+│     agent  │  ┌──────────────────────────────────┐  │ ▸ Checks   │
+│  E  name   │  │ composer                         │  │            │
+│  ────────  │  └──────────────────────────────────┘  │            │
+│  settings  │                                        │            │
+├────────────┴────────────────────────────────────────┴────────────┤
+│ ● Idle · proj · main · 0 changed        Claude Code · Opus 5      │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
-Three modes in the sidebar. **Code** is conversations, one column each, up to
-three side by side. **Crew** is who is running right now across every session,
-what each subscription can do and what it has left, and your saved teams.
-**Agents** is the ones that run on their own — a saved prompt, a folder and a
-schedule. An unattended run is **always confined to its folder** and is held to
-**propose only** whatever the agent is set to, unless *Let scheduled agents
-write* is on in Settings ▸ General. Running one by hand uses its own settings,
-because you are sitting there. The reason for the split is in the code and worth
-repeating: Propose is a paragraph asking an agent not to write, and the folder
-is the fence that actually holds.
+Four surfaces, and each says one kind of thing.
 
-Every column carries a **header bar**: which conversation, which folder, which
-branch, whether it's fenced, what it's doing, who else is on the message and
-what it has spent.
+The **title bar** is about the window: which conversation you are in, the search
+that opens the command palette, how full the context window is, light or dark,
+and who you're signed in to GitHub and Azure as.
 
-The **workbench** down the trailing edge has four tabs — **Preview** (a page, a
-dev server or a rendered artifact), **Changes** (every file this session edited,
-with diffs and the way to a pull request), **Files** (the working directory),
-and **Run** (the crew, live). One panel, one width, one close; a badge on the
-button counts the files edited so far.
+The **sidebar** is the session list — filter, per-account counts, and a row per
+conversation carrying its agent, its folder and how long ago it last said
+something. Three modes: **Code** is conversations, **Crew** is who is running
+right now across every session, what each subscription can do and what it has
+left, and your saved teams, and **Agents** is the ones that run on their own —
+a saved prompt, a folder and a schedule. An unattended run is **always confined
+to its folder** and is held to **propose only** whatever the agent is set to,
+unless *Let scheduled agents write* is on in Settings ▸ General. Running one by
+hand uses its own settings, because you are sitting there. The reason for the
+split is in the code and worth repeating: Propose is a paragraph asking an agent
+not to write, and the folder is the fence that actually holds.
 
-Who you're signed in to GitHub and Azure as sits at the foot of the sidebar,
-and switches from there.
+The **pane** shows one conversation, with a strip of tabs across the top —
+**Agent** (the conversation), **Changes** (every file this session edited, with
+diffs and the way to a pull request), **Files** (the working directory),
+**Preview** (a page, a dev server or a rendered artifact) and **Run** (the crew,
+live). The split button beside them keeps the conversation alongside whichever
+tab you picked, so you can read a diff and the exchange that produced it at once.
+
+The **inspector** down the trailing edge is everything true about the session
+that isn't the conversation: the folder, repository, branch, account and model;
+the agent's current plan; the files it has changed; what it has spent; and
+whether its CLI is actually signed in.
+
+Along the foot, a **status strip** repeats the state, the folder, the branch and
+the file count where they can never be squeezed out by a narrow pane. It does
+not repeat the context percentage — that is the ring in the title bar, which is
+tinted and opens the full breakdown — and when the pane is showing Settings,
+Crew or Agents it names that instead of describing a conversation you cannot
+see.
+
+Both side panels have a key and a View-menu item: **⌃⌘S** for the sidebar,
+**⌃⌘I** for the inspector.
+
+Two conversations at once is the **pop-out** (⌘⇧P) — a small window that stays
+above other apps, so a long run stays watchable while you work in something
+else.
 
 ### The terminal
 
@@ -499,8 +523,8 @@ its own. Up to four seats per account. This is how you get parallelism out of on
 subscription: three Kimis with three different pieces, not one Kimi with three
 tasks queued behind each other.
 
-In the app you don't type any of this. The **Team** control in each column's
-header bar builds the mention list for you — accounts, seats and models — and
+In the app you don't type any of this. The **Team** control builds the mention
+list for you — accounts, seats and models — and
 the composer's `@` button opens the same list for a file or an agent by hand.
 
 ### Picking a model, and how hard it thinks

@@ -13,15 +13,6 @@ import SwiftUI
 struct CommandPalette: View {
     @ObservedObject var workspace: Workspace
     @Binding var isPresented: Bool
-    /// Whether choosing opens a new column rather than replacing the one you
-    /// were in.
-    ///
-    /// The palette is where ⌘D sends you, because "open beside" needs a subject
-    /// and the focused session can't be it — it's already on screen. Picking
-    /// the session and picking the side are one action this way, rather than a
-    /// key that does nothing until you've selected something else first.
-    var beside = false
-
     @State private var query = ""
     @State private var highlighted = 0
     @State private var keyMonitor: Any?
@@ -127,8 +118,7 @@ struct CommandPalette: View {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 13))
                     .foregroundStyle(.tertiary)
-                TextField(beside ? "Open a session in a new column…"
-                                 : "Jump to a session, or search what was said…",
+                TextField("Jump to a session, or search what was said…",
                           text: $query)
                     .textFieldStyle(.plain)
                     .font(.system(size: Theme.t6))
@@ -197,10 +187,34 @@ struct CommandPalette: View {
         }
     }
 
+    /// The tallest the list may get before it starts scrolling.
+    private static let listCap: CGFloat = 320
+
+    /// How tall the rows actually are, so the card can stop there.
+    ///
+    /// A `ScrollView` takes every point it is offered, so `.frame(maxHeight:)`
+    /// alone made the panel 320 points tall whether it held seven rows or one
+    /// — a third of the card was empty material under the last result. The
+    /// height is measured and capped instead.
+    ///
+    /// A plain `VStack`, not a lazy one: a lazy stack builds only what it
+    /// believes is visible, and what is visible here is decided by the height
+    /// it is being asked for. Starting at zero it would have nothing to
+    /// measure and would never grow. The list is one row per session, so there
+    /// was nothing to be lazy about either.
+    @State private var listHeight: CGFloat = 0
+
+    private struct ListHeight: PreferenceKey {
+        static let defaultValue: CGFloat = 0
+        static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+            value = max(value, nextValue())
+        }
+    }
+
     private var results: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(spacing: 0) {
+                VStack(spacing: 0) {
                     ForEach(Array(matches.enumerated()), id: \.element.id) { index, hit in
                         row(hit, active: index == highlighted)
                             .id(hit.id)
@@ -211,8 +225,12 @@ struct CommandPalette: View {
                     }
                 }
                 .padding(Theme.s3)
+                .background(GeometryReader { geometry in
+                    Color.clear.preference(key: ListHeight.self, value: geometry.size.height)
+                })
             }
-            .frame(maxHeight: 320)
+            .frame(height: min(listHeight, Self.listCap))
+            .onPreferenceChange(ListHeight.self) { listHeight = $0 }
             .onChange(of: highlighted) { _, new in
                 guard matches.indices.contains(new) else { return }
                 proxy.scrollTo(matches[new].id, anchor: .bottom)
@@ -221,7 +239,7 @@ struct CommandPalette: View {
     }
 
     private func choose(_ session: Session) {
-        if beside { workspace.openBeside(session.id) } else { workspace.selection = session.id }
+        workspace.selection = session.id
     }
 
     private func row(_ hit: Hit, active: Bool) -> some View {

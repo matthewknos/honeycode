@@ -21,11 +21,11 @@ struct TeamBar: View {
     /// The account this composer belongs to. It leads, so it is never a
     /// delegate — naming it would be asking the conversation to help itself.
     var leader: Account
-    /// In the header bar rather than on a row of its own.
+    /// In the pane's tab strip rather than on a row of its own.
     ///
     /// Drops the trailing spacer and the agent count. A row inside the composer
-    /// card had the width to spend on both; a cluster sharing a 34pt bar with
-    /// the usage readouts and two buttons does not, and "3 agents" is a fact
+    /// card had the width to spend on both; a cluster sharing a 38pt strip with
+    /// five tabs, a name and three buttons does not, and "3 agents" is a fact
     /// the three chips beside it already state.
     var inline = false
 

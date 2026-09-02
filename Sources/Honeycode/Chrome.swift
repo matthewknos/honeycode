@@ -37,6 +37,7 @@ struct WindowChrome: NSViewRepresentable {
 
     private func configure(_ window: NSWindow?) {
         guard let window else { return }
+        WindowMode.shared.observe(window)
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
         window.titlebarSeparatorStyle = .none
@@ -48,12 +49,60 @@ struct WindowChrome: NSViewRepresentable {
     }
 }
 
-/// Traffic lights occupy roughly y=12…28 at the window's leading edge, and the
-/// sidebar toggle sits in the same horizontal band — so content can be tucked
-/// up close, but not to the top edge. 34 clears them by a few points and no
-/// more; anything smaller starts overlapping the close button.
+/// How much room the traffic lights need.
 enum Chrome {
-    static let trafficLightClearance: CGFloat = 34
+    /// The three lights run from roughly x=13 to x=70. Everything used to dodge
+    /// them *downwards*, because there was no bar across the top of the window
+    /// to put anything in — so this number never had to exist. `TitleBar` puts
+    /// controls on the lights' own line, and 78 is the leading inset that
+    /// clears the last one with a normal gap after it rather than a control
+    /// butting up against the zoom button.
+    ///
+    /// Only while the lights are actually there — see `WindowMode`.
+    static let trafficLightWidth: CGFloat = 78
+}
+
+/// Whether the traffic lights are on screen.
+///
+/// They are not, in full screen: macOS moves them into the overlay that slides
+/// down when you push the pointer at the top of the display, and until you do
+/// there is nothing whatever in the window's leading corner. The title bar was
+/// holding 78 points open for three buttons that had left, so the wordmark sat
+/// a centimetre in from the window edge with nothing to explain it — which
+/// reads exactly like a row that failed to line up with anything.
+///
+/// A shared object rather than per-view state, because there is one window and
+/// this is a fact about it. `WindowChrome` hands the window over; the two
+/// notifications keep the answer right afterwards.
+@MainActor
+final class WindowMode: ObservableObject {
+    static let shared = WindowMode()
+
+    /// True when the leading corner is empty and content may start at the edge.
+    @Published private(set) var lightsHidden = false
+
+    private weak var window: NSWindow?
+    private var observing = false
+
+    private init() {}
+
+    func observe(_ window: NSWindow) {
+        self.window = window
+        refresh()
+        guard !observing else { return }
+        observing = true
+        for name in [NSWindow.didEnterFullScreenNotification,
+                     NSWindow.didExitFullScreenNotification] {
+            NotificationCenter.default.addObserver(
+                forName: name, object: nil, queue: .main
+            ) { _ in MainActor.assumeIsolated { WindowMode.shared.refresh() } }
+        }
+    }
+
+    private func refresh() {
+        let hidden = window?.styleMask.contains(.fullScreen) ?? false
+        if lightsHidden != hidden { lightsHidden = hidden }
+    }
 }
 
 /// `glassEffect` where the OS has one, and the nearest older material where it
@@ -101,16 +150,16 @@ struct RaisedSurface: ViewModifier {
     let glass: Bool
     let radius: CGFloat
     var focused: Bool = false
-    /// Overrides the focus ring's colour. Used by the columns, where the ring
-    /// is doing double duty: it says which composer has the keys *and* which
-    /// account that column belongs to, and the system accent can't say the
-    /// second thing.
-    var tint: Color?
 
     @ViewBuilder
     func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: radius)
-        let ring = tint ?? Color.accentColor
+        // The system accent, always. It used to be overridable, so a composer
+        // in a column could tint its focus ring with the account's own colour —
+        // the ring saying both which composer had the keys and whose it was.
+        // With one conversation in the pane there is nothing to tell it apart
+        // from, and the account is named twice above it anyway.
+        let ring = Color.accentColor
         if glass {
             content
                 .glassy(in: shape)
@@ -139,7 +188,6 @@ struct ComposerSurface: ViewModifier {
     let terminal: Bool
     let glass: Bool
     var focused: Bool = false
-    var tint: Color?
 
     @ViewBuilder
     func body(content: Content) -> some View {
@@ -160,8 +208,7 @@ struct ComposerSurface: ViewModifier {
         } else {
             content.modifier(RaisedSurface(glass: glass,
                                            radius: Theme.cornerCard * 2,
-                                           focused: focused,
-                                           tint: tint))
+                                           focused: focused))
         }
     }
 }

@@ -51,20 +51,27 @@ final class AppHost: WorkspaceHost {
             }
         }
 
+        // Both blocks reach the workspace through `AppHost.shared` rather than
+        // capturing it. An observer block is `@Sendable`, `Workspace` is not,
+        // and a `[weak workspace]` capture list smuggles one across that line —
+        // which Swift 6 rejects. `shared` is a constant, the stored property is
+        // already `weak`, and both bodies were main-actor-only to begin with,
+        // so the reference costs nothing and the lifetime is unchanged.
+
         // The last turn of a session is the one most likely to be lost, so
         // catch the quit rather than relying on each turn's own save.
         NotificationCenter.default.addObserver(
             forName: NSApplication.willTerminateNotification, object: nil, queue: .main
-        ) { [weak workspace] _ in
-            MainActor.assumeIsolated { workspace?.flush() }
+        ) { _ in
+            MainActor.assumeIsolated { AppHost.shared.workspace?.flush() }
         }
 
         // Clicking a notification jumps to the session that finished.
         NotificationCenter.default.addObserver(
             forName: Notifier.activated, object: nil, queue: .main
-        ) { [weak workspace] note in
+        ) { note in
             guard let id = note.userInfo?[Notifier.sessionKey] as? UUID else { return }
-            MainActor.assumeIsolated { workspace?.selection = id }
+            MainActor.assumeIsolated { AppHost.shared.workspace?.selection = id }
         }
     }
 }

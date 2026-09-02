@@ -406,22 +406,34 @@ enum TranscriptMode: String, CaseIterable, Identifiable {
     var expandsDetail: Bool { self == .verbose }
 }
 
-/// The four things the workbench can show.
+/// The five things the pane can show.
 ///
-/// One panel with tabs rather than four surfaces that each invented their own
-/// way onto the screen. Before this, previewing was a side panel, reviewing was
-/// a modal sheet, opening a pull request was a second sheet *inside* that one,
+/// One strip of tabs rather than five surfaces that each invented their own way
+/// onto the screen. Before this, previewing was a side panel, reviewing was a
+/// modal sheet, opening a pull request was a second sheet *inside* that one,
 /// and watching a crew run was a block that appeared between the transcript and
 /// the composer and pushed both around. They are all the same kind of thing —
 /// the work, as opposed to the conversation about the work — so they share one
 /// place and you switch between them instead of summoning each one differently.
-enum WorkbenchTab: String, CaseIterable, Identifiable, Codable, Sendable {
-    /// The live page, the dev server, a rendered artifact.
-    case preview
+///
+/// `agent` is the fifth, and adding it is what turned a *panel* with tabs into
+/// a *pane* with tabs. It was implicit before, as the absence of the panel, and
+/// an implicit state is one nothing can name: the strip could not show you
+/// where you were, because "nowhere" was the answer half the time. Now the
+/// conversation is a tab like the others, and `Session.splitOpen` decides
+/// whether the tab you pick replaces it or sits beside it.
+/// The order is the order they appear in the strip, and it is the order you
+/// reach for them in: the conversation, then what it did, then where it did it,
+/// then what came out, then who else was on it.
+enum PaneTab: String, CaseIterable, Identifiable, Codable, Sendable {
+    /// The conversation itself — transcript and composer.
+    case agent
     /// What the agent has edited, with the diffs and the way to a pull request.
     case changes
     /// The working directory as it stands, whoever wrote it.
     case files
+    /// The live page, the dev server, a rendered artifact.
+    case preview
     /// The crew, while it is running.
     case run
 
@@ -429,6 +441,7 @@ enum WorkbenchTab: String, CaseIterable, Identifiable, Codable, Sendable {
 
     var title: String {
         switch self {
+        case .agent:   return "Agent"
         case .preview: return "Preview"
         case .changes: return "Changes"
         case .files:   return "Files"
@@ -438,12 +451,18 @@ enum WorkbenchTab: String, CaseIterable, Identifiable, Codable, Sendable {
 
     var symbol: String {
         switch self {
+        case .agent:   return "bubble.left"
         case .preview: return "safari"
         case .changes: return "plusminus"
         case .files:   return "folder"
         case .run:     return "person.2"
         }
     }
+
+    /// Whether this tab is the conversation. Read at half a dozen call sites
+    /// that all mean "is the transcript what is on screen", and worth a name so
+    /// none of them has to spell the comparison out and get it backwards.
+    var isAgent: Bool { self == .agent }
 
     /// The switch this tab depends on.
     ///
@@ -457,16 +476,18 @@ enum WorkbenchTab: String, CaseIterable, Identifiable, Codable, Sendable {
     /// bounced you to Changes. That is the case the switches exist to prevent —
     /// "where a control is the only route to a thing, the thing goes too" — so
     /// Files goes with Preview rather than staying on as a list you cannot open.
+    /// Agent depends on nothing, and could not: a window with no conversation
+    /// in it is not a simpler Honeycode, it is a different program.
     var feature: Feature? {
         switch self {
         case .preview, .files: return .preview
         case .run:             return .crew
-        case .changes:         return nil
+        case .agent, .changes: return nil
         }
     }
 
     /// The tabs this app currently has.
-    static var available: [WorkbenchTab] {
+    static var available: [PaneTab] {
         allCases.filter { $0.feature.map(Features.isOn) ?? true }
     }
 }
@@ -692,7 +713,7 @@ struct RateLimit: Equatable, Codable {
         }
     }
 
-    /// One line for the status rail's tooltip. Always available, even when the
+    /// One line for the status strip's tooltip. Always available, even when the
     /// chip itself is hidden because nothing's wrong yet.
     var summary: String {
         var parts: [String] = [windowName]
@@ -814,17 +835,15 @@ final class Session: ObservableObject, Identifiable {
     @Published var context: ContextUsage?
     /// A dev server the agent started, spotted in command output.
     @Published var devServer: URL?
-    /// Whether the workbench — the panel down the trailing edge — is open.
+    /// Which of the pane's tabs is showing.
     ///
-    /// Named for the browser because the browser was all it held. It now holds
-    /// the preview, the changed files, the working tree and the live crew run,
-    /// which is the point: those four used to be a panel, a modal sheet, a
-    /// second modal sheet nested inside it, and a block wedged between the
-    /// transcript and the composer, and no two of them could be on screen at
-    /// once. The name stays so a saved arrangement still restores.
-    @Published var browserVisible = false
-    /// Which of the workbench's tabs is showing.
-    @Published var workbenchTab: WorkbenchTab = .preview
+    /// This replaces `browserVisible` and `workbenchTab`, which between them
+    /// said the same thing in two pieces — a boolean for "is the panel up" and
+    /// an enum for "showing what" — with the awkward consequence that the enum
+    /// held a stale answer whenever the boolean was false. One value, five
+    /// states, and `agent` is the state the pair used to spell as `false` plus
+    /// whatever the enum happened to be left on.
+    @Published var paneTab: PaneTab = .agent
     @Published var browserURL: URL?
     /// Whether the current URL is one you typed rather than one detected.
     ///
@@ -857,9 +876,19 @@ final class Session: ObservableObject, Identifiable {
     @Published var browserZoom: CGFloat = 1
     /// The floating chat over a full-width preview.
     @Published var miniChatVisible = false
-    /// The panel taken to the full width of the pane. Still the same live web
-    /// view — it's a bigger panel, not a screenshot.
-    @Published var browserFull = false
+    /// Whether the conversation stays beside whatever tab you picked.
+    ///
+    /// Was `browserFull`, inverted — "the panel takes the whole pane" — which
+    /// was the right fact named from the wrong side. What you are actually
+    /// choosing is whether the transcript is still there, and phrasing it that
+    /// way is what lets one control answer it: split on, and Changes opens
+    /// beside the conversation that produced it; split off, and Changes *is*
+    /// the pane. Still the same live views either way — it is a wider panel,
+    /// not a screenshot.
+    ///
+    /// Only consulted when `paneTab` isn't `.agent`. The conversation cannot
+    /// sit beside itself.
+    @Published var splitOpen = true
 
     /// Model and effort are process-launch flags, so changing either restarts
     /// the child and resumes the same conversation by ID. Applies from the
@@ -1058,8 +1087,8 @@ final class Session: ObservableObject, Identifiable {
     /// of the roster at launch, and each of these is a `Data(contentsOf:)` plus
     /// a full JSON decode — with several multi-megabyte transcripts that was
     /// seconds of blocked main thread before the first frame, most of it
-    /// decoding conversations nobody was about to look at. Only the columns
-    /// being restored are hydrated up front; the rest are handed a snapshot
+    /// decoding conversations nobody was about to look at. Only the session
+    /// being restored is hydrated up front; the rest are handed a snapshot
     /// decoded off the main thread a moment later, and anything that reaches
     /// for a transcript before that lands forces it here.
     func hydrate() {
@@ -1349,7 +1378,7 @@ final class Session: ObservableObject, Identifiable {
         let next = artifact.succeeding(browserHTML)
         browserHTML = next
         browserFile = next.write()
-        browserVisible = true
+        paneTab = .preview
     }
 
     /// Show a file you picked yourself.
@@ -1358,7 +1387,7 @@ final class Session: ObservableObject, Identifiable {
         browserFile = url
         browserURL = nil
         browserURLIsManual = false
-        browserVisible = true
+        paneTab = .preview
     }
 
     /// What actually goes down the pipe, which is not always what you typed.
@@ -1381,7 +1410,7 @@ final class Session: ObservableObject, Identifiable {
             out = briefing + "\n\n" + out
             self.briefing = nil
         }
-        guard browserVisible, let file = browserFile,
+        guard paneTab == .preview, let file = browserFile,
               let note = Self.documentNote(file) else { return out }
         return out + "\n\n" + note
     }
@@ -1748,7 +1777,7 @@ final class Session: ObservableObject, Identifiable {
         browserURLIsManual = false
         // Point an already-open panel at it rather than leaving it on a port
         // that just died — a restart usually means a new one.
-        if browserVisible { browserURL = url }
+        if paneTab == .preview { browserURL = url }
     }
 
     /// What the panel should show when it opens.
@@ -1892,29 +1921,20 @@ final class Workspace: ObservableObject {
     weak var host: WorkspaceHost?
 
     @Published private(set) var sessions: [Session] = []
-    /// The column with the keyboard, not "the session you can see".
+    /// The conversation in the pane.
     ///
-    /// That distinction is the whole of the columns feature at this level.
-    /// Everything that used to mean "selected" — ⌘1–4, Rename…, Delete, the
-    /// menu bar's Interrupt — still means the focused column, so none of it
-    /// had to change. What changed is that being unselected no longer means
-    /// being off screen.
+    /// It used to mean "the column with the keyboard", which was a narrower
+    /// claim: with three transcripts side by side, being unselected did not
+    /// mean being off screen. The pane holds one now, so selection and
+    /// visibility are the same fact again — and everything that already meant
+    /// "the focused one" (⌘1–4, Rename…, Delete, the menu bar's Interrupt, the
+    /// title bar's breadcrumb, the inspector, the status strip) means this.
     @Published var selection: Session.ID? {
         didSet {
             Prefs.store.set(selection?.uuidString, forKey: Self.selectionKey)
-            // Selecting something that isn't on screen puts it where you were
-            // looking: it takes over the focused column rather than opening a
-            // new one. Opening a new one is a separate, deliberate action.
-            if let id = selection, !columns.contains(id) {
-                if let index = oldValue.flatMap({ columns.firstIndex(of: $0) }) {
-                    columns[index] = id
-                } else {
-                    columns = [id]
-                }
-            }
             // Landing on a session clears its unread mark — you've seen it.
             if let selected {
-                // Ahead of the column being built, so the transcript is there
+                // Ahead of the pane being built, so the transcript is there
                 // for the first frame rather than one frame of "no messages
                 // yet" while the background sweep catches up.
                 selected.hydrate()
@@ -1924,95 +1944,31 @@ final class Workspace: ObservableObject {
         }
     }
 
-    /// The sessions on screen, left to right. Never empty while any session
-    /// exists, and always contains `selection`.
-    @Published private(set) var columns: [Session.ID] = [] {
-        didSet {
-            Prefs.store.set(columns.map(\.uuidString), forKey: Self.columnsKey)
-        }
-    }
-
     /// The conversation in the floating window, if any.
     ///
     /// One at a time, deliberately. The pop-out exists to be watched while
     /// you're doing something else, and three overlapping always-on-top windows
     /// over the thing you were trying to look at is the opposite of that.
     ///
-    /// Its column is *kept*, and draws a placeholder — see `SessionColumns`.
-    /// Removing it would reshuffle the arrangement on the way out and again on
-    /// the way back, and leave a session that's on screen with no home to
-    /// return to.
+    /// The pane it left is *kept*, and draws a placeholder — see
+    /// `PoppedOutColumn`. It is the obvious way home, and it means the session
+    /// list doesn't have to be open to find the floating window again.
     @Published var poppedOut: Session.ID? {
         didSet {
             Prefs.store.set(poppedOut?.uuidString, forKey: Self.poppedOutKey)
         }
     }
 
-    /// Three, and the reason is width rather than taste.
+    /// Put a session in the pane.
     ///
-    /// A column narrower than `minColumnWidth` can't hold a composer with a
-    /// model picker and a mic on one line. Three of those plus the sidebar
-    /// wants a window around 1600pt; the layout works out how many actually
-    /// fit and shows that many, so this is the ceiling rather than the count.
-    static let maxColumns = 3
-    /// Also the width at which a header bar keeps its crew chips, so that the
-    /// narrowest column the layout will ever produce still has the one control
-    /// that can edit a team. Raise this and that follows; it reads the constant
-    /// rather than carrying a copy.
-    static let minColumnWidth: CGFloat = 400
-
-    var columnSessions: [Session] { columns.compactMap { id in sessions.first { $0.id == id } } }
-
-    func isOnScreen(_ id: Session.ID) -> Bool { columns.contains(id) }
-
-    /// Put a session in a column of its own, beside the focused one.
-    ///
-    /// At the ceiling the far end gives way rather than the action doing
-    /// nothing — a keystroke that silently declines is indistinguishable from
-    /// one that didn't register.
-    func openBeside(_ id: Session.ID) {
-        guard sessions.contains(where: { $0.id == id }) else { return }
-        if let existing = columns.firstIndex(of: id) {
-            // Already up. Focus it instead of duplicating it: the same session
-            // in two columns would be two views of one transcript, with two
-            // drafts and one composer's worth of attention.
-            selection = columns[existing]
-            return
-        }
-        let after = selection.flatMap { columns.firstIndex(of: $0) }.map { $0 + 1 } ?? columns.count
-        let at = min(after, columns.count)
-        columns.insert(id, at: at)
-        if columns.count > Self.maxColumns {
-            // One over, so one goes: whichever end is further from what you
-            // just opened, so the new column and the one you opened it from
-            // both survive.
-            if at <= columns.count / 2 { columns.removeLast() } else { columns.removeFirst() }
-        }
-        selection = id
-    }
-
-    /// Put a session where it can be seen, without throwing anything away.
-    ///
-    /// Not `openBeside`, which evicts a column once you're at the cap. Something
-    /// arriving in a conversation is a reason to show you that conversation, not
-    /// a reason to close one of the ones you deliberately arranged — so at the
-    /// cap this takes the focused column, which is the slot you were already
-    /// prepared to lose.
+    /// Kept as its own verb rather than collapsed into `selection = id` at the
+    /// call sites. It used to do real arithmetic — find a free column, evict
+    /// one at the cap, pick which end gives way — and the callers that reach
+    /// for it are saying "show me this", which is a request the window should
+    /// go on being free to answer in more than one way.
     func reveal(_ id: Session.ID) {
         guard sessions.contains(where: { $0.id == id }) else { return }
-        if columns.contains(id) || columns.count >= Self.maxColumns {
-            selection = id
-        } else {
-            openBeside(id)
-        }
-    }
-
-    /// Close a column. The last one standing stays — a pane with nothing in it
-    /// is a worse answer than a pane you have to switch away from.
-    func closeColumn(_ id: Session.ID) {
-        guard columns.count > 1, let index = columns.firstIndex(of: id) else { return }
-        columns.remove(at: index)
-        if selection == id { selection = columns[min(index, columns.count - 1)] }
+        selection = id
     }
 
     /// Send a session to the floating window.
@@ -2033,15 +1989,6 @@ final class Workspace: ObservableObject {
         guard let id = poppedOut else { return }
         poppedOut = nil
         reveal(id)
-    }
-
-    /// Move the keyboard one column left or right. Doesn't wrap: the ends are
-    /// the ends, and wrapping in a three-item row reads as a jump.
-    func focusColumn(by offset: Int) {
-        guard let current = selection.flatMap({ columns.firstIndex(of: $0) }) else { return }
-        let next = current + offset
-        guard columns.indices.contains(next) else { return }
-        selection = columns[next]
     }
 
     /// The session you were last in, per account, for ⌘1–4.
@@ -2113,7 +2060,6 @@ final class Workspace: ObservableObject {
     private static let storeKey = "bench.sessions.v1"
     private static let selectionKey = "bench.selection"
     private static let collapsedKey = "bench.collapsed"
-    private static let columnsKey = "bench.columns"
     private static let poppedOutKey = "bench.poppedOut"
 
     init() {
@@ -2157,28 +2103,18 @@ final class Workspace: ObservableObject {
         // one has since been deleted.
         let remembered = Prefs.store.string(forKey: Self.selectionKey)
             .flatMap(UUID.init(uuidString:))
-        // Columns come back before selection does. Setting `selection` is what
-        // repairs an empty or stale column list, so restoring them the other
-        // way round would have the selection rebuild a single column and throw
-        // the arrangement away before it was ever read.
-        columns = (Prefs.store.stringArray(forKey: Self.columnsKey) ?? [])
-            .compactMap(UUID.init(uuidString:))
-            .filter { id in sessions.contains { $0.id == id } }
-            .prefix(Self.maxColumns)
-            .reduce(into: []) { unique, id in if !unique.contains(id) { unique.append(id) } }
         selection = sessions.contains { $0.id == remembered } ? remembered : sessions.first?.id
         collapsed = Set((Prefs.store.stringArray(forKey: Self.collapsedKey) ?? [])
             .compactMap(Account.known))
-        // The floating window comes back with the arrangement, for the same
-        // reason the columns do: where you left a conversation is part of where
-        // you left off. A session deleted since simply doesn't reopen.
+        // The floating window comes back too: where you left a conversation is
+        // part of where you left off. A session deleted since doesn't reopen.
         poppedOut = Prefs.store.string(forKey: Self.poppedOutKey)
             .flatMap(UUID.init(uuidString:))
             .flatMap { id in sessions.contains { $0.id == id } ? id : nil }
 
-        // Only the transcripts about to be drawn are read on this thread. The
-        // rest arrive from `hydrateRemaining` a moment after the window is up.
-        for id in columns { sessions.first { $0.id == id }?.hydrate() }
+        // Only the transcript about to be drawn is read on this thread — and
+        // setting `selection` above has already done it. The rest arrive from
+        // `hydrateRemaining` a moment after the window is up.
         hydrateRemaining()
 
         // Warm the CA bundle off the main thread.
@@ -2248,12 +2184,8 @@ final class Workspace: ObservableObject {
             // Nothing for the session you're already watching. A banner about
             // text appearing in front of you is how an app trains you to switch
             // its notifications off.
-            // On screen, not selected. With columns, a reply can land in a
-            // conversation you're looking at but haven't got the keyboard in —
-            // and a notification about text appearing in front of you is how
-            // an app trains you to switch its notifications off.
             let watching = (self.host?.isForeground ?? false)
-                && self.columns.contains(finished.id)
+                && self.selection == finished.id
             guard !watching else {
                 // Nor an unread mark. `endTurn` sets one unconditionally,
                 // because a session has no idea whether anyone is looking at
@@ -2332,13 +2264,9 @@ final class Workspace: ObservableObject {
         session.retire()
         SessionStore.remove(session.id)
         sessions.removeAll { $0.id == session.id }
-        // Out of the columns before out of the selection: `selection`'s own
-        // didSet repairs the column list, and it can only do that correctly
-        // once the deleted session is no longer in it.
-        columns.removeAll { $0 == session.id }
         // The floating window is showing a conversation that no longer exists.
         if poppedOut == session.id { poppedOut = nil }
-        if selection == session.id { selection = columns.first ?? sessions.first?.id }
+        if selection == session.id { selection = sessions.first?.id }
         save()
     }
 

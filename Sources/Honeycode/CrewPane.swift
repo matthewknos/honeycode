@@ -40,7 +40,7 @@ struct CrewPane: View {
             .frame(maxWidth: 760, alignment: .leading)
             .frame(maxWidth: .infinity)
             .padding(.horizontal, Theme.pane)
-            .padding(.top, Chrome.trafficLightClearance + Theme.s5)
+            .padding(.top, Theme.s7)
             .padding(.bottom, Theme.s8)
         }
         .task {
@@ -237,9 +237,10 @@ struct CrewPane: View {
         if let session = workspace.selected {
             VStack(alignment: .leading, spacing: Theme.s4) {
                 heading("Before assembling")
-                Text("Runs when the delegates finish and before the lead puts "
-                     + "their work together, in **\(session.directory.lastPathComponent)**. "
-                     + "The lead sees the result.")
+                (Text("Runs when the delegates finish and before the lead puts "
+                      + "their work together, in ")
+                 + Text(session.directory.lastPathComponent).bold()
+                 + Text(". The lead sees the result."))
                     .font(Theme.note)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -300,9 +301,10 @@ struct CrewPane: View {
         VStack(alignment: .leading, spacing: Theme.s5) {
             heading("Saved teams")
             if teams.isEmpty {
-                Text("None yet. Assemble a crew in a session's **Team** control "
-                     + "and save it there, and it will be here for every session "
-                     + "afterwards.")
+                (Text("None yet. Assemble a crew in a session's ")
+                 + Text("Team").bold()
+                 + Text(" control and save it there, and it will be here for "
+                        + "every session afterwards."))
                     .font(Theme.note)
                     .foregroundStyle(.tertiary)
                     .fixedSize(horizontal: false, vertical: true)

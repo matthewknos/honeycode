@@ -195,7 +195,7 @@ private struct AgentRow: View {
 
 /// What the window shows in Agents mode.
 ///
-/// Deliberately *not* `SessionColumns`. A run opens in a pane of its own rather
+/// Deliberately *not* the session pane. A run opens in a pane of its own rather
 /// than taking a column, so flipping between Code and Agents leaves the
 /// arrangement you made on the other side exactly as it was.
 struct AgentsPane: View {
@@ -207,11 +207,12 @@ struct AgentsPane: View {
             if let setup = store.setup, store.selection == nil {
                 AgentSetup(store: store, session: setup, workspace: workspace)
             } else if let run = openRun {
-                // The way back is in the run's own header bar now, beside
-                // everything else that acts on the pane. It used to be a button
-                // floated over the top-left corner of the transcript, because
-                // there was no bar to put it in and a pane you can only leave
-                // through a sidebar is a dead end when the sidebar is collapsed.
+                // The way back is at the head of the run's own tab strip,
+                // beside everything else that acts on the pane. It used to be a
+                // button floated over the top-left corner of the transcript,
+                // because there was no bar to put it in and a pane you can only
+                // leave through a sidebar is a dead end when the sidebar is
+                // collapsed.
                 SessionView(session: run, workspace: workspace,
                             onBack: { store.openRun = nil })
                     .id(run.id)
@@ -278,10 +279,14 @@ struct AgentDetail: View {
                 history
             }
             .padding(.horizontal, Theme.s8)
-            .padding(.top, Chrome.trafficLightClearance)
+            .padding(.top, Theme.s7)
             .padding(.bottom, Theme.s8)
             .frame(maxWidth: 820, alignment: .leading)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            // Centred, like `CrewPane` and `SettingsPane`. A measure pinned to
+            // the leading edge left six hundred points of empty pane on the
+            // right of a wide window, and made two panes reached from the same
+            // sidebar sit in two different places.
+            .frame(maxWidth: .infinity)
         }
         .onChange(of: editing) { _, _ in scheduleFlush() }
         .onDisappear { flushing?.perform(); flushing = nil }
@@ -786,7 +791,6 @@ struct AgentSetup: View {
             ComposerView(draft: $draft, session: session,
                          prominent: session.items.isEmpty,
                          width: Theme.readingWidth,
-                         accent: nil, subtitle: "New agent",
                          onFocused: {}) { text in
                 session.send(text)
                 draft = ""

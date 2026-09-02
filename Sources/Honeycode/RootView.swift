@@ -17,7 +17,6 @@ struct RootView: View {
     @ObservedObject var background: BackgroundStore
     @ObservedObject var agents: AgentStore
     @Binding var showPalette: Bool
-    @Binding var paletteOpensBeside: Bool
     /// Threaded down from `HoneycodeApp` rather than re-read from `@AppStorage`
     /// here. Two wrappers on one key do stay in sync, but the app also hangs
     /// `NSApp.appearance` off its `onChange` — so a second source of truth for
@@ -96,6 +95,39 @@ struct RootView: View {
 
     private var sidebarWidth: CGFloat { expanded ? Theme.sidebarWidth : Theme.railWidth }
 
+    /// Whether the inspector is up.
+    ///
+    /// A window preference, not a session one. Which facts you want beside a
+    /// conversation is a thing about how you work, and having it follow the
+    /// session would mean the panel flickering in and out as you moved down the
+    /// list.
+    @AppStorage("inspector.shown") private var inspectorShown = true
+
+    /// Whether the inspector has anything to describe.
+    ///
+    /// It is about a *session*, so Settings, Crew and Agents are not places it
+    /// belongs — and a panel that stays up showing the last session's branch
+    /// while you are looking at the agent roster is worse than no panel.
+    private var inspectorFits: Bool {
+        inspectorShown && describesSession
+    }
+
+    /// Whether the pane is showing a conversation at all.
+    ///
+    /// The inspector and the status strip both describe the focused session, so
+    /// both have to know when the pane has been given to something else.
+    private var describesSession: Bool {
+        !workspace.showingSettings && shownMode == .code && workspace.selected != nil
+    }
+
+    /// What the pane is showing instead, for the status strip to name. Nil when
+    /// it is a conversation, which is when the strip describes the session.
+    private var paneName: String? {
+        if workspace.showingSettings { return "Settings" }
+        guard shownMode == .code else { return shownMode.title }
+        return workspace.selected == nil ? "No session" : nil
+    }
+
     var body: some View {
         ZStack {
             // The backdrop spans the whole window rather than just the pane.
@@ -103,46 +135,71 @@ struct RootView: View {
             // the sidebar paints over this, or it doesn't.
             PaneBackground(store: background)
 
-            HStack(spacing: 0) {
-                sidebar
-                    .background(sidebarBackground)
-                    // Scoped here rather than on the root. On the ZStack these
-                    // animated the *transcript* as well, so collapsing the
-                    // sidebar made the whole reply slide about.
-                    .animation(Motion.panel, value: expanded)
+            VStack(spacing: 0) {
+                // Across the whole window, above everything, including the
+                // sidebar. That is the difference between a title bar and a
+                // toolbar: a toolbar belongs to a pane and stops at its edge,
+                // and everything in this one — which session, the search, the
+                // appearance — is about the window rather than about a pane.
+                TitleBar(workspace: workspace, background: background,
+                         sidebarExpanded: $expanded,
+                         inspectorShown: $inspectorShown,
+                         showPalette: $showPalette,
+                         appearance: $appearance)
 
-                if expanded {
-                    Divider().overlay(Theme.rule)
-                        .transition(.opacity)
-                }
+                HStack(spacing: 0) {
+                    sidebar
+                        .background(sidebarBackground)
+                        // Scoped here rather than on the root. On the ZStack these
+                        // animated the *transcript* as well, so collapsing the
+                        // sidebar made the whole reply slide about.
+                        .animation(Motion.panel, value: expanded)
 
-                Group {
-                    // Settings covers the pane and leaves the sidebar alone,
-                    // which is what makes every way out of it a place you were
-                    // already looking at — a session in the list, the pill, or
-                    // the footer row you came in by.
-                    if workspace.showingSettings {
-                        SettingsPane(workspace: workspace, background: background,
-                                     appearance: $appearance)
-                    } else {
-                        switch shownMode {
-                        case .code:   SessionColumns(workspace: workspace)
-                        case .crew:   CrewPane(workspace: workspace)
-                        case .agents: AgentsPane(store: agents, workspace: workspace)
+                    if expanded {
+                        Divider().overlay(Theme.rule)
+                            .transition(.opacity)
+                    }
+
+                    Group {
+                        // Settings covers the pane and leaves the sidebar alone,
+                        // which is what makes every way out of it a place you were
+                        // already looking at — a session in the list, the pill, or
+                        // the footer row you came in by.
+                        if workspace.showingSettings {
+                            SettingsPane(workspace: workspace, background: background,
+                                         appearance: $appearance)
+                        } else {
+                            switch shownMode {
+                            case .code:   SessionPane(workspace: workspace)
+                            case .crew:   CrewPane(workspace: workspace)
+                            case .agents: AgentsPane(store: agents, workspace: workspace)
+                            }
                         }
                     }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                    if inspectorFits, let session = workspace.selected {
+                        Divider().overlay(Theme.rule)
+                        Inspector(session: session, workspace: workspace)
+                            .frame(width: Theme.inspectorWidth)
+                            .transition(.move(edge: .trailing).combined(with: .opacity))
+                    }
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .frame(maxHeight: .infinity)
+
+                // Along the foot, and for the same reason as the bar at the
+                // top: what it says is true of the window, not of a pane.
+                StatusBar(workspace: workspace, elsewhere: paneName)
             }
         }
         .animation(Motion.reveal, value: expanded)
+        .animation(Motion.panel, value: inspectorFits)
         .ignoresSafeArea(.container, edges: .top)
         .frame(minWidth: 900, minHeight: 580)
         .background(WindowChrome())
         .overlay {
             if showPalette {
-                CommandPalette(workspace: workspace, isPresented: $showPalette,
-                               beside: paletteOpensBeside)
+                CommandPalette(workspace: workspace, isPresented: $showPalette)
             }
         }
         // One sheet for every route to a new session — the sidebar header, an
@@ -280,7 +337,6 @@ struct RootView: View {
                 }
                 footer
             }
-            .padding(.top, Chrome.trafficLightClearance)
             .frame(width: Theme.sidebarWidth, alignment: .leading)
             .opacity(expanded ? 1 : 0)
             // Faded out is not gone: an opacity-0 view still hit-tests, and
@@ -293,11 +349,13 @@ struct RootView: View {
                 Spacer(minLength: 0)
                 railSettings
             }
-            // Same insets as the View menu across the window — top, bottom
-            // and sides — so the two floating controls read as a pair rather
-            // than as two things that happen to be near corners.
-            .padding(.top, Chrome.trafficLightClearance - Theme.s5)
-            .padding(.bottom, Chrome.trafficLightClearance - Theme.s5)
+            // Symmetric top and bottom, so the two floating controls read as
+            // a pair rather than as two things that happen to be near corners.
+            // They used to be inset by the traffic-light clearance, which the
+            // rail no longer has to think about: the lights are in the title
+            // bar above this now.
+            .padding(.top, Theme.s5)
+            .padding(.bottom, Theme.s5)
             // Centred, not leading. Widening the rail to make room for a 16pt
             // margin put all of it on the *right*, so the pill still sat 6pt
             // from the window edge while the View menu opposite sat 22pt from
@@ -352,20 +410,16 @@ struct RootView: View {
             }
     }
 
+    /// The collapsed sidebar's contents.
+    ///
+    /// No expand button of its own any more. It had one, directly under the
+    /// title bar's — two positions for one control, which is the trap this
+    /// window's own history is a record of: the status rail was replaced
+    /// precisely because it drew one thing in two places depending on the
+    /// layout. The toggle is in the title bar, in both states, a few points
+    /// above where this button used to be.
     private var railGroup: some View {
         VStack(spacing: Theme.s5) {
-            Button { withAnimation(Motion.panel) { expanded = true } } label: {
-                Image(systemName: "sidebar.leading")
-                    .font(.system(size: 13))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 28, height: 24)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            // The toggle takes no menu, so passing over it closes whatever was.
-            .onHover { if $0 { railTarget = nil } }
-            .help("Expand sidebar")
-
             // The pill, as icons. All of them always drawn, the inactive ones
             // dimmed — a single glyph that changed its own meaning would be a
             // control you have to press to find out what it does.
@@ -415,7 +469,7 @@ struct RootView: View {
                                 }
                             }
                         )
-                        .frame(width: 240)
+                        .frame(width: Theme.popoverWidth)
                     }
 
                 // The rail is the sidebar's own list at 60pt, so it lists
@@ -507,16 +561,19 @@ struct RootView: View {
                     }
                     }
                 )
-                .frame(width: 250)
+                .frame(width: Theme.popoverWidth)
             }
     }
 
+    /// Just Settings now.
+    ///
+    /// The identity control that used to sit above it is in the title bar, and
+    /// there is exactly one of it — which is the point. It was here *and* in
+    /// the expanded sidebar's footer, two controls for one app-wide fact, each
+    /// visible in a state the other wasn't. The title bar is up in both states
+    /// and is where this platform has always put "who am I signed in as".
     private var railSettings: some View {
         VStack(spacing: Theme.s2) {
-            if Features.isOn(.gitHub) || Features.isOn(.azure) {
-                IdentityMenu(compact: true)
-                    .frame(width: 28)
-            }
             settingsGlyph
         }
         .padding(.vertical, Theme.s2)
@@ -548,22 +605,6 @@ struct RootView: View {
     private var footer: some View {
         VStack(spacing: 0) {
             Divider().overlay(Theme.rule)
-
-            // Who you are acting as, above the application's own settings.
-            //
-            // This is the GitHub and Azure switch that used to be buried in the
-            // status rail's View popover — see `IdentityMenu`. It is an
-            // app-wide fact, so it belongs to the window rather than to a
-            // column, and it is the kind of fact this corner of a Mac window
-            // has always held.
-            // Gone entirely when neither GitHub nor Azure is switched on.
-            // A control whose whole job is naming the account you are acting
-            // as has nothing to name when you are acting as nobody.
-            if Features.isOn(.gitHub) || Features.isOn(.azure) {
-                IdentityMenu()
-                    .padding(.horizontal, Theme.s4)
-                    .padding(.top, Theme.s3)
-            }
 
             Button {
                 withAnimation(Motion.panel) { workspace.showingSettings.toggle() }
@@ -599,38 +640,52 @@ struct RootView: View {
         }
     }
 
-    /// Toggle and new-session, in both states.
+    /// What the list is, how much of it is live, and how to add to it.
+    ///
+    /// The collapse button that used to be here is in the title bar now, where
+    /// it belongs: the sidebar is one of three columns the window arranges, and
+    /// a control for hiding a column that lives *inside* that column is a
+    /// control that disappears with the thing it operates.
+    ///
+    /// What replaced it is the thing the sidebar never said — how many of these
+    /// are running. The rows each carry a spinner, so with nine sessions in
+    /// four accounts the answer was there but had to be counted, and with the
+    /// list scrolled it was not there at all.
     private var header: some View {
         HStack(spacing: Theme.s3) {
-            if expanded {
-                Button { withAnimation(Motion.panel) { expanded = false } } label: {
-                    Image(systemName: "sidebar.leading")
-                        .font(.system(size: 13))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 24, height: 24)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .help("Collapse sidebar")
+            Text(shownMode == .code ? "SESSIONS" : shownMode.title.uppercased())
+                .font(Theme.captionStrong)
+                .kerning(0.6)
+                .foregroundStyle(.secondary)
 
-                Spacer(minLength: 0)
-
-                newButton
-            } else {
-                Button { withAnimation(Motion.panel) { expanded = true } } label: {
-                    Image(systemName: "sidebar.leading")
-                        .font(.system(size: 13))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 28, height: 24)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .help("Expand sidebar")
+            if shownMode == .code, live > 0 {
+                Text("\(live) live")
+                    .font(Theme.caption)
+                    .monospacedDigit()
+                    .foregroundStyle(Theme.stateLive)
+                    .padding(.horizontal, Theme.s3)
+                    .padding(.vertical, 1)
+                    .background(Theme.stateLive.opacity(0.14), in: Capsule())
+                    .transition(.opacity)
+                    .help("\(live) of \(workspace.sessions.count) sessions are working")
             }
+
+            Spacer(minLength: 0)
+
+            newButton
         }
-        .padding(.horizontal, expanded ? Theme.s5 : Theme.s5 - Theme.s2)
+        // Fixed, not sized to its contents. Crew's `newButton` is an
+        // `EmptyView` — see below — so without this the row is as tall as its
+        // text there and as tall as a 24pt button in the other two, and the
+        // word at the top of the sidebar jumped seven points as you switched.
+        .frame(height: 24)
+        .padding(.horizontal, Theme.s5)
         .padding(.bottom, Theme.s3)
+        .animation(Motion.reveal, value: live)
     }
+
+    /// How many agents are working right now.
+    private var live: Int { workspace.sessions.filter(\.isRunning).count }
 
     /// Code / Crew / Agents.
     ///
@@ -765,184 +820,48 @@ struct RootView: View {
     private func add(to account: Account) { workspace.requestNewSession(account) }
 }
 
-// MARK: - Columns
+// MARK: - The pane
 
-/// Several conversations at once, side by side.
+/// One conversation, filling the pane.
 ///
-/// Columns rather than a grid, and the reason is the shape of the content: a
-/// transcript is a tall document, so splitting horizontally gives you two
-/// half-height conversations and doubles the scrolling. Vertical columns keep
-/// each one a full page.
+/// This replaces `SessionColumns`, which put up to three side by side and
+/// divided the pane with draggable weights. Columns were a real feature and
+/// they are a real loss; what they cost was every fact about a session having
+/// to be said once per column, at whatever width that column happened to be —
+/// which is why the header above each transcript grew a ladder of breakpoints
+/// shedding the folder, then the branch, then the usage, then the crew chips,
+/// in the arrangement where you most wanted them.
 ///
-/// The count is decided by the window, not by you. You say which sessions you
-/// want open; how many of them fit is arithmetic, because a column narrower
-/// than `minColumnWidth` can't hold a composer with a model picker and a mic on
-/// one line, and a layout that lets you make one is a layout that lets you
-/// break it. Columns that don't fit stay in the list and come back when the
-/// window widens — nothing is closed on your behalf by a window resize.
-private struct SessionColumns: View {
+/// With one conversation in the pane those facts move out to surfaces that are
+/// as wide as the window and never compete with the transcript: the breadcrumb
+/// in the title bar, the strip along the foot, the inspector down the trailing
+/// edge. The pane itself is left to do one thing.
+///
+/// Two conversations at once is still reachable — `Workspace.popOut` puts one
+/// in a floating window that stays above other apps, which is the case columns
+/// were mostly being used for.
+private struct SessionPane: View {
     @ObservedObject var workspace: Workspace
 
-    /// Fractions of the pane, one per visible column, summing to 1.
-    ///
-    /// Live during a drag and committed on release, like the browser divider:
-    /// `@AppStorage` writes to `UserDefaults` on every assignment, and a drag
-    /// assigns sixty times a second.
-    @AppStorage("columns.weights") private var storedWeights = ""
-    @State private var live: [CGFloat]?
-    @State private var dragBase: [CGFloat] = []
-
-    /// Air between columns, instead of a rule.
-    ///
-    /// A hairline says "one surface, divided". Each column here is a whole
-    /// conversation with its own reading panel, and they read as separate
-    /// things — so the separation is a gap and the panels' own edges do the
-    /// work the rule was doing.
-    private static let gap = Theme.s7
-
-    /// No trailing gutter any more.
-    ///
-    /// A shared pane used to reserve 60pt down the right for the focused
-    /// column's floating status rail, mirroring the collapsed sidebar opposite.
-    /// The rail is gone — every column carries its own `HeaderBar` now — so the
-    /// gutter would be sixty points of nothing, taken from the columns that
-    /// needed it most. Three conversations fit in a window that used to hold
-    /// two and a margin.
-
     var body: some View {
-        GeometryReader { geometry in
-            let sessions = onScreen(in: geometry.size.width)
-            if sessions.isEmpty {
-                EmptyDetail().frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                let widths = layout(sessions.count, in: geometry.size.width)
-                HStack(spacing: 0) {
-                    ForEach(Array(sessions.enumerated()), id: \.element.id) { index, session in
-                        column(session, focused: session.id == workspace.selection)
-                            .frame(width: widths[index])
-                        if index < sessions.count - 1 {
-                            divider(at: index, usable: widths.reduce(0, +),
-                                    count: sessions.count)
-                        }
-                    }
+        if let session = workspace.selected {
+            Group {
+                // Out in the floating window. A placeholder rather than the
+                // transcript, so there is an obvious way home that doesn't
+                // involve finding the floating window first.
+                if workspace.poppedOut == session.id {
+                    PoppedOutColumn(session: session, workspace: workspace)
+                } else {
+                    SessionView(session: session, workspace: workspace)
                 }
-                .animation(Motion.panel, value: sessions.count)
             }
-        }
-    }
-
-    @ViewBuilder
-    private func column(_ session: Session, focused: Bool) -> some View {
-        Group {
-            // Out in the floating window. The slot is kept and a placeholder
-            // drawn in it, so popping out doesn't reshuffle the arrangement and
-            // popping back in doesn't reshuffle it again.
-            if workspace.poppedOut == session.id {
-                PoppedOutColumn(session: session, workspace: workspace)
-            } else {
-                SessionView(session: session, workspace: workspace,
-                            isFocused: focused, columned: workspace.columns.count > 1)
-            }
-        }
             // Rebuild on identity change, or the transcript's scroll position
             // and the composer's draft leak across sessions.
             .id(session.id)
-        // The close button used to be overlaid here, top-left, floating over
-        // the first line of the transcript. It lives at the end of the column's
-        // own `HeaderBar` now, beside the other things that act on this column
-        // rather than on the document inside it.
-    }
-
-    /// The gap, which is also the grab handle. Nothing is drawn in it — the
-    /// cursor is the only affordance, and it's the one a divider has anyway.
-    private func divider(at index: Int, usable: CGFloat, count: Int) -> some View {
-        Color.clear
-            .frame(width: Self.gap)
-            .overlay {
-                Rectangle()
-                    .fill(Color.clear)
-                    .frame(width: Self.gap)
-                    .contentShape(Rectangle())
-                    .hoverCursor(.resizeLeftRight)
-                    // Global coordinate space, for the same reason the browser
-                    // panel's resizer needs it: this view is the thing being
-                    // moved, so a local translation measures from an origin
-                    // that the previous frame just shifted, and the pointer and
-                    // the divider chase each other.
-                    .gesture(
-                        DragGesture(minimumDistance: 1, coordinateSpace: .global)
-                            .onChanged { value in
-                                if live == nil { dragBase = weights(count) }
-                                live = shifted(dragBase, at: index,
-                                               by: value.translation.width / max(usable, 1),
-                                               total: usable)
-                            }
-                            .onEnded { _ in
-                                if let live { store(live) }
-                                live = nil
-                            }
-                    )
-            }
-    }
-
-    // MARK: Which columns, and how wide
-
-    /// The columns that fit, always including the focused one.
-    ///
-    /// A window of the pinned list rather than its first N: shrinking the
-    /// window while working in the rightmost column shouldn't scroll the one
-    /// you're typing in off the screen.
-    private func onScreen(in width: CGFloat) -> [Session] {
-        let all = workspace.columnSessions
-        guard !all.isEmpty else { return [] }
-        // Measured against what's left after the trailing margin, and counting
-        // the gap each extra column brings with it — otherwise the pane
-        // promises room for a column and then lays it out below the minimum.
-        let available = max(width + Self.gap, 1)
-        let capacity = max(1, min(Workspace.maxColumns,
-                                  Int(available / (Workspace.minColumnWidth + Self.gap))))
-        guard all.count > capacity else { return all }
-        let focused = all.firstIndex { $0.id == workspace.selection } ?? 0
-        let start = min(max(0, focused - capacity + 1), all.count - capacity)
-        return Array(all[start..<(start + capacity)])
-    }
-
-    private func weights(_ count: Int) -> [CGFloat] {
-        if let live, live.count == count { return live }
-        let stored = storedWeights.split(separator: ",").compactMap { CGFloat(Double($0) ?? 0) }
-        // Stored weights belong to the count they were saved at. Two columns
-        // dragged to 70/30 and then joined by a third has no defensible
-        // answer, so it starts even again rather than guessing one.
-        guard stored.count == count, abs(stored.reduce(0, +) - 1) < 0.01 else {
-            return Array(repeating: 1 / CGFloat(count), count: count)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            EmptyDetail().frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        return stored
-    }
-
-    private func layout(_ count: Int, in width: CGFloat) -> [CGFloat] {
-        let gaps = Self.gap * CGFloat(max(0, count - 1))
-        let usable = max(width - gaps, 1)
-        return weights(count).map { $0 * usable }
-    }
-
-    /// Move one divider, taking from one neighbour and giving to the other.
-    ///
-    /// Only the pair either side of the divider changes; the rest of the row
-    /// holds still, which is what makes dragging one edge feel like moving an
-    /// edge rather than re-flowing the window.
-    private func shifted(_ base: [CGFloat], at index: Int,
-                         by fraction: CGFloat, total: CGFloat) -> [CGFloat] {
-        guard base.indices.contains(index), base.indices.contains(index + 1) else { return base }
-        let floor = Workspace.minColumnWidth / max(total, 1)
-        let room = base[index] + base[index + 1]
-        var next = base
-        next[index] = min(max(base[index] + fraction, floor), room - floor)
-        next[index + 1] = room - next[index]
-        return next
-    }
-
-    private func store(_ weights: [CGFloat]) {
-        storedWeights = weights.map { String(format: "%.4f", Double($0)) }.joined(separator: ",")
     }
 }
 
@@ -964,21 +883,18 @@ private struct EmptyDetail: View {
 struct SessionView: View {
     @ObservedObject var session: Session
     @ObservedObject var workspace: Workspace
-    /// Whether this column has the keyboard. Alone, always.
+    /// Whether this view has the keyboard. Alone in the pane, always — the
+    /// pop-out window and the Agents side pass their own answer.
     var isFocused = true
-    /// Whether it's sharing the pane. Drives the things that only earn their
-    /// place when there's something to tell this column apart *from*.
-    var columned = false
     /// A way out of this pane, when it was reached from somewhere other than
-    /// the session list. The Agents side passes one; the columns don't.
+    /// the session list. The Agents side passes one.
     var onBack: (() -> Void)?
     @State private var draft = ""
-    /// The column's own width, so the header knows whether it can afford the
-    /// crew chips and the usage readouts. Measured rather than inferred from
-    /// `columned`: two columns in a 1600pt window are each wider than one
-    /// column in the minimum window, and shedding controls on a count rather
-    /// than on a width takes them away from panes that had room for them.
-    @State private var paneWidth: CGFloat = Theme.readingWidth
+    /// Hoisted out of `Workbench`, which used to be the only way to reach the
+    /// form. The tab strip offers it too now — the reference for "I am done,
+    /// ship this" is the top of the pane, not four rows down inside a list of
+    /// diffs — and two entry points to one sheet need one piece of state.
+    @State private var openingPullRequest = false
     @AppStorage("transcript.mode") private var mode = TranscriptMode.normal
     @AppStorage("transcript.terminal") private var terminal = false
     @AppStorage("transcript.textScale") private var textScale: Double = 1
@@ -992,13 +908,9 @@ struct SessionView: View {
     /// announce itself from inside the conversation. Clicking it opens the tab.
     @ViewBuilder
     private func runBanner() -> some View {
-        if let run = session.crewRun, run.isBusy,
-           !(session.browserVisible && session.workbenchTab == .run) {
+        if let run = session.crewRun, run.isBusy, session.paneTab != .run {
             Button {
-                withAnimation(Motion.panel) {
-                    session.browserVisible = true
-                    session.workbenchTab = .run
-                }
+                withAnimation(Motion.panel) { session.paneTab = .run }
             } label: {
                 HStack(spacing: Theme.s3) {
                     ProgressView()
@@ -1048,8 +960,6 @@ struct SessionView: View {
         // neither side reserves width for one and both centre in the full pane.
         ComposerView(draft: $draft, session: session, prominent: prominent,
                      width: CGFloat(readingWidth),
-                     accent: columned ? session.account.accent : nil,
-                     subtitle: columned ? session.name : nil,
                      terminal: terminal && !prominent,
                      onFocused: { workspace.selection = session.id }) { text in
             // `/send` and the shared skills are Honeycode's, and are taken
@@ -1114,43 +1024,52 @@ struct SessionView: View {
 
     var body: some View {
         GeometryReader { geometry in
-            HStack(spacing: 0) {
-                if !(session.browserVisible && session.browserFull) {
+            VStack(spacing: 0) {
+                // Always, and always first. The strip is what makes the pane a
+                // pane: it names the five things this session can show you and
+                // which of them you are looking at, including the case the old
+                // arrangement had no way to draw — the conversation itself.
+                PaneTabs(session: session, workspace: workspace,
+                         openingPullRequest: $openingPullRequest,
+                         available: geometry.size.width,
+                         onBack: onBack)
+
+                if session.paneTab.isAgent {
                     conversation
-                }
-                if session.browserVisible {
-                    if !session.browserFull {
+                } else if session.splitOpen {
+                    // The arrangement this app already had: the artefact beside
+                    // the conversation that produced it. What changed is only
+                    // that it is now a choice with a name on it rather than the
+                    // implicit meaning of a panel being open.
+                    HStack(spacing: 0) {
+                        conversation
                         resizer(in: geometry.size.width)
+                        Workbench(session: session, workspace: workspace,
+                                  openingPullRequest: $openingPullRequest)
+                            .modifier(Elevated(depth: .high))
+                            .frame(width: clamped(panelWidth, in: geometry.size.width))
+                            // Width follows the pointer exactly while dragging;
+                            // an inherited animation would make it lag behind by
+                            // whatever the curve's duration is.
+                            .transaction { if liveWidth != nil { $0.animation = nil } }
+                            .transition(.move(edge: .trailing).combined(with: .opacity))
                     }
-                    Workbench(session: session, workspace: workspace)
-                        .modifier(Elevated(depth: .high))
-                        .frame(width: session.browserFull
-                               ? nil : clamped(panelWidth, in: geometry.size.width))
-                        .frame(maxWidth: session.browserFull ? .infinity : nil)
-                        // Width follows the pointer exactly while dragging;
-                        // an inherited animation would make it lag behind by
-                        // whatever the curve's duration is.
-                        .transaction { if liveWidth != nil { $0.animation = nil } }
-                        .transition(.move(edge: .trailing).combined(with: .opacity))
+                } else {
+                    Workbench(session: session, workspace: workspace,
+                              openingPullRequest: $openingPullRequest)
                 }
             }
-            .onAppear { paneWidth = geometry.size.width }
-            .onChange(of: geometry.size.width) { _, width in paneWidth = width }
         }
-        .animation(Motion.panel, value: session.browserVisible)
-        .animation(Motion.panel, value: session.browserFull)
-    }
-
-    /// What the header actually has to work with.
-    ///
-    /// Measured against what the *conversation* gets, not against the column:
-    /// opening the workbench takes several hundred points off the transcript,
-    /// and a header that went on drawing crew chips and three usage readouts
-    /// into the remainder was the one place in the window where something could
-    /// be pushed off the edge rather than shed. See `HeaderBar.available`.
-    private var headerWidth: CGFloat {
-        session.browserVisible && !session.browserFull
-            ? max(paneWidth - CGFloat(panelWidth), 0) : paneWidth
+        .animation(Motion.panel, value: session.paneTab)
+        .animation(Motion.panel, value: session.splitOpen)
+        .sheet(isPresented: $openingPullRequest) {
+            // A sheet, and the one thing here that should be. Opening a pull
+            // request is a form with a commit at the end of it — a decision you
+            // finish or abandon — which is what a sheet is for.
+            PullRequestSheet(session: session,
+                             changes: Changes.summarise(session.items),
+                             isPresented: $openingPullRequest)
+        }
     }
 
     /// Dragged from the divider, remembered across sessions.
@@ -1213,18 +1132,9 @@ struct SessionView: View {
 
     private var conversation: some View {
         VStack(spacing: 0) {
-            // Always, and always first. The header is what makes a column a
-            // column: before this the only thing naming a conversation was the
-            // placeholder in its composer, so an empty session on the account
-            // you had two of was indistinguishable from the other one until you
-            // typed into it and found out.
-            HeaderBar(session: session, workspace: workspace,
-                      available: headerWidth,
-                      columned: columned,
-                      onBack: onBack)
-
             if session.items.isEmpty {
-                StartPane(session: session, workspace: workspace) { prominent in
+                StartPane(session: session, workspace: workspace,
+                          suggest: { draft = $0 }) { prominent in
                     composer(prominent: prominent)
                 }
             } else if terminal {

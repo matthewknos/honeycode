@@ -17,14 +17,6 @@ struct ComposerView: View {
     /// Narrow enough that the rail has to shed something. Usage goes first:
     /// it's the only part you can still read elsewhere.
     var compact = false
-    /// Tints the focus ring, and names the session under the card.
-    ///
-    /// Both are nil unless this composer is one of several on screen. Beside
-    /// two other conversations you need to know which one you're typing into;
-    /// alone, the ring is already unambiguous and the name is already in the
-    /// sidebar, so neither earns its pixels.
-    var accent: Color?
-    var subtitle: String?
     /// Coding mode. Sheds the card, the rail and the proportional type, and
     /// keeps everything that makes the field worth having — mentions, slash
     /// commands and attachments.
@@ -125,7 +117,9 @@ struct ComposerView: View {
                 ? "Permissions are skipped — edits and commands run without asking."
                 : "Reads and searches run freely. Every edit is refused."
         }
-        return "Return to send"
+        // Not "Return to send" any more — the rail says that, beside the
+        // button that does it. This line is for the half nothing else says.
+        return "⇧Return for a new line"
     }
 
     var body: some View {
@@ -315,8 +309,7 @@ struct ComposerView: View {
             .padding(.vertical, terminal ? Theme.s4 : Theme.s5 - Theme.s1)
             .modifier(ComposerSurface(terminal: terminal,
                                       glass: background.isGlassy,
-                                      focused: focused,
-                                      tint: accent))
+                                      focused: focused))
             .animation(Motion.hover, value: focused)
             .onChange(of: focused) { _, now in
                 // Only on gaining focus. Reporting the loss too would fight the
@@ -331,8 +324,8 @@ struct ComposerView: View {
             if let pending = session.relayPending { relayNotice(pending) }
             queuedRow
             if !session.attachments.isEmpty { attachmentRow }
-            // The team used to be a row of chips in here. It is in the header
-            // bar now — see `HeaderBar` — because a crew is a property of the
+            // The team used to be a row of chips in here. It is in the tab
+            // strip now — see `PaneTabs` — because a crew is a property of the
             // *session* rather than of the draft: it survives switching away
             // and coming back, which the draft does not, so a control for it
             // inside the message box was describing the wrong lifetime. It also
@@ -464,11 +457,30 @@ struct ComposerView: View {
 
     // MARK: Bottom rail
 
+    /// What this message will cost and where it will land, then how to send it.
+    ///
+    /// Read left to right it is a sentence: *this folder, this model — attach,
+    /// mention, command — send.* The subject was missing before: the rail
+    /// opened with an attach button, so the two decisions that actually change
+    /// what happens when you press Return were a picker at the far end and
+    /// nothing at all.
+    ///
+    /// Usage is not here. It used to be, the instinct was right — beside the
+    /// button that spends it — and the place was wrong: this rail carries
+    /// enough already, and the readouts were the first thing it shed when the
+    /// pane narrowed, so they vanished exactly when several agents were running
+    /// and somebody would want them. They are in the title bar's ring, the
+    /// inspector and the status strip, none of which ever gets narrow.
     private var rail: some View {
         HStack(spacing: Theme.s4) {
+            folderChip
+            ModelPicker(session: session)
+
+            Spacer(minLength: Theme.s4)
+
             Button(action: attach) {
-                Image(systemName: "plus")
-                    .font(.system(size: 13, weight: .regular))
+                Image(systemName: "paperclip")
+                    .font(.system(size: 12, weight: .regular))
                     .foregroundStyle(.secondary)
                     .frame(width: 24, height: 24)
                     .contentShape(Rectangle())
@@ -486,16 +498,7 @@ struct ComposerView: View {
             // find and a feature you have to be told about.
             grammarButtons
 
-            // Usage used to sit here — context, quota, spend. It is in the
-            // header bar now. The instinct was right (beside the button that
-            // spends them) and the place was wrong: this rail was carrying
-            // seven concerns, and usage was the first thing it shed when the
-            // column narrowed, so the readouts vanished exactly when several
-            // agents were running and somebody would want them.
-
-            Spacer(minLength: Theme.s4)
-
-            ModelPicker(session: session)
+            sendHint
             // Stop and send are both present while a turn runs: you might want
             // to add to it *or* abandon it, and folding them into one control
             // meant picking one at build time.
@@ -504,9 +507,59 @@ struct ComposerView: View {
         }
     }
 
+    /// Which folder the agent can reach, beside the model it will reach with.
+    ///
+    /// The pair are the same kind of fact — the two things that decide what a
+    /// message actually does — and until now only one of them was on this line.
+    /// Clicking reveals the folder, because "where is this, actually" is the
+    /// question a folder name in a chip provokes.
+    @ViewBuilder
+    private var folderChip: some View {
+        if !compact {
+            Button {
+                NSWorkspace.shared.activateFileViewerSelecting([session.directory])
+            } label: {
+                HStack(spacing: Theme.s2) {
+                    Image(systemName: session.isolated ? "lock" : "folder")
+                        .font(.system(size: 9.5))
+                    Text(session.directory.lastPathComponent)
+                        .font(Theme.label)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, Theme.s3)
+                .frame(height: 22)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(HoverCapsule())
+            .layoutPriority(-1)
+            .help(session.isolated
+                  ? "\(session.subtitle)\nFenced — this agent cannot read outside it"
+                  : "\(session.subtitle)\nClick to reveal in Finder")
+        }
+    }
+
+    /// Says which key sends, next to the button that does the same thing.
+    ///
+    /// Return-to-send is a choice, not a law — plenty of chat fields want
+    /// ⌘Return — and a field that doesn't say which it is, is a field you test
+    /// with a message you were not ready to send.
+    @ViewBuilder
+    private var sendHint: some View {
+        if !compact {
+            Text("↵ send")
+                .font(Theme.caption)
+                .foregroundStyle(canSend ? AnyShapeStyle(.secondary)
+                                         : AnyShapeStyle(.quaternary))
+                .fixedSize()
+                .animation(Motion.reveal, value: canSend)
+        }
+    }
+
     // `usageStrip`, `allowance`, `readout` and `compact(_:)` moved to
-    // `UsageMeter` in HeaderBar.swift, unchanged apart from taking the session
-    // as an observed object rather than reading it from an enclosing view.
+    // the title bar's `ContextRing`, the inspector's Usage section and the
+    // status strip, none of which ever gets narrow enough to shed them.
 
     /// Append relayed material to the draft and clear it, so switching away
     /// and back doesn't paste it a second time.
@@ -630,21 +683,9 @@ struct ComposerView: View {
                 .foregroundStyle(.tertiary)
                 .lineLimit(1)
             Spacer(minLength: 0)
-            // Which conversation this is, opposite the hint.
-            //
-            // The placeholder already names the *account* ("Message
-            // Enterprise…"), which is enough until two columns are on the same
-            // account. This is the line that tells those apart, and it sits
-            // here rather than in a header bar so the feature costs nothing
-            // when you're only running one.
-            if let subtitle {
-                Text(subtitle)
-                    .font(Theme.note)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .padding(.leading, Theme.s4)
-            }
+            // The session's name used to sit opposite the hint, for the case of
+            // three composers on screen at once. There is one, and the strip
+            // above the transcript names it.
         }
         .padding(.horizontal, Theme.s1)
         .frame(height: 13)
@@ -727,8 +768,11 @@ struct ComposerView: View {
     }
 }
 
-/// Minimal wrapping stack for the attachment chips.
-private struct FlowRow: Layout {
+/// Minimal wrapping stack: the attachment chips, and the opening suggestions
+/// on an empty session. `spacing` is used in both directions — at these sizes
+/// a separate line gap would be a second number to keep in agreement with the
+/// first for no visible gain.
+struct FlowRow: Layout {
     var spacing: CGFloat
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {

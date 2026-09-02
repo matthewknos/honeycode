@@ -80,7 +80,7 @@ enum Changes {
 
     /// How many files were touched, without building the summary.
     ///
-    /// The header bar draws a badge from this on every redraw — including
+    /// The tab strip draws a badge from this on every redraw — including
     /// thirty times a second while a reply streams — and `summarise` is far too
     /// expensive to ask that often: it copies every diff's rows into fresh
     /// structs to answer a question that only needs the count of distinct file

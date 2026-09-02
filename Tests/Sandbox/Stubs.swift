@@ -7,6 +7,11 @@ enum Theme {
     static let s2: CGFloat = 4
     static let s3: CGFloat = 6
     static let s4: CGFloat = 8
+    /// The real one is `Font.system(size: t1, weight: .medium)` — see
+    /// `Theme.captionStrong`. Copied rather than shared because this stub
+    /// exists precisely so `WebPreview` can be compiled without the app, and
+    /// the value has no bearing on what this suite checks.
+    static let captionStrong = Font.system(size: 10, weight: .medium)
 }
 extension Color { static var diffDelText: Color { Color(nsColor: .systemRed) } }
 enum Motion { static let reveal = Animation.easeOut(duration: 0.16) }

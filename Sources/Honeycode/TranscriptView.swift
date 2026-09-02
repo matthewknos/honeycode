@@ -180,7 +180,7 @@ struct TranscriptView: View {
                 .padding(.horizontal, rowInset)
                 // No longer clearing anything. This reserved 34pt for the
                 // status rail floating in the corner above it — a control that
-                // has been replaced by `HeaderBar`, which sits in the layout
+                // has been replaced by `PaneTabs`, which sits in the layout
                 // rather than over it and so takes its own space honestly. The
                 // transcript gets those points back.
                 .padding(.top, panelled ? Theme.s6 : Theme.s5)

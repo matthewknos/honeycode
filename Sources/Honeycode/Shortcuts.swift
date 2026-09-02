@@ -32,20 +32,20 @@ enum Shortcuts {
     static let reveal = Shortcut("Reveal in Finder", "r", [.command, .shift], "⌘⇧R")
     static let delete = Shortcut("Delete session", .delete, .command, "⌘⌫")
 
-    /// ⌘D for split is the platform's own idiom — Terminal and every terminal
-    /// that followed it. ⌘W is left alone: it closes the window, and a key that
-    /// closes a pane on one press and the window on the next is a key you stop
-    /// trusting.
-    static let openBeside = Shortcut("Open session beside", "d", .command, "⌘D")
-    static let closeColumn = Shortcut("Close column", "w", [.command, .option], "⌘⌥W")
-    static let nextColumn = Shortcut("Focus next column", .rightArrow,
-                                     [.command, .option], "⌘⌥→")
-    static let previousColumn = Shortcut("Focus previous column", .leftArrow,
-                                         [.command, .option], "⌘⌥←")
-
     /// Coding mode. ⌘⇧T because it's the terminal, and because ⌘T is taken by
     /// the system's own Fonts panel on every Mac ever made.
     static let codingMode = Shortcut("Coding mode", "t", [.command, .shift], "⌘⇧T")
+
+    /// The two panels either side of the pane.
+    ///
+    /// ⌃⌘S is what Xcode and Mail use for a sidebar, and ⌃⌘I is the same
+    /// gesture on the other side. Both are here rather than declared in the
+    /// menu because that is the rule this file exists for — and because the
+    /// title bar's two glyphs were, until these, the only way to reach either.
+    static let toggleSidebar = Shortcut("Show or hide the sidebar", "s",
+                                        [.command, .control], "⌃⌘S")
+    static let toggleInspector = Shortcut("Show or hide the inspector", "i",
+                                          [.command, .control], "⌃⌘I")
 
     /// The focused conversation, into the floating window that stays above
     /// other apps — and back again on a second press.
@@ -82,11 +82,15 @@ enum Shortcuts {
         newSession, quickOpen, nextSession, previousSession, reveal, delete,
     ]
 
-    static let columns: [Shortcut] = [
-        openBeside, closeColumn, nextColumn, previousColumn, popOut, sendTo,
-    ]
+    /// The conversation you are in, and where it can go.
+    ///
+    /// Was `columns`, and held four keys for arranging conversations side by
+    /// side. The pane shows one at a time now; what survived is the pair that
+    /// were never about columns — the floating window, and sending the
+    /// clipboard somewhere else.
+    static let conversation: [Shortcut] = [popOut, sendTo]
 
-    static let view: [Shortcut] = [codingMode]
+    static let view: [Shortcut] = [toggleSidebar, toggleInspector, codingMode]
 }
 
 // MARK: - Key equivalents for engine types

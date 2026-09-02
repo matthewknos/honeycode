@@ -1,7 +1,7 @@
 import SwiftUI
 import AppKit
 
-/// Who you are acting as, at the foot of the sidebar.
+/// Who you are acting as, in the top-right of the window.
 ///
 /// This is the GitHub and Azure switching that used to live inside the status
 /// rail's *View* popover, and it was in the wrong place for three separate
@@ -13,14 +13,23 @@ import AppKit
 /// clicked, so the answer to "which tenant am I about to deploy to" required
 /// having already asked.
 ///
-/// At the foot of the sidebar it is always on screen, always singular, and in
-/// the corner every application on this platform reserves for it. The active
-/// logins are read once when the window appears and again whenever the app
-/// comes forward — `gh auth switch` and `az login` happen in terminals, so a
-/// tick that is only refreshed on open is a tick that is confidently wrong.
+/// It then spent a while at the foot of the sidebar, which fixed all three and
+/// introduced a fourth: the sidebar collapses, so the control had to be built
+/// twice — once in the footer and once in the rail — and the second copy was
+/// only ever on screen when the first wasn't. The title bar has neither
+/// problem. It is up in every state the window has, there is one of it, and it
+/// is the corner every application on this platform reserves for exactly this.
+///
+/// The active logins are read once when the window appears and again whenever
+/// the app comes forward — `gh auth switch` and `az login` happen in terminals,
+/// so a tick that is only refreshed on open is a tick that is confidently
+/// wrong.
 struct IdentityMenu: View {
-    /// Collapsed to a single glyph in the rail.
+    /// Collapsed to a single glyph, for the title bar.
     var compact = false
+    /// Which way the menu opens. The rail is down the window's leading edge so
+    /// its menu goes right; the title bar's sits under the glyph.
+    var arrowEdge: Edge = .trailing
 
     @State private var showing = false
     @State private var gitHub: [GitHubAccount] = []
@@ -43,7 +52,7 @@ struct IdentityMenu: View {
         Button { showing.toggle() } label: { label }
             .buttonStyle(SidebarFooterButton())
             .help(help)
-            .popover(isPresented: $showing, arrowEdge: .trailing) { menu }
+            .popover(isPresented: $showing, arrowEdge: arrowEdge) { menu }
             // Read up front rather than on first open. The whole complaint
             // about the old control was that it could not tell you anything
             // until you had already opened it.
@@ -98,7 +107,13 @@ struct IdentityMenu: View {
         }
         .padding(.horizontal, compact ? 0 : Theme.s4)
         .padding(.vertical, Theme.s3)
-        .frame(maxWidth: .infinity, alignment: compact ? .center : .leading)
+        // Compact takes a width of its own rather than filling. It used to fill
+        // and be centred, which was right in a 60pt rail and wrong the moment
+        // it was put in a bar with three hundred points of slack either side:
+        // the glyph sat in the middle of all of it, a long way from the edge
+        // every Mac puts this control against.
+        .frame(width: compact ? 24 : nil)
+        .frame(maxWidth: compact ? nil : .infinity, alignment: .leading)
         .contentShape(Rectangle())
     }
 

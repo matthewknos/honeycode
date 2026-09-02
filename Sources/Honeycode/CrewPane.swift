@@ -24,6 +24,12 @@ struct CrewPane: View {
 
     @State private var readiness: [AccountReadiness] = []
     @State private var teams: [SavedTeam] = []
+    /// The app's one measure, not a fourth of this pane's own. This used to be
+    /// a hard-coded 760 — wider than Settings and the Agents pane, narrower
+    /// than a transcript anybody had widened, and answering to neither. So the
+    /// screen whose job is "what have I got" was the one screen that stopped
+    /// short of the pane while every other tab filled it.
+    @AppStorage("transcript.width") private var readingWidth = Double(Theme.readingWidth)
 
     private var live: [Session] {
         workspace.sessions.filter { $0.crewRun != nil }
@@ -37,7 +43,11 @@ struct CrewPane: View {
                 checking
                 saved
             }
-            .frame(maxWidth: 760, alignment: .leading)
+            // The transcript's exact pair of frames: a column of the measure,
+            // centred in whatever the pane has. The `alignment: .leading` that
+            // used to be on the first one was doing nothing — the `VStack`
+            // fills the column, so there was no child left to align.
+            .frame(maxWidth: CGFloat(readingWidth))
             .frame(maxWidth: .infinity)
             .padding(.horizontal, Theme.pane)
             .padding(.top, Theme.s7)

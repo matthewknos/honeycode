@@ -51,6 +51,7 @@ Both link `AgentKit`, which is the engine and has no UI in it.
 | [Where your data lives](#where-your-data-lives) | every path this writes to, and what is in each |
 | [Repo layout](#repo-layout) | what is in `Sources`, and how the suites run |
 | [Troubleshooting](#troubleshooting) | the two failures that are otherwise baffling |
+| [Licence](#licence) | MIT, and what the vendored code is under |
 
 ---
 
@@ -953,13 +954,16 @@ one and saved API keys become unreadable), `build.sh`, `tools/doctor.sh` and
 
 ## Licence
 
-None, deliberately — all rights reserved.
+[MIT](LICENSE). Copyright © 2026 Matthew Quigley.
 
-This is an internal tool, shared privately with the team that uses it. If you
-have access to this repo you're meant to clone it, build it and use it; that
-access is the permission. It carries no open-source licence and isn't for
-redistribution outside the team.
+Clone it, build it, change it, ship it inside something else — the one condition
+is that the copyright notice travels with the copy. There is no warranty, which
+is the other half of the licence and the half people skip: this drives four
+coding agents with permissions skipped, and what they do to your files is
+between you and them.
 
-If that ever needs to change — going public, or an employer wanting clarity on
-who owns what — add a real licence at that point rather than assuming this note
-covers it.
+It used to say *all rights reserved, deliberately*, on the grounds that this was
+an internal tool and access to the repo was the permission. MIT is that written
+down properly. Nothing in [Third-party code](#third-party-code) had to be
+reconciled with it: Highlightr is MIT already and highlight.js is BSD-3-Clause,
+which is compatible with it, and both notices ship in `Resources/Highlight/`.

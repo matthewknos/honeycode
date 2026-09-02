@@ -421,6 +421,11 @@ endpoint would mean writing the agent loop here, which is a different program.
 └──────────────────────────────────────────────────────────────────┘
 ```
 
+![A session open in the window: the session list down the left grouped by
+account, the tab strip and transcript in the middle, and the inspector on the
+right showing the folder, account, model, effort, the plan, the changed files
+and what the session has spent.](docs/session.png)
+
 Four surfaces, and each says one kind of thing.
 
 The **title bar** is about the window: which conversation you are in, the search
@@ -658,6 +663,10 @@ subscription, the arc showing how much of the binding window is gone and the
 dot in the middle saying which account it is. It is the one screen whose stated
 job is "what have I got", so it is where the question gets asked. The session
 you are in reports its own share in the **inspector**, under Usage.
+
+![The Crew pane: four rings across the top, one per subscription, and a row for
+each account naming the agent behind it, the models it can run and how many
+sessions it has open.](docs/crew.png)
 
 ### What a crew actually does
 

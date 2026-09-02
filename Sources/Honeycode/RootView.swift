@@ -669,6 +669,8 @@ struct RootView: View {
 
             Spacer(minLength: 0)
 
+            if shownMode == .agents { pauseButton }
+
             newButton
         }
         // Fixed, not sized to its contents. Crew's `newButton` is an
@@ -679,6 +681,35 @@ struct RootView: View {
         .padding(.horizontal, Theme.s5)
         .padding(.bottom, Theme.s3)
         .animation(Motion.reveal, value: live)
+    }
+
+    /// Stop every agent's clock, and start it again.
+    ///
+    /// `AgentStore.paused` has existed since the store did. It is honoured by
+    /// the ticker and by every file watch, and it is written to preferences, so
+    /// it survives a relaunch — and until now nothing in the app could set it
+    /// or say that it was set. A roster could only be stopped one agent at a
+    /// time, which is the wrong shape for the case the flag was written for:
+    /// something is running away with itself and you want all of it to stop.
+    ///
+    /// Here rather than in Settings because it is a state of this list, not a
+    /// preference — the same reason the Code half's live count sits here.
+    private var pauseButton: some View {
+        Button {
+            withAnimation(Motion.hover) { agents.paused.toggle() }
+        } label: {
+            Image(systemName: agents.paused ? "play.fill" : "pause.fill")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(agents.paused ? AnyShapeStyle(Theme.stateHeld)
+                                               : AnyShapeStyle(.secondary))
+                .frame(width: 24, height: 24)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(HoverCapsule())
+        .help(agents.paused
+              ? "Every agent is paused. Start their schedules again."
+              : "Pause every agent — no schedule fires and no watched file "
+                + "starts anything. Run now still works.")
     }
 
     /// How many agents are working right now.

@@ -45,6 +45,69 @@ enum AgentSchedule: Codable, Equatable, Hashable {
         }
     }
 
+    /// When this next fires, given the last time it ran.
+    ///
+    /// `nil` for the two that no clock decides: `manual` never fires by itself
+    /// and `watching` fires when a file moves, which is not a time.
+    ///
+    /// A schedule that is already owed answers `now` rather than a moment in
+    /// the past. Both callers want that: the pane says "due now" instead of
+    /// counting up from a missed slot, and `AgentStore.due` is exactly
+    /// `next(after:) <= now`.
+    ///
+    /// Which is the reason this is here at all. The store worked out due-ness
+    /// inline and the pane said nothing about when anything would run; the
+    /// obvious fix — a countdown computed beside the check rather than from it
+    /// — is two pieces of calendar arithmetic that agree until one of them is
+    /// edited. `Tests/Schedule` holds them to each other.
+    func next(after last: Date?, from now: Date = Date()) -> Date? {
+        switch self {
+        case .manual, .watching:
+            return nil
+
+        case .every(let minutes):
+            // Never run: due immediately, which is what the store has always
+            // done with a fresh agent and what "every half hour" means when
+            // you switch it on.
+            guard let last else { return now }
+            let scheduled = last.addingTimeInterval(Double(max(1, minutes)) * 60)
+            // An overdue agent is due *now*, not at the moment it was owed.
+            // Both callers want that: `due` reads the same either way, and a
+            // pane handed a moment in the past would draw a countdown that has
+            // already finished and never moves again.
+            return max(scheduled, now)
+
+        case .daily(let hour, let minute):
+            var parts = Calendar.current.dateComponents([.year, .month, .day], from: now)
+            parts.hour = hour
+            parts.minute = minute
+            guard let today = Calendar.current.date(from: parts) else { return nil }
+            let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: today)
+
+            // Never run: the next h:m, and *not* this instant.
+            //
+            // A change in behaviour, and a deliberate one. The old check read
+            // "is the most recent h:m after the last run", and with no last run
+            // every h:m qualifies — so a new agent made at two in the afternoon
+            // and set to Daily at 09:00 ran the moment you enabled it, which is
+            // the one time it was told not to. The missed-mornings rule below
+            // is for an agent that has been running and stopped; a fresh one
+            // has missed nothing.
+            guard let last else { return today > now ? today : tomorrow }
+
+            // The most recent moment the clock passed h:m — yesterday's if
+            // today's is still ahead. Owed if the last run predates it, which
+            // fires once for a week of missed mornings rather than seven times.
+            if today > now {
+                let owed = Calendar.current.date(byAdding: .day, value: -1, to: today)
+                if let owed, last < owed { return now }
+                return today
+            }
+            if last < today { return now }
+            return tomorrow
+        }
+    }
+
     /// Which section of the Agents list this belongs in.
     var section: String {
         switch self {
@@ -241,6 +304,51 @@ final class AgentStore: ObservableObject {
         rewatch()
     }
 
+    /// A second agent from a first, switched off and never run.
+    ///
+    /// The common way to want one: the same prompt against a different folder,
+    /// or the same job on the enterprise account instead of the personal one.
+    /// Until now the only route to that was the interview again, which asks
+    /// six questions you have already answered.
+    ///
+    /// Off, deliberately. A copy that inherits a half-hourly schedule and is
+    /// live the moment it appears would run against the original's folder
+    /// before you had finished changing it.
+    @discardableResult
+    func duplicate(_ id: AgentDefinition.ID) -> AgentDefinition? {
+        guard let original = agent(id) else { return nil }
+        var copy = original
+        copy.id = UUID()
+        copy.name = Self.copyName(of: original.name, among: agents.map(\.name))
+        copy.isEnabled = false
+        copy.lastRunAt = nil
+        add(copy)
+        return copy
+    }
+
+    /// "Orbit todos" → "Orbit todos 2" → "Orbit todos 3".
+    ///
+    /// Numbered rather than "copy of", because the sidebar sorts by name and a
+    /// column of "copy of…" buries what each one is under a word that is the
+    /// same on all of them.
+    ///
+    /// `nonisolated`: string arithmetic over two arguments, touching no state
+    /// of the store. The same reason `Crew`'s three fence constants are.
+    nonisolated static func copyName(of name: String, among taken: [String]) -> String {
+        let existing = Set(taken)
+        guard existing.contains(name) else { return name }
+        // Start from the base, so duplicating "Orbit todos 2" gives 3 rather
+        // than "Orbit todos 2 2".
+        var base = name
+        if let space = name.lastIndex(of: " "),
+           Int(name[name.index(after: space)...]) != nil {
+            base = String(name[..<space])
+        }
+        var n = 2
+        while existing.contains("\(base) \(n)") { n += 1 }
+        return "\(base) \(n)"
+    }
+
     /// Delete an agent and every transcript it ever wrote.
     func remove(_ id: AgentDefinition.ID) {
         for run in workspace?.runs(of: id) ?? [] { workspace?.remove(run) }
@@ -284,31 +392,26 @@ final class AgentStore: ObservableObject {
     /// Whether this agent's next fire is in the past.
     ///
     /// A `watching` agent is never due here — its `FileWatch` fires it — and a
-    /// `manual` one never is at all.
+    /// `manual` one never is at all. Both answer `nil` below.
+    ///
+    /// The arithmetic lives on `AgentSchedule` so that the pane's countdown and
+    /// this check are the same calculation rather than two of them.
     private func due(_ agent: AgentDefinition, at now: Date) -> Bool {
-        switch agent.schedule {
-        case .manual, .watching:
-            return false
+        guard let next = agent.schedule.next(after: agent.lastRunAt, from: now)
+        else { return false }
+        return next <= now
+    }
 
-        case .every(let minutes):
-            guard let last = agent.lastRunAt else { return true }
-            return now.timeIntervalSince(last) >= Double(max(1, minutes)) * 60
-
-        case .daily(let hour, let minute):
-            // The most recent time today's clock passed h:m — yesterday's if it
-            // hasn't yet. Due when that moment is after the last run, which
-            // fires once for a week of missed mornings rather than seven times.
-            var components = Calendar.current.dateComponents([.year, .month, .day], from: now)
-            components.hour = hour
-            components.minute = minute
-            guard var slot = Calendar.current.date(from: components) else { return false }
-            if slot > now {
-                guard let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: slot)
-                else { return false }
-                slot = yesterday
-            }
-            return (agent.lastRunAt ?? .distantPast) < slot
-        }
+    /// When this agent will actually run next, or `nil` if nothing will make it.
+    ///
+    /// Not the same question as `AgentSchedule.next`, which knows about a clock
+    /// and nothing else. An agent switched off, or a roster paused, has a
+    /// schedule that says half past and a next run of never — and the pane
+    /// saying "in 12 minutes" under a switch that is off is the kind of lie
+    /// that sends somebody looking for a bug in the agent.
+    func nextRun(of agent: AgentDefinition, from now: Date = Date()) -> Date? {
+        guard !paused, agent.isEnabled else { return nil }
+        return agent.schedule.next(after: agent.lastRunAt, from: now)
     }
 
     /// One `FileWatch` per watching agent, rebuilt whenever the roster changes.

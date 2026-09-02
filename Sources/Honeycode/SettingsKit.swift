@@ -78,6 +78,27 @@ enum SettingsMetrics {
     }
 }
 
+/// Measures the pane and hands the pages inside it their leading inset.
+///
+/// For anywhere that shows a `SettingsPage` without being `SettingsPane` — the
+/// Agents detail, which is the same kit and the same measure but has a heading
+/// of its own rather than a tab strip. Without it a page falls back to the
+/// default inset and sits against the left edge of a very wide pane, which is
+/// the one thing all three centred panes agree not to do.
+struct SettingsColumn: ViewModifier {
+    func body(content: Content) -> some View {
+        GeometryReader { geometry in
+            content
+                .environment(\.settingsInset,
+                             SettingsMetrics.inset(for: geometry.size.width))
+        }
+    }
+}
+
+extension View {
+    func settingsColumn() -> some View { modifier(SettingsColumn()) }
+}
+
 private struct SettingsInsetKey: EnvironmentKey {
     static let defaultValue = Theme.s6
 }
@@ -98,12 +119,19 @@ extension EnvironmentValues {
 struct SettingsGroup<Content: View>: View {
     var title: String?
     var footer: String?
+    /// Something is wrong with what these controls are set to, and it will
+    /// only show up as a failure later — a folder that has been moved, a
+    /// setting the schedule quietly overrides. Under the footnote and in
+    /// `stateHeld`, because it is a different kind of sentence: the footnote
+    /// says how the setting works, this says that it currently doesn't.
+    var caution: String?
     @ViewBuilder let content: () -> Content
 
-    init(_ title: String? = nil, footer: String? = nil,
+    init(_ title: String? = nil, footer: String? = nil, caution: String? = nil,
          @ViewBuilder content: @escaping () -> Content) {
         self.title = title
         self.footer = footer
+        self.caution = caution
         self.content = content
     }
 
@@ -122,6 +150,13 @@ struct SettingsGroup<Content: View>: View {
                     // the only place its sentence appears on screen.
                     .font(Theme.note)
                     .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, Theme.s1)
+            }
+            if let caution {
+                Label(caution, systemImage: "exclamationmark.triangle.fill")
+                    .font(Theme.note)
+                    .foregroundStyle(Theme.stateHeld)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, Theme.s1)
             }

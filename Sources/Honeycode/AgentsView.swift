@@ -159,6 +159,7 @@ private struct AgentRow: View {
             get: { agent.isEnabled },
             set: { var copy = agent; copy.isEnabled = $0; store.update(copy) }))
         Divider()
+        Button("Duplicate") { store.duplicate(agent.id) }
         Button("Reveal in Finder") {
             NSWorkspace.shared.activateFileViewerSelecting([agent.directory])
         }
@@ -176,6 +177,7 @@ private struct AgentRow: View {
                 copy.isEnabled.toggle()
                 store.update(copy)
             },
+            PopoverChoice(title: "Duplicate") { store.duplicate(agent.id) },
             PopoverChoice(title: "Reveal in Finder") {
                 NSWorkspace.shared.activateFileViewerSelecting([agent.directory])
             },
@@ -223,6 +225,25 @@ struct AgentsPane: View {
                 empty
             }
         }
+        // An opaque ground, like Settings and unlike this pane until now.
+        //
+        // `PaneBackground` spans the whole window, and every other pane paints
+        // over it: a transcript is on `Theme.canvas`, so is Settings, and the
+        // photo is meant to show in the title bar and behind the start pane.
+        // This one painted nothing, so an agent's prompt, its folder, its
+        // schedule and the switch that decides whether it runs unattended were
+        // all set directly on somebody's wallpaper.
+        //
+        // Not applied to the run, which is a transcript and brings its own.
+        .background(showsRun ? AnyShapeStyle(.clear) : AnyShapeStyle(Theme.canvas))
+        // The measure, centred, the same way Settings does it — see
+        // `SettingsColumn`. Harmless on the two branches that aren't a page.
+        .settingsColumn()
+    }
+
+    /// Whether a run's transcript is in the pane rather than an agent.
+    private var showsRun: Bool {
+        store.setup != nil && store.selection == nil || openRun != nil
     }
 
     private var openRun: Session? {
@@ -267,29 +288,55 @@ struct AgentDetail: View {
     private var isRunning: Bool { store.running[agent.id] != nil }
     private var runs: [Session] { workspace.runs(of: agent.id) }
 
+    /// A folder or a watched file that isn't there any more.
+    ///
+    /// Held rather than asked for in `body`: this is a `stat`, and the body
+    /// redraws on every keystroke in the prompt. Refreshed when either path
+    /// changes and when the pane opens, which is when the answer can move.
+    @State private var absent: String?
+
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                head
-                Spacer().frame(height: Theme.s7)
-                promptField
-                Spacer().frame(height: Theme.s7)
-                settings
-                Spacer().frame(height: Theme.s7)
-                history
-            }
-            .padding(.horizontal, Theme.s8)
-            .padding(.top, Theme.s7)
-            .padding(.bottom, Theme.s8)
-            .frame(maxWidth: 820, alignment: .leading)
-            // Centred, like `CrewPane` and `SettingsPane`. A measure pinned to
-            // the leading edge left six hundred points of empty pane on the
-            // right of a wide window, and made two panes reached from the same
-            // sidebar sit in two different places.
-            .frame(maxWidth: .infinity)
+        // The same page as Settings, and the same measure. This pane was a
+        // hand-rolled label column at `maxWidth: 820` — a third measure in an
+        // app that has one — with its fields laid out by a private `field()`
+        // helper that did what `SettingsRow` does. Nothing here needed to be
+        // its own kind of screen.
+        SettingsPage {
+            header
+            if store.paused { pausedNotice }
+            promptGroup
+            whereAndWhen
+            allowed
+            history
         }
         .onChange(of: editing) { _, _ in scheduleFlush() }
         .onDisappear { flushing?.perform(); flushing = nil }
+        .onAppear { checkPaths() }
+        .onChange(of: editing.path) { _, _ in checkPaths() }
+        .onChange(of: editing.schedule) { _, _ in checkPaths() }
+    }
+
+    /// The quiet failure this app had no way to report.
+    ///
+    /// A folder that has been moved or renamed doesn't stop an agent — it runs
+    /// every half hour into a directory that isn't there, and the only sign is
+    /// a column of failed runs nobody is watching. A *watched* file that has
+    /// gone is worse than that: `FileWatch` has nothing to fire on, so the
+    /// agent simply never runs again and there is nothing in the history at
+    /// all to notice.
+    private func checkPaths() {
+        let manager = FileManager.default
+        if case .watching(let path) = editing.schedule, !manager.fileExists(atPath: path) {
+            absent = "\u{201C}\((path as NSString).lastPathComponent)\u{201D} isn\u{2019}t there any "
+                + "more, so nothing will ever start this agent. Choose another file."
+            return
+        }
+        if !manager.fileExists(atPath: editing.path) {
+            absent = "\(editing.subtitle) isn\u{2019}t there any more. Runs will start in a "
+                + "folder that doesn\u{2019}t exist and fail."
+            return
+        }
+        absent = nil
     }
 
     /// Coalesced. A prompt is prose, and prose arrives one character at a time.
@@ -302,36 +349,15 @@ struct AgentDetail: View {
 
     // MARK: Head
 
-    private var head: some View {
-        HStack(alignment: .top, spacing: Theme.s5) {
-            VStack(alignment: .leading, spacing: Theme.s3) {
+    private var header: some View {
+        VStack(alignment: .leading, spacing: Theme.s5) {
+            HStack(alignment: .firstTextBaseline, spacing: Theme.s5) {
                 TextField("Name", text: $editing.name)
                     .textFieldStyle(.plain)
                     .font(Theme.display(22))
 
-                HStack(spacing: Theme.s3) {
-                    AccountDot(editing.account)
-                    Text(editing.account.title)
-                    Text("·").foregroundStyle(.quaternary)
-                    Text(editing.subtitle)
-                    Text("·").foregroundStyle(.quaternary)
-                    Text(editing.schedule.title)
-                    if isRunning {
-                        Text("·").foregroundStyle(.quaternary)
-                        Text("running now").foregroundStyle(editing.account.accent)
-                    } else if let last = editing.lastRunAt {
-                        Text("·").foregroundStyle(.quaternary)
-                        Text("last ran \(Self.relative(last))")
-                    }
-                }
-                .font(Theme.row)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-            }
+                Spacer(minLength: Theme.s5)
 
-            Spacer(minLength: Theme.s5)
-
-            HStack(spacing: Theme.s5) {
                 if isRunning {
                     Button("Stop") { store.stop(agent.id) }
                 } else {
@@ -343,49 +369,156 @@ struct AgentDetail: View {
                     }
                     .disabled(editing.prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
-                Toggle("", isOn: $editing.isEnabled)
-                    .toggleStyle(.switch)
-                    .labelsHidden()
-                    .help(editing.isEnabled ? "Enabled" : "Paused")
+
+                // Duplicate, Reveal and Delete were only ever on the sidebar
+                // row — so acting on the agent you are looking at meant finding
+                // it again in a list, and with the sidebar collapsed there was
+                // no route to them at all.
+                menu
             }
-            .padding(.top, Theme.s2)
+
+            // What this agent is, in one line, and — the part that was missing
+            // — when it next runs. A pane about a thing that runs on a clock
+            // said "Every 30 minutes · last ran 4w ago" and left you to work
+            // out whether that meant anything.
+            HStack(spacing: Theme.s3) {
+                AccountDot(editing.account)
+                Text(editing.account.title)
+                separator
+                Text(editing.subtitle)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                separator
+                // Re-read on a slow tick rather than on every redraw: it is a
+                // countdown, so it has to move on its own, and nothing else on
+                // this pane changes when it does.
+                TimelineView(.periodic(from: .now, by: 30)) { context in
+                    Text(status(at: context.date))
+                        .foregroundStyle(statusTint)
+                }
+                Spacer(minLength: Theme.s5)
+                Toggle("Enabled", isOn: $editing.isEnabled)
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+                    .help("Off, this agent's schedule is ignored. Run now still works.")
+            }
+            .font(Theme.row)
+            .foregroundStyle(.secondary)
+        }
+    }
+
+    private var separator: some View {
+        Text("·").foregroundStyle(.quaternary)
+    }
+
+    private var menu: some View {
+        PopoverMenu(width: 220, choices: [
+            PopoverChoice(title: "Duplicate",
+                          blurb: "The same prompt, switched off") {
+                store.duplicate(agent.id)
+            },
+            PopoverChoice(title: "Reveal in Finder") {
+                NSWorkspace.shared.activateFileViewerSelecting([editing.directory])
+            },
+            PopoverChoice(title: "Delete Agent", destructive: true) {
+                store.remove(agent.id)
+            },
+        ]) {
+            Image(systemName: "ellipsis")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 24, height: 22)
+                .contentShape(Rectangle())
+        }
+        .help("Agent options")
+    }
+
+    /// When this runs next, or why it doesn't.
+    ///
+    /// Every branch answers the same question — will anything make this happen
+    /// — so the switch that is off and the roster that is paused are said here
+    /// rather than left to be inferred from a control somewhere else.
+    private func status(at now: Date) -> String {
+        if isRunning { return "running now" }
+        if store.paused { return "all agents paused" }
+        if !editing.isEnabled { return "paused" }
+        switch editing.schedule {
+        case .manual:
+            return "only when you ask"
+        case .watching(let path):
+            return "when \((path as NSString).lastPathComponent) changes"
+        case .every, .daily:
+            guard let next = store.nextRun(of: editing, from: now) else { return "" }
+            if next <= now { return "due now" }
+            return "next run \(Self.relative(next))"
+        }
+    }
+
+    private var statusTint: Color {
+        if isRunning { return editing.account.accent }
+        if store.paused || !editing.isEnabled { return Theme.stateHeld }
+        return .secondary
+    }
+
+    /// The global switch, said where it bites.
+    ///
+    /// `AgentStore.paused` has always existed, has always been honoured by both
+    /// the ticker and the file watches, and has always been written to
+    /// preferences — and nothing in the app could set it or reported that it
+    /// was set. So a roster could be silently switched off with every agent
+    /// still showing its own switch as on.
+    private var pausedNotice: some View {
+        SettingsGroup {
+            SettingsRow("Every agent is paused",
+                        note: "No schedule fires and no watched file starts "
+                            + "anything, whatever each agent's own switch says. "
+                            + "Run now still works.") {
+                Button("Resume") { store.paused = false }
+            }
         }
     }
 
     // MARK: Prompt
 
-    private var promptField: some View {
-        VStack(alignment: .leading, spacing: Theme.s3) {
-            label("Prompt")
-            TextEditor(text: $editing.prompt)
-                .font(Theme.body)
-                .scrollContentBackground(.hidden)
-                .padding(Theme.s4)
-                .frame(minHeight: 96)
-                .background(Theme.surface,
-                            in: RoundedRectangle(cornerRadius: Theme.cornerField))
-                .overlay(RoundedRectangle(cornerRadius: Theme.cornerField)
-                    .strokeBorder(Theme.rule, lineWidth: 1))
+    private var promptGroup: some View {
+        SettingsGroup("Prompt", footer:
+            "What this agent is asked, every time it runs. It arrives as the "
+            + "first message of a fresh conversation — there is no history to "
+            + "lean on, so it has to say where to look as well as what to do.") {
+            SettingsRow {
+                TextEditor(text: $editing.prompt)
+                    .font(Theme.body)
+                    .scrollContentBackground(.hidden)
+                    .padding(Theme.s3)
+                    // Taller than it was. This is the whole substance of an
+                    // agent and it was in a 96pt box under a pane with six
+                    // hundred points of unused height below it.
+                    .frame(minHeight: 150)
+                    .background(Theme.well,
+                                in: RoundedRectangle(cornerRadius: Theme.cornerField))
+                    .overlay(RoundedRectangle(cornerRadius: Theme.cornerField)
+                        .strokeBorder(Theme.rule, lineWidth: 1))
+            }
         }
     }
 
-    // MARK: Settings
+    // MARK: Where and when
 
-    private var settings: some View {
-        VStack(alignment: .leading, spacing: Theme.s6) {
-            field("Runs as") { accountChips }
-            field("Folder") { folderRow }
-            field("Schedule") { scheduleRow }
-            field("Autonomy") { autonomyRows }
-            field("Isolation") { isolationRow }
-            field("Model") { modelRow }
+    private var whereAndWhen: some View {
+        SettingsGroup("Where and when", caution: absent) {
+            SettingsRow("Runs as") { accountChips }
+            SettingsRow("Folder") { folderRow }
+            SettingsRow("Schedule") { scheduleRow }
+            SettingsRow("Model") { modelRow }
         }
     }
 
     /// All four, in full, rather than behind a popover.
     ///
     /// Which credentials an unattended agent runs under is the highest-stakes
-    /// setting on this pane, and it should be readable without a click.
+    /// setting on this pane, and it should be readable without a click. The
+    /// schedule and the model below it are popovers precisely because they are
+    /// not: getting either wrong wastes a run.
     private var accountChips: some View {
         HStack(spacing: Theme.s3) {
             ForEach(Account.enabled) { account in
@@ -399,15 +532,15 @@ struct AgentDetail: View {
                     editing.modelID = nil
                     if !account.hasEffort { editing.effort = .high }
                 } label: {
-                    HStack(spacing: Theme.s3) {
+                    HStack(spacing: Theme.s2) {
                         AccountDot(account, dimmed: on ? 1 : 0.45)
-                        Text(account.title)
+                        Text(account.shortTitle)
                             .font(.system(size: Theme.t3, weight: on ? .medium : .regular))
                     }
                     .foregroundStyle(on ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
-                    .padding(.horizontal, Theme.s5)
+                    .padding(.horizontal, Theme.s4)
                     .padding(.vertical, Theme.s3)
-                    .background(on ? Theme.surface : .clear,
+                    .background(on ? Theme.well : .clear,
                                 in: RoundedRectangle(cornerRadius: Theme.cornerChip))
                     .overlay(RoundedRectangle(cornerRadius: Theme.cornerChip)
                         .strokeBorder(on ? account.accent.opacity(0.75) : Theme.rule,
@@ -415,7 +548,7 @@ struct AgentDetail: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .help(account.agentName)
+                .help("\(account.title) · \(account.agentName)")
             }
         }
     }
@@ -425,10 +558,13 @@ struct AgentDetail: View {
             Text(editing.subtitle)
                 .font(Theme.monoSmall)
                 .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.head)
                 .padding(.horizontal, Theme.s4)
                 .padding(.vertical, Theme.s2)
                 .background(Theme.codeGround,
                             in: RoundedRectangle(cornerRadius: Theme.cornerChip))
+                .help(editing.path)
             Button("Choose…") {
                 let panel = NSOpenPanel()
                 panel.canChooseDirectories = true
@@ -442,122 +578,102 @@ struct AgentDetail: View {
         }
     }
 
+    /// The kind of schedule, then whatever that kind needs.
+    ///
+    /// Four radio buttons before this, laid out across two lines with their own
+    /// inline pickers, so the row was a different height and a different shape
+    /// in each of its four states and "When a file changes" sat on a second
+    /// line under "Manual". A menu names the four in one control the width of
+    /// the longest, and the parameter beside it belongs to whichever is chosen.
     private var scheduleRow: some View {
-        VStack(alignment: .leading, spacing: Theme.s4) {
-            HStack(spacing: Theme.s6) {
-                choice("Manual", on: editing.schedule.isManual) { editing.schedule = .manual }
-
-                HStack(spacing: Theme.s3) {
-                    choice("Every", on: isEvery) {
-                        editing.schedule = .every(minutes: everyMinutes)
-                    }
-                    Picker("", selection: Binding(
-                        get: { everyMinutes },
-                        set: { editing.schedule = .every(minutes: $0) })) {
-                        ForEach([5, 15, 30, 60, 120, 240, 480], id: \.self) { minutes in
-                            Text(minutes < 60 ? "\(minutes) min" : "\(minutes / 60) h").tag(minutes)
-                        }
-                    }
-                    .labelsHidden()
-                    .frame(width: 84)
-                    .disabled(!isEvery)
-                }
-
-                HStack(spacing: Theme.s3) {
-                    choice("Daily at", on: isDaily) {
-                        editing.schedule = .daily(hour: 9, minute: 0)
-                    }
-                    DatePicker("", selection: Binding(
-                        get: { dailyDate },
-                        set: { date in
-                            let parts = Calendar.current.dateComponents([.hour, .minute], from: date)
-                            editing.schedule = .daily(hour: parts.hour ?? 9,
-                                                      minute: parts.minute ?? 0)
-                        }), displayedComponents: .hourAndMinute)
-                        .labelsHidden()
-                        .disabled(!isDaily)
-                }
-            }
-
-            HStack(spacing: Theme.s3) {
-                choice("When a file changes", on: isWatching) {
+        HStack(spacing: Theme.s4) {
+            PopoverMenu(header: "Schedule", width: 260, choices: [
+                PopoverChoice(title: "Only when you ask",
+                              blurb: "Nothing runs it but Run now",
+                              selected: editing.schedule.isManual) {
+                    editing.schedule = .manual
+                },
+                PopoverChoice(title: "Every…",
+                              blurb: "On a clock, from the last run",
+                              selected: isEvery) {
+                    editing.schedule = .every(minutes: everyMinutes)
+                },
+                PopoverChoice(title: "Daily at…",
+                              blurb: "Once a day. A missed day runs once, not twice",
+                              selected: isDaily) {
+                    editing.schedule = .daily(hour: 9, minute: 0)
+                },
+                PopoverChoice(title: "When a file changes",
+                              blurb: "Runs when something writes to it",
+                              selected: isWatching) {
                     editing.schedule = .watching(path: watchPath.isEmpty
                                                  ? editing.path : watchPath)
-                }
-                if case .watching(let path) = editing.schedule {
-                    Text((path as NSString).lastPathComponent)
-                        .font(Theme.monoSmall)
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, Theme.s4)
-                        .padding(.vertical, Theme.s2)
-                        .background(Theme.codeGround,
-                                    in: RoundedRectangle(cornerRadius: Theme.cornerChip))
-                        .help(path)
-                    Button("Choose…") {
-                        let panel = NSOpenPanel()
-                        panel.canChooseFiles = true
-                        panel.canChooseDirectories = false
-                        panel.prompt = "Watch File"
-                        panel.directoryURL = editing.directory
-                        if panel.runModal() == .OK, let url = panel.url {
-                            editing.schedule = .watching(path: url.path)
-                        }
-                    }
-                    .buttonStyle(.link)
-                    .font(Theme.row)
-                }
+                },
+            ]) {
+                chip(scheduleKind)
             }
-        }
-    }
 
-    private var autonomyRows: some View {
-        VStack(alignment: .leading, spacing: Theme.s4) {
-            ForEach(Autonomy.allCases) { option in
-                HStack(spacing: Theme.s3) {
-                    choice(option.title, on: editing.autonomy == option) {
-                        editing.autonomy = option
+            switch editing.schedule {
+            case .manual:
+                EmptyView()
+
+            case .every:
+                Picker("", selection: Binding(
+                    get: { everyMinutes },
+                    set: { editing.schedule = .every(minutes: $0) })) {
+                    ForEach([5, 15, 30, 60, 120, 240, 480], id: \.self) { minutes in
+                        Text(minutes < 60 ? "\(minutes) min" : "\(minutes / 60) h").tag(minutes)
                     }
-                    Text(option.blurb)
-                        .font(Theme.row)
-                        .foregroundStyle(.tertiary)
                 }
-            }
-            if editing.autonomy == .act {
-                // Said once, where the decision is made, and not dressed up as
-                // a warning triangle. `Propose` is a paragraph in a prompt;
-                // this is the real thing.
-                Text("Runs with full tool access in \(editing.subtitle). "
-                     + "Isolation is the only limit that holds.")
-                    .font(Theme.note)
+                .labelsHidden()
+                .frame(width: 88)
+
+            case .daily:
+                DatePicker("", selection: Binding(
+                    get: { dailyDate },
+                    set: { date in
+                        let parts = Calendar.current.dateComponents([.hour, .minute], from: date)
+                        editing.schedule = .daily(hour: parts.hour ?? 9,
+                                                  minute: parts.minute ?? 0)
+                    }), displayedComponents: .hourAndMinute)
+                    .labelsHidden()
+
+            case .watching(let path):
+                Text((path as NSString).lastPathComponent)
+                    .font(Theme.monoSmall)
                     .foregroundStyle(.secondary)
-                    .padding(.leading, Theme.s6)
-            }
-            // What the schedule takes back, said where the setting is chosen.
-            //
-            // A definition that quietly runs as something other than what it
-            // says is worse than one that refuses: you read "Act", watch
-            // nothing get written, and go looking for a bug in the agent.
-            if let downgrade = AgentStore.downgrade(editing) {
-                Text(downgrade)
-                    .font(Theme.note)
-                    .foregroundStyle(Theme.stateHeld)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.leading, Theme.s6)
+                    .padding(.horizontal, Theme.s4)
+                    .padding(.vertical, Theme.s2)
+                    .background(Theme.codeGround,
+                                in: RoundedRectangle(cornerRadius: Theme.cornerChip))
+                    .help(path)
+                Button("Choose…") {
+                    let panel = NSOpenPanel()
+                    panel.canChooseFiles = true
+                    panel.canChooseDirectories = false
+                    panel.prompt = "Watch File"
+                    panel.directoryURL = editing.directory
+                    if panel.runModal() == .OK, let url = panel.url {
+                        editing.schedule = .watching(path: url.path)
+                    }
+                }
+                .buttonStyle(.link)
+                .font(Theme.row)
             }
         }
     }
 
-    private var isolationRow: some View {
-        Toggle(isOn: $editing.isolated) {
-            Text("Confine to \(editing.subtitle)")
-                .font(Theme.row)
+    private var scheduleKind: String {
+        switch editing.schedule {
+        case .manual:   return "Only when you ask"
+        case .every:    return "Every"
+        case .daily:    return "Daily at"
+        case .watching: return "When a file changes"
         }
-        .toggleStyle(.checkbox)
-        .help("Nothing above or beside this folder is readable.")
     }
 
     private var modelRow: some View {
-        HStack(spacing: Theme.s5) {
+        HStack(spacing: Theme.s4) {
             let models = ModelCatalog.models(for: editing.account)
             PopoverMenu(header: "Model", width: 260,
                         choices: models.map { model in
@@ -587,26 +703,57 @@ struct AgentDetail: View {
         models.first { $0.id == editing.modelID } ?? models.first ?? ModelCatalog.fallback
     }
 
+    // MARK: What it may do
+
+    private var allowed: some View {
+        SettingsGroup("What it may do",
+                      footer: editing.autonomy == .act
+                          ? "Runs with full tool access in \(editing.subtitle). "
+                            + "Confinement is the only limit that holds."
+                          : nil,
+                      // What the schedule takes back, said where the setting is
+                      // chosen. A definition that quietly runs as something
+                      // other than what it says is worse than one that refuses:
+                      // you read "Act", watch nothing get written, and go
+                      // looking for a bug in the agent.
+                      caution: AgentStore.downgrade(editing)) {
+            // A segmented control rather than two radio buttons with their
+            // blurbs trailing off to the right of them. Two options, one of
+            // which is chosen — and the blurb of whichever is chosen is the
+            // row's own note, which is where an explanation of a setting goes
+            // everywhere else in this app.
+            SettingsRow("Autonomy", note: editing.autonomy.blurb) {
+                Picker("", selection: $editing.autonomy) {
+                    ForEach(Autonomy.allCases) { option in
+                        Text(option.title).tag(option)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(width: 150)
+            }
+
+            SettingsToggle("Confine to this folder",
+                           note: "Nothing above or beside \(editing.subtitle) is "
+                               + "readable. This is a launch argument and it holds — "
+                               + "Propose above is a paragraph in a prompt and doesn\u{2019}t.",
+                           isOn: $editing.isolated)
+        }
+    }
+
     // MARK: History
 
     private var history: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: Theme.s3) {
-                label("Runs")
-                Spacer(minLength: 0)
-                if !runs.isEmpty {
-                    Text("keeping the last \(AgentStore.runsKept)")
-                        .font(Theme.note)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .padding(.bottom, Theme.s3)
-
+        SettingsGroup("Runs", footer: runs.isEmpty ? nil
+                      : "The last \(AgentStore.runsKept) are kept; older ones are "
+                        + "deleted with their transcripts.") {
             if runs.isEmpty {
-                Text("Nothing yet.")
-                    .font(Theme.row)
-                    .foregroundStyle(.tertiary)
-                    .padding(.vertical, Theme.s4)
+                SettingsRow {
+                    Text("Nothing yet.")
+                        .font(Theme.row)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
             } else {
                 ForEach(runs) { run in
                     RunRow(run: run, live: store.running[agent.id] == run.id) {
@@ -619,20 +766,11 @@ struct AgentDetail: View {
 
     // MARK: Bits
 
-    private func label(_ text: String) -> some View {
-        Text(text).font(Theme.label).foregroundStyle(.tertiary)
-    }
-
-    private func field<Content: View>(_ name: String,
-                                      @ViewBuilder content: () -> Content) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: Theme.s6) {
-            label(name)
-                .frame(width: 74, alignment: .leading)
-            content()
-            Spacer(minLength: 0)
-        }
-    }
-
+    /// A control that opens a menu: the schedule, the model, the effort.
+    ///
+    /// `Theme.well` rather than `Theme.surface`, which is what it was: a card
+    /// is `surface` now, so a chip drawn in the same colour on top of one was
+    /// invisible except for its hairline.
     private func chip(_ text: String) -> some View {
         HStack(spacing: Theme.s2) {
             Text(text).font(Theme.row)
@@ -642,24 +780,10 @@ struct AgentDetail: View {
         }
         .padding(.horizontal, Theme.s4)
         .padding(.vertical, Theme.s2)
-        .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.cornerChip))
+        .background(Theme.well, in: RoundedRectangle(cornerRadius: Theme.cornerChip))
         .overlay(RoundedRectangle(cornerRadius: Theme.cornerChip)
             .strokeBorder(Theme.rule, lineWidth: 1))
         .contentShape(Rectangle())
-    }
-
-    private func choice(_ title: String, on: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: Theme.s3) {
-                Image(systemName: on ? "largecircle.fill.circle" : "circle")
-                    .font(.system(size: 12))
-                    .foregroundStyle(on ? AnyShapeStyle(Color.accentColor)
-                                        : AnyShapeStyle(.tertiary))
-                Text(title).font(Theme.row).foregroundStyle(.primary)
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
     }
 
     private var isEvery: Bool { if case .every = editing.schedule { return true }; return false }
@@ -713,21 +837,42 @@ private struct RunRow: View {
                     .frame(width: 44, alignment: .leading)
                 Text(summary)
                     .font(Theme.row)
-                    .foregroundStyle(run.items.isEmpty ? AnyShapeStyle(.tertiary)
+                    .foregroundStyle(run.items.isEmpty ? AnyShapeStyle(.secondary)
                                                        : AnyShapeStyle(.primary))
                     .lineLimit(1)
                 Spacer(minLength: Theme.s4)
+                // Whether it wrote anything, which for an unattended run is the
+                // question. A row said what the agent *replied* and nothing
+                // about what it did, so a run that edited nine files and one
+                // that read a file and shrugged looked identical.
+                //
+                // `fileCount` copies nothing — see `ChangedFilesSection`, which
+                // uses it for the same reason.
+                if changed > 0 {
+                    Text("\(changed) file\(changed == 1 ? "" : "s")")
+                        .font(Theme.caption)
+                        .monospacedDigit()
+                        .foregroundStyle(Theme.stateDone)
+                        .padding(.horizontal, Theme.s3)
+                        .padding(.vertical, 1)
+                        .background(Theme.stateDone.opacity(0.14), in: Capsule())
+                }
                 Image(systemName: "chevron.right")
                     .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(.tertiary)
             }
-            .padding(.horizontal, Theme.s3)
+            .padding(.horizontal, Theme.s5)
             .padding(.vertical, Theme.s4)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .background(hovering ? Theme.well : .clear)
-        .overlay(alignment: .top) { Divider().overlay(Theme.rule) }
+        // Underneath, not on top: these sit in a `SettingsGroup` card now, and
+        // every other row in one draws its own hairline below itself so the
+        // card can pull the last one under its clip.
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(Theme.rule).frame(height: 1)
+        }
         .onHover { hovering = $0 }
         // The roster hydrates in the background; a row for a run that hasn't
         // been read yet would otherwise sit blank until you clicked it.
@@ -744,6 +889,8 @@ private struct RunRow: View {
             AccountDot(colour: .secondary.opacity(0.5), hollow: true)
         }
     }
+
+    private var changed: Int { Changes.fileCount(run.items) }
 
     /// The last thing it said, which is what `lastReply` already computes for
     /// notifications — the same question asked in a different place.

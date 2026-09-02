@@ -1,7 +1,20 @@
-# Honeycode
+<div align="center">
 
-A macOS client that puts every coding subscription you pay for in one window,
-and lets them work as a crew.
+<img src="docs/icon.png" width="96" alt="">
+
+<h1>Honeycode</h1>
+
+<p>A macOS client that puts every coding subscription you pay for in one window,<br>
+and lets them work as a crew.</p>
+
+<p><sub>macOS 15 or later &middot; Apple silicon and Intel &middot; a window and a terminal &middot; no dependency manager</sub></p>
+
+</div>
+
+![The Honeycode window: a new session in the Desktop folder. The account rail runs
+down the left edge, the tab strip across the top of the pane reads Agent, Changes,
+Files, Preview and Run, and the composer names the account and the model it will
+send to.](docs/window.png)
 
 Name several accounts in one message and the first one named leads. It plans the
 work, hands pieces to the others, waits for them, and assembles what comes back:
@@ -22,6 +35,22 @@ There are two faces on the same engine:
   and out, so anything that can run a program can hand work to your subscriptions.
 
 Both link `AgentKit`, which is the engine and has no UI in it.
+
+---
+
+## Contents
+
+| | |
+|---|---|
+| [Requirements](#requirements) | a Mac, a toolchain, and at least one agent CLI |
+| [Setup](#setup) | `doctor.sh`, one build, and the first run |
+| [Accounts](#accounts) | the two Claude logins, Kimi, Copilot, and adding your own |
+| [Using it](#using-it) | the window, the terminal, mentions, models, and what a crew does |
+| [The tenancy fence](#the-tenancy-fence) | what stops enterprise work reaching a personal subscription |
+| [Policy, and the record of it](#policy-and-the-record-of-it) | the four settings an organisation can pin, and the log they leave |
+| [Where your data lives](#where-your-data-lives) | every path this writes to, and what is in each |
+| [Repo layout](#repo-layout) | what is in `Sources`, and how the suites run |
+| [Troubleshooting](#troubleshooting) | the two failures that are otherwise baffling |
 
 ---
 

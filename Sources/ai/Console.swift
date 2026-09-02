@@ -64,17 +64,21 @@ enum Console {
     /// streamed text ends wherever the model stopped.
     private static var midLine = false
 
-    static func write(_ text: String) {
+    /// - Parameter handle: which stream. Both go to the same terminal when
+    ///   there is one, so `midLine` and `blankRun` are tracked across the pair
+    ///   rather than per stream — there is one cursor, and it does not care
+    ///   which descriptor moved it. Unbuffered on both, so nothing reorders.
+    static func write(_ text: String, to handle: FileHandle = .standardOutput) {
         guard !text.isEmpty else { return }
-        FileHandle.standardOutput.write(Data(text.utf8))
+        handle.write(Data(text.utf8))
         midLine = !text.hasSuffix("\n")
     }
 
     /// How many blank lines have just gone out. Only `paragraph` reads it.
     private static var blankRun = 1
 
-    static func line(_ text: String = "") {
-        write(text + "\n")
+    static func line(_ text: String = "", to handle: FileHandle = .standardOutput) {
+        write(text + "\n", to: handle)
         blankRun = text.isEmpty ? blankRun + 1 : 0
     }
 
@@ -168,9 +172,13 @@ enum Console {
         line(dim("  " + text))
     }
 
+    /// Goes to **stderr**. It reads identically in a terminal, where both
+    /// streams are the same screen, and it is the difference between
+    /// `ai -p "…" > out.md` writing the reason into the file and writing it
+    /// where the person running it can see it.
     static func failure(_ text: String) {
         breakLine()
-        line(paint("  ! " + text, "203"))
+        line(paint("  ! " + text, "203"), to: .standardError)
     }
 
     // MARK: Scrollback
@@ -194,8 +202,21 @@ enum Console {
     /// The break was only ever there to get off the prompt — `Scrollback` owns
     /// every newline after that, which the comment above already said and the
     /// code did not do.
+    /// Whether any agent output has reached the screen.
+    ///
+    /// The one thing `ai -p` can honestly report as success — see `Program.once`.
+    /// Set here and in `ConsoleReporter.prose`, which between them are every
+    /// route a reply takes to stdout; status lines, plans and refusals are not
+    /// replies and deliberately don't count.
+    private(set) static var sawReply = false
+
+    /// For the reply text that doesn't come through `emit` — the lead's own
+    /// prose, printed whole rather than streamed.
+    static func noteReply() { sawReply = true }
+
     static func emit(_ runs: [ScrollbackRun], accent: String, opening: Bool) {
         guard !runs.isEmpty else { return }
+        sawReply = true
         if opening { breakLine() }
         for run in runs { write(paint(run.text, style: run.style, accent: accent)) }
     }

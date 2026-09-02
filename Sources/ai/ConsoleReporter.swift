@@ -15,6 +15,7 @@ final class ConsoleReporter: CrewReporter {
     /// What the window says when nothing is running.
     private let idleTitle: String
 
+
     init(title: String) {
         self.idleTitle = title
     }
@@ -45,6 +46,7 @@ final class ConsoleReporter: CrewReporter {
         guard !text.isEmpty else { return }
         progress.clear()
         Console.line(text)
+        Console.noteReply()
     }
 
     // MARK: The plan

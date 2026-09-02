@@ -70,10 +70,30 @@ final class Program {
     /// already has, with nothing to install, register or approve. Whatever an
     /// organisation decides about agent-to-agent protocols later, running a
     /// program stays allowed.
+    /// Exits **1** when nothing came back, and 0 when something did.
+    ///
+    /// It used to be `exit(0)` unconditionally, which — together with failures
+    /// printing to stdout — left a calling program no signal of any kind:
+    /// not an exit code, not a stream to separate. `ai -p "@kimi"` said
+    /// *"Named kimi but didn't say what to do"* and succeeded.
+    ///
+    /// "Did anything reach stdout" rather than "was a problem reported",
+    /// which was the first attempt and is wrong. `reporter.problem` carries
+    /// warnings as well as failures — a stale model list being used instead of
+    /// a fresh one (`Crew.swift:987`), two delegates handed the same file
+    /// (`Crew.swift:1736`), an agent-to-agent message that didn't get through
+    /// — and all of those runs still produce work. Exiting 1 on them would
+    /// make `ai -p "…" || retry` retry a run that had succeeded, which spends
+    /// a subscription to fix nothing and is worse than the bug being fixed.
+    ///
+    /// So the promise is narrow and keepable: **1 means you got nothing.**
+    /// A run that answered and also warned is a 0, and the warning is on
+    /// stderr where it can be read. No exit code can tell you the answer was
+    /// any good.
     func once(_ text: String) {
         begin()
         guard ready(orExplain: true) else { exit(1) }
-        crew.onIdle = { exit(0) }
+        crew.onIdle = { exit(Console.sawReply ? 0 : 1) }
         crew.submit(text)
     }
 
@@ -415,24 +435,35 @@ let arguments = Array(CommandLine.arguments.dropFirst())
 
 /// Whatever was piped in, or nothing.
 ///
-/// Read once, eagerly, before anything decides what to do — a redirect is
-/// finite and reading it costs nothing, and the alternative is every branch
-/// below having to remember to check.
-///
 /// This is what makes `ai` compose with the shell it is already sitting in:
 /// `git diff | ai -p "review this @claude-p"` needs no flag, no temporary file
 /// and no quoting of a diff.
-let piped: String? = {
+///
+/// **Asked for, never read ahead of time.** This used to be a top-level `let`,
+/// and top-level code in `main.swift` is not lazy — it ran before the switch
+/// below had decided anything, so every subcommand waited on stdin whether or
+/// not it had a use for it. `readDataToEndOfFile` returns when the *writer*
+/// closes, not when it has nothing more to say, so `ai --version` from a
+/// process that keeps the pipe open waited for that process:
+///
+///     $ time ( (sleep 6; echo done) | ai --version )
+///     ai 0.1
+///     6.016 total
+///
+/// `--describe` is the one that mattered — it is the command other programs
+/// are meant to call, and a caller holding an inherited stdin open hung on it
+/// forever rather than getting its JSON.
+func pipedInput() -> String? {
     guard isatty(fileno(stdin)) == 0 else { return nil }
     let data = FileHandle.standardInput.readDataToEndOfFile()
     let text = String(decoding: data, as: UTF8.self)
         .trimmingCharacters(in: .whitespacesAndNewlines)
     return text.isEmpty ? nil : text
-}()
+}
 
 /// A message and its input, joined the way a person would read them.
 func joined(_ message: String) -> String {
-    guard let piped else { return message }
+    guard let piped = pipedInput() else { return message }
     guard !message.isEmpty else { return piped }
     return message + "\n\n" + piped
 }
@@ -481,7 +512,7 @@ case nil:
     // Something piped in and no message to attach it to is itself the message.
     // `ai < question.txt` and `echo "… @kimi" | ai` both mean the same thing,
     // and neither of them wants a prompt it has no keyboard to answer.
-    if let piped {
+    if let piped = pipedInput() {
         MainActor.assumeIsolated { program.once(piped) }
     } else {
         MainActor.assumeIsolated { program.run() }
@@ -507,9 +538,15 @@ default:
     // Bare words are the message, so `ai "do the thing @kimi"` works without
     // the flag — the flag exists for the case where the message starts with
     // something that looks like one.
+    //
+    // The flag test comes first because `joined` reads stdin, and a flag
+    // nobody implements should be rejected without waiting on a pipe to find
+    // out. `ai --nonsense` used to consume all of stdin and then print the
+    // usage it could have printed immediately.
+    guard !arguments[0].hasPrefix("-") else { usage() }
     let message = joined(arguments.joined(separator: " ")
         .trimmingCharacters(in: .whitespacesAndNewlines))
-    guard !message.isEmpty, !arguments[0].hasPrefix("-") else { usage() }
+    guard !message.isEmpty else { usage() }
     MainActor.assumeIsolated { program.once(message) }
 }
 RunLoop.main.run()

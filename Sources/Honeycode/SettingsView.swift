@@ -877,7 +877,9 @@ private struct ReadingSettings: View {
                 LabeledContent("Column width") {
                     HStack(spacing: Theme.s5) {
                         Slider(value: $width, in: 520...1000, step: 20)
-                        Text("\(Int(width))")
+                        // Not interpolated: a measurement in points is not a
+                        // quantity to group, and this one reaches exactly 1000.
+                        Text(String(Int(width)))
                             .font(Theme.monoSmall)
                             .foregroundStyle(.secondary)
                             .monospacedDigit()

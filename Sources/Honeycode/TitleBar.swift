@@ -203,6 +203,8 @@ struct TitleBar: View {
         HStack(spacing: Theme.s3) {
             if let session { ContextRing(session: session) }
 
+            NoticeBell(workspace: workspace)
+
             appearanceButton
 
             Button {
@@ -245,6 +247,160 @@ struct TitleBar: View {
         }
         .buttonStyle(HoverCapsule())
         .help("Appearance: \(appearance.title) — click for \(appearance.next.title)")
+    }
+}
+
+// MARK: - What finished while you were elsewhere
+
+/// The bell, and the list behind it.
+///
+/// Honeycode has always known which turns finished somewhere you weren't
+/// looking — `Session.needsAttention` is set by `endTurn` and cleared the
+/// moment you select the session — and has never had anywhere to *show* it
+/// except a dot on a sidebar row and a system banner. The banner is the part
+/// worth fixing: it is shown once, for a few seconds, over whatever else you
+/// were doing, and if you miss it there is no second place to look. Three
+/// agents finishing while you read a diff is three banners and no record.
+///
+/// So this reads the flag the app already keeps rather than starting a log of
+/// its own. That has a consequence worth being plain about: **it is not
+/// history.** Open a session and it leaves this list, because the flag it is
+/// made of is what "you have not looked at this yet" means. A log that
+/// persisted would need writing to disk, ageing out, and deciding what a
+/// notification means after a session is deleted — for a list whose entire
+/// value is being empty by the end of the day.
+private struct NoticeBell: View {
+    @ObservedObject var workspace: Workspace
+    @State private var showing = false
+
+    /// Newest first, which for these is the order they arrived in.
+    private var waiting: [Session] {
+        workspace.sessions
+            .filter { $0.needsAttention && $0.id != workspace.selection }
+            .sorted { ($0.stamps.values.max() ?? .distantPast)
+                        > ($1.stamps.values.max() ?? .distantPast) }
+    }
+
+    var body: some View {
+        let waiting = waiting
+        Button { showing.toggle() } label: {
+            Image(systemName: waiting.isEmpty ? "bell" : "bell.badge.fill")
+                .font(.system(size: 12))
+                // Tinted only when it has something to say. A bell that is
+                // always coloured is a bell nobody reads, and this one is
+                // asking to be ignored most of the day.
+                .foregroundStyle(waiting.isEmpty
+                                 ? AnyShapeStyle(.secondary)
+                                 : AnyShapeStyle(Theme.stateLive))
+                .frame(width: 24, height: 24)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(HoverCapsule())
+        .animation(Motion.reveal, value: waiting.count)
+        .help(waiting.isEmpty
+              ? "Nothing waiting"
+              : (waiting.count == 1 ? "1 session has replied"
+                                    : "\(waiting.count) sessions have replied"))
+        .popover(isPresented: $showing, arrowEdge: .bottom) {
+            NoticeList(workspace: workspace, waiting: waiting) { showing = false }
+        }
+    }
+}
+
+private struct NoticeList: View {
+    @ObservedObject var workspace: Workspace
+    let waiting: [Session]
+    let dismiss: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                PopoverHeader("REPLIES", top: 0)
+                Spacer(minLength: Theme.s5)
+                if !waiting.isEmpty {
+                    // Marks them read without opening any of them, which is the
+                    // honest action for a list you have just read the whole of.
+                    Button("Clear") {
+                        for session in waiting { session.needsAttention = false }
+                        dismiss()
+                    }
+                    .buttonStyle(.plain)
+                    .font(Theme.label)
+                    .foregroundStyle(.secondary)
+                    .padding(.trailing, Theme.s5)
+                }
+            }
+            .padding(.top, Theme.s3)
+
+            if waiting.isEmpty {
+                Text("Nothing waiting. Turns that finish in a session you "
+                     + "aren't looking at collect here.")
+                    .font(Theme.note)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, Theme.s5)
+                    .padding(.vertical, Theme.s4)
+            } else {
+                ScrollView {
+                    // Not a `LazyVStack`. Its children are never zero-height,
+                    // but the same trap has cost this app two blank panes —
+                    // see `Workbench` — and a list capped at a screenful has
+                    // nothing to gain from being lazy.
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(waiting) { session in
+                            row(session)
+                        }
+                    }
+                }
+                .frame(maxHeight: 320)
+            }
+        }
+        .padding(.vertical, Theme.s3)
+        .frame(width: 320)
+    }
+
+    private func row(_ session: Session) -> some View {
+        Button {
+            // Selecting is what clears the flag — see `Workspace.selection`.
+            // Doing it here as well would be a second writer for one fact.
+            workspace.selection = session.id
+            dismiss()
+        } label: {
+            HStack(alignment: .top, spacing: Theme.s3) {
+                AccountDot(session.account)
+                    .padding(.top, 3)
+                VStack(alignment: .leading, spacing: Theme.s1) {
+                    HStack(alignment: .firstTextBaseline, spacing: Theme.s3) {
+                        Text(session.name)
+                            .font(Theme.row)
+                            .lineLimit(1)
+                        Spacer(minLength: Theme.s3)
+                        if let ago = SessionTally.ago(session) {
+                            Text(ago)
+                                .font(Theme.label)
+                                .monospacedDigit()
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                    // The reply itself, one line of it. A list of session names
+                    // says which agents finished and nothing about whether any
+                    // of them needs you, which is the only question you opened
+                    // this to answer.
+                    Text(session.lastReply)
+                        .font(Theme.label)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .padding(.horizontal, Theme.s5)
+            .padding(.vertical, Theme.s3)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(HoverRow())
+        .help("\(session.subtitle) — open it")
     }
 }
 
@@ -368,13 +524,7 @@ private struct UsagePopover: View {
             }
 
             if let context = session.context, context.window > 0 {
-                let tint = ContextRing.tint(context.percent)
-                Meter(fraction: Double(context.used) / Double(context.window),
-                      tint: tint)
-                Legend(swatch: tint, name: "In context",
-                       value: SessionTally.compact(context.used))
-                Legend(swatch: Theme.rule, name: "Free space",
-                       value: SessionTally.compact(max(0, context.window - context.used)))
+                ContextBreakdown(context: context)
             } else {
                 Text("Nothing sent yet — the window is measured from the first reply.")
                     .font(Theme.note)
@@ -428,18 +578,103 @@ private struct UsagePopover: View {
 struct Meter: View {
     let fraction: Double
     var tint: Color = .accentColor
+    /// The parts of `fraction`, when there are parts worth naming.
+    ///
+    /// Empty is the ordinary case and draws one fill. Given segments, the bar
+    /// is laid out end to end instead — and `fraction` is then only used for
+    /// the animation, since the segments carry their own widths.
+    var segments: [Segment] = []
+
+    /// One band of a stacked bar: how much of the *whole* it takes, and its
+    /// shade. Not of the used portion — of the track — so the arithmetic is
+    /// the same either way and a segment can be read straight off a total.
+    struct Segment: Equatable {
+        var fraction: Double
+        var tint: Color
+    }
 
     var body: some View {
         GeometryReader { geometry in
             ZStack(alignment: .leading) {
                 Capsule().fill(Theme.rule)
-                Capsule()
-                    .fill(tint)
-                    .frame(width: max(2, geometry.size.width * min(max(fraction, 0), 1)))
+                if segments.isEmpty {
+                    Capsule()
+                        .fill(tint)
+                        .frame(width: max(2, geometry.size.width * clamp(fraction)))
+                } else {
+                    // Butted together rather than layered, so a translucent
+                    // band never has the one behind it showing through and
+                    // reading as a fourth colour nobody chose.
+                    HStack(spacing: 0) {
+                        ForEach(Array(segments.enumerated()), id: \.offset) { _, segment in
+                            Rectangle()
+                                .fill(segment.tint)
+                                .frame(width: geometry.size.width * clamp(segment.fraction))
+                        }
+                    }
+                    .clipShape(Capsule())
+                }
             }
         }
         .frame(height: 4)
         .animation(Motion.reveal, value: fraction)
+    }
+
+    private func clamp(_ value: Double) -> Double { min(max(value, 0), 1) }
+}
+
+/// The context window's bar and its legend, wherever it is read.
+///
+/// One view because there are two readers — the inspector's Usage section and
+/// the ring's popover — and they were already drawing the same three lines from
+/// two copies. A third of a copy is how a bar comes to be accent-blue in one
+/// place and red in the other, which this file has fixed once already.
+///
+/// **The split is drawn in one hue at three densities**, not in four colours.
+/// The colour of this bar is load-bearing: it is `ContextRing.tint`, the same
+/// green-amber-red the ring above it uses, and a reading at ninety per cent has
+/// to look like ninety per cent whether or not the agent broke its prompt down.
+/// Four unrelated hues would have said what the prompt is made of and stopped
+/// saying how close to full it is — trading the answer for the footnote.
+struct ContextBreakdown: View {
+    let context: ContextUsage
+
+    var body: some View {
+        let tint = ContextRing.tint(context.percent)
+        let window = Double(context.window)
+        VStack(alignment: .leading, spacing: Theme.s4) {
+            Meter(fraction: Double(context.used) / window,
+                  tint: tint,
+                  segments: context.hasSplit
+                      ? [.init(fraction: Double(context.cached) / window,
+                               tint: tint.opacity(0.35)),
+                         .init(fraction: Double(context.written) / window,
+                               tint: tint.opacity(0.65)),
+                         .init(fraction: Double(context.fresh) / window, tint: tint)]
+                      : [])
+
+            if context.hasSplit {
+                // Cheapest first, which is also left-to-right along the bar.
+                Legend(swatch: tint.opacity(0.35), name: "Cached",
+                       value: SessionTally.compact(context.cached))
+                    .help("Read back from the prompt cache, at a tenth of the price "
+                          + "of fresh input. On a long agentic turn this is nearly "
+                          + "all of it.")
+                Legend(swatch: tint.opacity(0.65), name: "Newly cached",
+                       value: SessionTally.compact(context.written))
+                    .help("Read now and stored, so the next call in this turn reads "
+                          + "it back cheaply.")
+                Legend(swatch: tint, name: "Fresh",
+                       value: SessionTally.compact(context.fresh))
+                    .help("Tokens the model had never seen, charged in full.")
+            } else {
+                Legend(swatch: tint, name: "In context",
+                       value: SessionTally.compact(context.used))
+            }
+
+            Legend(swatch: Theme.rule, name: "Free space",
+                   value: SessionTally.compact(max(0, context.window - context.used)))
+        }
     }
 }
 
@@ -498,6 +733,29 @@ struct StatRow: View {
 /// through edits, retries and a `/clear`. Built fresh where it is read — both
 /// readers are inside a popover or a panel that only redraws when it is open.
 struct SessionTally {
+
+    /// When something last happened in a session, in one or two characters.
+    ///
+    /// From the transcript's own stamps rather than a `lastActive` field,
+    /// because there isn't one and adding it would mean keeping a fourth
+    /// counter correct through edits, retries and a `/clear`. Nil for a session
+    /// that has never said anything, where "0m" would be a claim about a
+    /// conversation that hasn't started.
+    ///
+    /// Here rather than on the sidebar's row, which is where it was written and
+    /// was `private` to: the bell lists the same fact about sessions that row
+    /// isn't drawing.
+    static func ago(_ session: Session) -> String? {
+        guard let last = session.stamps.values.max() else { return nil }
+        let seconds = Int(Date().timeIntervalSince(last))
+        switch seconds {
+        case ..<60:      return "now"
+        case ..<3600:    return "\(seconds / 60)m"
+        case ..<86_400:  return "\(seconds / 3600)h"
+        default:         return "\(seconds / 86_400)d"
+        }
+    }
+
     var turns = 0
     var toolCalls = 0
     var elapsed: String?

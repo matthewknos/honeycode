@@ -657,6 +657,50 @@ struct ContextUsage: Equatable {
     var used: Int
     var window: Int
 
+    /// What `used` is made of, when the agent said.
+    ///
+    /// Claude reports its prompt in three figures and they mean different
+    /// things to whoever is paying: `cached` was read back from the cache at a
+    /// tenth of the price, `written` is being stored for next time, and `fresh`
+    /// is the only part the model has genuinely never seen. A session at 132k
+    /// that is 120k cached is a different situation from one that is 120k
+    /// fresh, and the single total says neither.
+    ///
+    /// Zero for an agent that doesn't split it — every ACP account — which is
+    /// what `hasSplit` is for. The readouts fall back to one bar there rather
+    /// than drawing three segments of nothing.
+    var fresh = 0
+    var written = 0
+    var cached = 0
+
+    /// Whether the parts are worth drawing.
+    ///
+    /// Tested on the sum rather than on `used`: a reading restored from a file
+    /// written before the split existed has a real `used` and three zeroes, and
+    /// must draw the plain bar, not a bar that is a hundred per cent free.
+    var hasSplit: Bool { fresh + written + cached > 0 }
+
+    /// Build one, holding it to the window it is measured against.
+    ///
+    /// The parts are scaled by whatever the total was scaled by, so three
+    /// segments still add up to the bar they sit in. Without that a clamped
+    /// reading draws a bar that is full and a legend that says half as much.
+    init(clamping used: Int, window: Int, fresh: Int = 0, written: Int = 0, cached: Int = 0) {
+        let scale = used > window && used > 0 ? Double(window) / Double(used) : 1
+        func share(_ part: Int) -> Int { Int((Double(part) * scale).rounded()) }
+        self.used = min(used, window)
+        self.window = window
+        self.fresh = share(fresh)
+        self.written = share(written)
+        self.cached = share(cached)
+    }
+
+    /// The plain one, for an agent that reports a total and nothing else.
+    init(used: Int, window: Int) {
+        self.used = used
+        self.window = window
+    }
+
     var percent: Int {
         window > 0 ? min(100, Int((Double(used) / Double(window) * 100).rounded())) : 0
     }
@@ -1121,7 +1165,10 @@ final class Session: ObservableObject, Identifiable {
             // as a meter reading 1,407%, and the first correct figure only
             // arrives after the next turn ends. A full window is the honest
             // reading of "more than a full window" in the meantime.
-            context = ContextUsage(used: min(used, window), window: window)
+            context = ContextUsage(clamping: used, window: window,
+                                   fresh: snapshot.contextFresh ?? 0,
+                                   written: snapshot.contextWritten ?? 0,
+                                   cached: snapshot.contextCached ?? 0)
         }
 
         // A transcript saved mid-turn can carry an unclosed reasoning block,
@@ -1149,6 +1196,8 @@ final class Session: ObservableObject, Identifiable {
                             items: items, todos: todos, costUSD: costUSD,
                             aiUnits: aiUnits, tokensSent: tokensSent,
                             contextUsed: context?.used, contextWindow: context?.window,
+                            contextFresh: context?.fresh, contextWritten: context?.written,
+                            contextCached: context?.cached,
                             stamps: stamps.isEmpty ? nil : stamps),
             for: id)
     }
@@ -1750,8 +1799,18 @@ final class Session: ObservableObject, Identifiable {
             if case .user = item { break }
             if case .assistant(_, let reply) = item { replies.append(reply) }
         }
-        guard !replies.isEmpty else { return }
-        noticeDevServer(in: replies.reversed().joined(separator: "\n"))
+        // The turn's own URL if it printed one, otherwise whatever we already
+        // had — which is the thing being revalidated. A turn that says nothing
+        // about servers is not a turn that stopped one.
+        let printed = replies.isEmpty ? nil
+            : DevServer.find(in: replies.reversed().joined(separator: "\n"))
+        let scraped = printed ?? devServer
+        guard let confirmed = DevServer.confirm(scraped, in: directory) else {
+            // Only reachable with nothing scraped and nothing observed, so
+            // there was never anything to show.
+            return
+        }
+        noticeDevServer(confirmed)
     }
 
     /// Watch command output for a dev server announcing itself.
@@ -2255,6 +2314,30 @@ final class Workspace: ObservableObject {
         // in that directory.
         RecentProjects.remember(directory)
         save()
+    }
+
+    /// Put an unstarted session on a different agent.
+    ///
+    /// A swap, not an assignment, and `Session.account` being `let` is the
+    /// reason rather than an obstacle in the way of one. The account decides
+    /// which CLI is launched, which conversation id means anything to it, which
+    /// model catalogue applies, and what is already written in this session's
+    /// file. Changing it in place is four coordinated migrations; changing it
+    /// before the first message is none, because there is nothing on either
+    /// side of the swap.
+    ///
+    /// So it is offered exactly there, and refuses everywhere else. Once a turn
+    /// has run, the agent is a fact about the conversation — start another one.
+    @discardableResult
+    func retarget(_ session: Session, to account: Account) -> Bool {
+        guard session.account != account, !session.hasStarted,
+              Account.enabled.contains(account) else { return false }
+        let directory = session.directory
+        // Removed first, so `add`'s duplicate-name walk doesn't have to step
+        // over the session it is replacing and hand back "Desktop 2".
+        remove(session)
+        add(account: account, directory: directory)
+        return true
     }
 
     func remove(_ session: Session) {

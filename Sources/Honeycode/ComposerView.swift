@@ -10,6 +10,12 @@ import AppKit
 struct ComposerView: View {
     @Binding var draft: String
     @ObservedObject var session: Session
+    /// Only for the agent swap in `ModelPicker`, and only the main window
+    /// passes it. Optional rather than an `@EnvironmentObject` because the
+    /// popped-out window and the mini chat host their own SwiftUI trees and
+    /// would crash reaching for one that was never injected — and swapping the
+    /// agent under a floating window is a strange thing to offer regardless.
+    var workspace: Workspace?
     /// Taller and more present when it's the only thing on screen.
     var prominent: Bool = false
     /// Matches the transcript's measure, so the two don't disagree.
@@ -474,7 +480,7 @@ struct ComposerView: View {
     private var rail: some View {
         HStack(spacing: Theme.s4) {
             folderChip
-            ModelPicker(session: session)
+            ModelPicker(session: session, workspace: workspace)
 
             Spacer(minLength: Theme.s4)
 

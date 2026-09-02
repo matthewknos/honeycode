@@ -1,14 +1,23 @@
 import SwiftUI
 
-/// Model and effort.
+/// Agent, model and effort.
 ///
 /// A popover rather than a system `Menu`. `Menu` can only render a flat string
 /// per row, so the model's one-line description had to be jammed into the
 /// title with an em dash, and the selected state came out as a leading icon
 /// instead of a trailing check. A popover costs a little more code and gets the
 /// two-line row, the trailing check, and control over spacing.
+///
+/// The agent section is at the top and is usually not there at all. It appears
+/// only on a session nobody has sent a message in, because that is the only
+/// place changing it is free — see `Workspace.retarget`. It is at the *top*
+/// because it is the wider decision: which agent you are talking to decides
+/// which models the list underneath it can even offer.
 struct ModelPicker: View {
     @ObservedObject var session: Session
+    /// Needed only to swap agents, which is why it is optional — a picker with
+    /// no workspace is a model picker, which is what this was.
+    var workspace: Workspace?
     @State private var showing = false
     /// Which row's effort popout is open, if any.
     @State private var effortFor: AgentModel?
@@ -21,9 +30,28 @@ struct ModelPicker: View {
 
     private var showsEffort: Bool { session.account.hasEffort }
 
+    /// Whether the agent is still a decision rather than a fact.
+    private var showsAgents: Bool {
+        workspace != nil && !session.hasStarted && Account.enabled.count > 1
+    }
+
     var body: some View {
         Button { showing.toggle() } label: {
             HStack(spacing: Theme.s2 - 1) {
+                // The agent's name only while it can still be changed.
+                //
+                // A chip that named it always would be a third copy — the
+                // status strip and the inspector both say it — and a chip that
+                // never named it would leave the one moment it *is* actionable
+                // looking like a model picker. So it says what is still open,
+                // and stops once the first message has settled it.
+                if showsAgents {
+                    Text(session.account.agentName)
+                        .font(Theme.label)
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                        .layoutPriority(1)
+                }
                 Text(session.model.title)
                     .font(Theme.label)
                     .foregroundStyle(.secondary)
@@ -42,7 +70,8 @@ struct ModelPicker: View {
             .fixedSize(horizontal: true, vertical: false)
         }
         .buttonStyle(HoverCapsule())
-        .help(showsEffort ? "Model and effort" : "Model")
+        .animation(Motion.reveal, value: showsAgents)
+        .help(helpText)
         .popover(isPresented: $showing, arrowEdge: .bottom) {
             content
         }
@@ -53,6 +82,12 @@ struct ModelPicker: View {
         .onChange(of: showing) { _, open in
             if !open { effortFor = nil; hover = HoverPolicy() }
         }
+    }
+
+    private var helpText: String {
+        let tail = showsEffort ? "model and effort" : "model"
+        return showsAgents ? "Agent, \(tail) — nothing has been sent yet"
+                           : tail.prefix(1).uppercased() + tail.dropFirst()
     }
 
     /// Models in wire order, grouped by vendor without resorting them — the
@@ -82,6 +117,23 @@ struct ModelPicker: View {
     /// keeps a single meaning and the pointer does the rest.
     private var content: some View {
         VStack(alignment: .leading, spacing: 0) {
+            if showsAgents {
+                PopoverHeader("AGENT", top: 0)
+                ForEach(Account.enabled) { account in
+                    PopoverRow(title: account.title,
+                               blurb: account.agentName,
+                               selected: session.account == account) {
+                        showing = false
+                        // Last, because it replaces the session this view is
+                        // observing — anything touching `session` after it is
+                        // reading a conversation that has been retired.
+                        workspace?.retarget(session, to: account)
+                    }
+                }
+                Divider().overlay(Theme.rule).padding(.vertical, Theme.s3)
+                PopoverHeader("MODEL", top: 0)
+            }
+
             // Twenty models is taller than any screen wants a popover to be, so
             // the list scrolls.
             ScrollView {

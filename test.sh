@@ -97,6 +97,7 @@ kit Teams
 kit Changes
 kit Setup
 kit Usage
+kit Ports
 kit Policy
 
 # The terminal client's own logic: what Tab offers, what a slash command parses

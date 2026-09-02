@@ -421,6 +421,25 @@ that isn't the conversation: the folder, repository, branch, account and model;
 the agent's current plan; the files it has changed; what it has spent; and
 whether its CLI is actually signed in.
 
+Its **Usage** bar is drawn in three parts where the agent reports them —
+*cached*, *newly cached* and *fresh*. That split is most of what a session
+costs: the same 132k window is a few pence when it is cache reads and several
+pounds when it is fresh input, and one bar said neither. It is one hue at three
+densities rather than three colours, because the colour is already carrying the
+green-amber-red of how full the window is, and that is the more urgent fact.
+
+Its **Ports** section lists what is actually listening in the session's folder,
+read from the process table rather than from anything the agent said — so it
+finds a server that was started detached or never printed a URL, and it stops
+showing one that has died. An amber dot means the server bound every interface
+rather than loopback, which is the difference between you being able to reach it
+and everyone on your network being able to. Each row can open the port in
+Preview or stop the process.
+
+A **bell** in the title bar collects turns that finished in a session you
+weren't looking at, with the first line of each reply. It is not a log — opening
+a session takes it off the list, because that is what the flag behind it means.
+
 Along the foot, a **status strip** repeats the state, the folder, the branch and
 the file count where they can never be squeezed out by a narrow pane. It does
 not repeat the context percentage — that is the ring in the title bar, which is
@@ -542,6 +561,14 @@ A colon after any handle:
 Effort is `low · medium · high · xhigh · max`, and is a Claude concept only — ACP
 has no equivalent, so the control isn't offered where it would be wired to
 nothing. A choice sticks for the session and becomes that account's default.
+
+The composer's chip picks both. On a session where nothing has been sent yet it
+also picks the **agent** — the chip names it, and the popover puts the accounts
+above the models, because which agent you are talking to decides which models
+the list can offer at all. It stops offering that after the first message, and
+that is deliberate rather than an omission: a session belongs to an account, so
+switching is a swap rather than an edit, and a swap only costs nothing while
+there is nothing to lose.
 
 ```sh
 ai --models [account]     what's on offer, from a shell

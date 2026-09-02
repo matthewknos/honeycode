@@ -307,7 +307,12 @@ struct CodeBlock: View {
                 // Same reason as the diff gutter: wrapped lines must keep
                 // their number aligned to the first visual row.
                 HStack(alignment: .firstTextBaseline, spacing: 0) {
-                    Text("\(index + 1)")
+                    // `String(...)`, the way the diff gutter three files over
+                    // already does it. Interpolated into a `Text` this is a
+                    // `LocalizedStringKey`, which group-separates: line 1000 of
+                    // a long file drew as "1,000", in a gutter sized for four
+                    // characters, so it truncated as well as lying.
+                    Text(String(index + 1))
                         .font(.system(size: Theme.t1 * scale, design: .monospaced))
                         .monospacedDigit()
                         .foregroundStyle(.tertiary)

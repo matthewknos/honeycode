@@ -331,7 +331,7 @@ private struct SessionRow: View {
             Text(session.directory.lastPathComponent)
                 .lineLimit(1)
                 .truncationMode(.middle)
-            if let ago = SessionRow.ago(session) {
+            if let ago = SessionTally.ago(session) {
                 Text("·")
                     .foregroundStyle(.quaternary)
                 Text(ago)
@@ -341,24 +341,6 @@ private struct SessionRow: View {
         }
         .font(Theme.caption)
         .foregroundStyle(.tertiary)
-    }
-
-    /// When something last happened here, in one or two characters.
-    ///
-    /// From the transcript's own stamps rather than a `lastActive` field,
-    /// because there isn't one and adding it would mean keeping a fourth
-    /// counter correct through edits, retries and a `/clear`. Nil for a session
-    /// that has never said anything, where "0m" would be a claim about a
-    /// conversation that hasn't started.
-    static func ago(_ session: Session) -> String? {
-        guard let last = session.stamps.values.max() else { return nil }
-        let seconds = Int(Date().timeIntervalSince(last))
-        switch seconds {
-        case ..<60:      return "now"
-        case ..<3600:    return "\(seconds / 60)m"
-        case ..<86_400:  return "\(seconds / 3600)h"
-        default:         return "\(seconds / 86_400)d"
-        }
     }
 
     private var moreButton: some View {

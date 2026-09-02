@@ -941,7 +941,8 @@ struct SessionView: View {
     private func composer(prominent: Bool = false) -> some View {
         // Nothing to match any more: the transcript's scroller is off, so
         // neither side reserves width for one and both centre in the full pane.
-        ComposerView(draft: $draft, session: session, prominent: prominent,
+        ComposerView(draft: $draft, session: session, workspace: workspace,
+                     prominent: prominent,
                      width: CGFloat(readingWidth),
                      terminal: terminal && !prominent,
                      onFocused: { workspace.selection = session.id }) { text in

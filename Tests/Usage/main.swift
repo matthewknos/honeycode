@@ -194,5 +194,42 @@ if let data = try? JSONEncoder().encode(measured),
     check("a reading round-trips through JSON", false)
 }
 
+// --- what the context window is made of ---
+//
+// Claude reports its prompt in three figures and Honeycode used to add them up
+// and drop the split. The ratio between them is the whole of what a session
+// costs — 132k of cache reads and 132k of fresh input are the same bar and a
+// tenfold difference in the bill — so the parts are kept, and kept *coherent*:
+// three segments that don't add up to the bar they sit in would be worse than
+// no segments at all.
+
+let split = ContextUsage(clamping: 30_000, window: 200_000,
+                         fresh: 5_000, written: 5_000, cached: 20_000)
+check("a reported split is kept", split.hasSplit)
+check("and adds up to the total it belongs to",
+      split.fresh + split.written + split.cached == split.used)
+
+let plain = ContextUsage(used: 30_000, window: 200_000)
+check("an agent that reports no split says so", !plain.hasSplit)
+check("which is not the same as reporting nothing", plain.used == 30_000)
+
+// The clamp exists because sessions written before the occupancy fix hold a
+// turn total rather than a prompt size — one recorded 14,071,235 against a
+// 1,000,000 window. The parts have to be scaled by whatever the total was, or
+// a bar pinned at full sits above a legend claiming a fourteenth of it.
+let overflowing = ContextUsage(clamping: 400_000, window: 200_000,
+                               fresh: 100_000, written: 100_000, cached: 200_000)
+check("an over-full reading is held to the window", overflowing.used == 200_000)
+check("and its parts are scaled to match, not left behind",
+      overflowing.fresh + overflowing.written + overflowing.cached == 200_000)
+check("keeping their proportions", overflowing.cached == 100_000)
+
+// A file written before the split existed decodes with three nils, and must
+// draw the one-bar reading rather than a bar that is a hundred per cent free.
+let restored = ContextUsage(clamping: 30_000, window: 200_000,
+                            fresh: 0, written: 0, cached: 0)
+check("a reading from before the split draws as one bar", !restored.hasSplit)
+check("with its total intact", restored.used == 30_000)
+
 print(failures == 0 ? "Usage: all good" : "Usage: \(failures) failed")
 exit(failures == 0 ? 0 : 1)

@@ -27,6 +27,13 @@ struct SessionSnapshot: Codable, Sendable {
     var tokensSent: Int?
     var contextUsed: Int?
     var contextWindow: Int?
+    /// The three parts of `contextUsed` — see `ContextUsage`. Optional for the
+    /// same reason everything else here is: a file written before the split
+    /// existed has to keep decoding, and it restores as "no split", which is
+    /// the truth about it.
+    var contextFresh: Int?
+    var contextWritten: Int?
+    var contextCached: Int?
     /// When each turn began, keyed by the id of the message that started it.
     ///
     /// A side table rather than a field on `TranscriptItem`, and deliberately:

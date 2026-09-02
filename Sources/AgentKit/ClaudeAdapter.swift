@@ -160,7 +160,24 @@ final class ClaudeAdapter: AgentAdapter {
     /// falls as well as rises: a compaction is precisely the moment the number
     /// should drop, and a session-wide maximum would hold the pre-compaction
     /// figure for the rest of the conversation.
-    private var lastPromptTokens = 0
+    /// The largest single prompt this turn has sent, and what it was made of.
+    ///
+    /// Kept whole rather than as three running maxima: the split has to stay
+    /// coherent with the total it belongs to, and component-wise maxima taken
+    /// across different API calls would sum to a number no call ever sent.
+    private var lastPrompt = Prompt()
+
+    /// One API call's prompt, split the way the stream reports it.
+    private struct Prompt {
+        /// `input_tokens` — never seen before, and charged in full.
+        var fresh = 0
+        /// `cache_creation_input_tokens` — read now, stored for next time.
+        var written = 0
+        /// `cache_read_input_tokens` — read back from the cache, at a tenth
+        /// of the price. On a long agentic turn this is nearly all of it.
+        var cached = 0
+        var total: Int { fresh + written + cached }
+    }
     /// Whether a turn is open on the wire — set when one is written, cleared by
     /// the `result` frame that ends it. See `send`.
     private var turnInFlight = false
@@ -470,7 +487,7 @@ final class ClaudeAdapter: AgentAdapter {
 
     private func write(_ text: String) {
         pendingTurn = text
-        lastPromptTokens = 0
+        lastPrompt = Prompt()
         guard startIfNeeded() else { return }
         DispatchQueue.main.async { self.session.isRunning = true }
 
@@ -613,8 +630,8 @@ final class ClaudeAdapter: AgentAdapter {
 
             // Occupancy is read here, per API call — not from the `result`
             // frame, which totals them. See `promptTokens`.
-            if let used = Self.promptTokens(message["usage"]) {
-                lastPromptTokens = max(lastPromptTokens, used)
+            if let prompt = Self.prompt(message["usage"]), prompt.total > lastPrompt.total {
+                lastPrompt = prompt
             }
             for block in content where block["type"] as? String == "tool_use" {
                 let name = block["name"] as? String ?? "Tool"
@@ -718,9 +735,13 @@ final class ClaudeAdapter: AgentAdapter {
 
             // How full the window is: the largest prompt any single call in
             // this turn sent, against the window the result frame names.
-            let used = lastPromptTokens
+            let prompt = lastPrompt
             let context = Self.window(json).flatMap { window in
-                used > 0 ? ContextUsage(used: min(used, window), window: window) : nil
+                prompt.total > 0
+                    ? ContextUsage(clamping: prompt.total, window: window,
+                                   fresh: prompt.fresh, written: prompt.written,
+                                   cached: prompt.cached)
+                    : nil
             }
 
             pendingTurn = nil
@@ -795,17 +816,20 @@ final class ClaudeAdapter: AgentAdapter {
         onMain { self.session.append(item) }
     }
 
-    /// The prompt size of a single API call.
+    /// The prompt of a single API call, kept in its three parts.
     ///
     /// The three input figures together *are* the prompt — fresh tokens, tokens
     /// written to cache, and tokens read back from it — so their sum is what
-    /// the model was holding for that one call.
-    private static func promptTokens(_ raw: Any?) -> Int? {
+    /// the model was holding for that one call. They are kept apart as well as
+    /// added up because the ratio between them is the whole of what a session
+    /// costs: the same 132k window is a few pence when it is cache reads and
+    /// several pounds when it is fresh input.
+    private static func prompt(_ raw: Any?) -> Prompt? {
         guard let usage = raw as? [String: Any] else { return nil }
-        let used = (usage["input_tokens"] as? Int ?? 0)
-            + (usage["cache_creation_input_tokens"] as? Int ?? 0)
-            + (usage["cache_read_input_tokens"] as? Int ?? 0)
-        return used > 0 ? used : nil
+        let prompt = Prompt(fresh: usage["input_tokens"] as? Int ?? 0,
+                            written: usage["cache_creation_input_tokens"] as? Int ?? 0,
+                            cached: usage["cache_read_input_tokens"] as? Int ?? 0)
+        return prompt.total > 0 ? prompt : nil
     }
 
     /// Context occupancy for the turn that just ended.

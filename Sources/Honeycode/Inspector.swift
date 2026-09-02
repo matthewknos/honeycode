@@ -38,6 +38,7 @@ struct Inspector: View {
                     WorkspaceSection(session: session, reading: repo.reading(for: session.directory))
                     PlanSection(session: session)
                     ChangedFilesSection(session: session)
+                    PortsSection(session: session)
                     UsageSection(session: session, usage: usage)
                     ChecksSection(session: session,
                                   reading: repo.reading(for: session.directory))
@@ -360,6 +361,147 @@ private struct ChangedFilesSection: View {
     }
 }
 
+// MARK: - Ports
+
+/// What this session actually has listening.
+///
+/// The rest of the inspector reports things the agent told us. This one reports
+/// something nobody told us: it reads the process table, so it sees a server
+/// that was never announced — started detached, in a background shell, or by a
+/// tool that logged somewhere we never captured — and it stops showing one that
+/// has died. See `Listeners`, which also explains why per-session is the only
+/// scope that can be honest without admin.
+///
+/// Closed by default, like Checks. Most sessions have nothing listening and a
+/// section that is empty four days out of five should not be occupying the
+/// panel; the count in the header is the whole story when there is one.
+private struct PortsSection: View {
+    @ObservedObject var session: Session
+    @State private var ports: [Listeners.Listener] = []
+    @State private var stopping: Listeners.Listener?
+
+    var body: some View {
+        InspectorSection("Ports", symbol: "network",
+                         trailing: ports.isEmpty ? nil : "\(ports.count)",
+                         openByDefault: false) {
+            VStack(alignment: .leading, spacing: Theme.s3) {
+                if ports.isEmpty {
+                    Text("Nothing listening in this folder.")
+                        .font(Theme.note)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    ForEach(ports) { port in
+                        row(port)
+                    }
+                }
+            }
+            // A full walk of the process table measured 2ms for 792 processes,
+            // which is why this can just re-read rather than cache and
+            // invalidate. Only while the section is open — a closed one runs
+            // nothing at all, the same bargain the Checks section makes.
+            .task(id: session.id) { await watch() }
+        }
+        // Refreshed on the way out of a turn as well, because that is when a
+        // server most often appears or dies, and the count in the collapsed
+        // header should be right without opening anything.
+        .onChange(of: session.isRunning) { _, _ in ports = Listeners.inside(session.directory) }
+        .onAppear { ports = Listeners.inside(session.directory) }
+    }
+
+    /// Re-read while the section is on screen. Cancelled with the view.
+    private func watch() async {
+        while !Task.isCancelled {
+            let directory = session.directory
+            let found = await Task.detached(priority: .utility) {
+                Listeners.inside(directory)
+            }.value
+            if found != ports { ports = found }
+            try? await Task.sleep(for: .seconds(3))
+        }
+    }
+
+    private func row(_ port: Listeners.Listener) -> some View {
+        HStack(spacing: Theme.s3) {
+            // The exposure, as the state palette already reads elsewhere: a
+            // server on loopback is fine, one on every interface is a thing
+            // somebody should have decided on purpose.
+            Circle()
+                .fill(port.exposure.isExposed ? Theme.stateHeld : Theme.stateDone)
+                .frame(width: Theme.dot, height: Theme.dot)
+
+            // `String(...)`, not `"\(port.port)"`. An interpolated integer in
+            // a `Text` makes a `LocalizedStringKey`, which formats it for the
+            // locale — and rendered 8731 as "8,731", a port number nobody has
+            // ever typed with a comma in it.
+            Text(String(port.port))
+                .font(Theme.row)
+                .monospacedDigit()
+
+            Text(port.process)
+                .font(Theme.label)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+
+            Spacer(minLength: Theme.s3)
+
+            if port.exposure.isExposed {
+                Text(port.exposure.title)
+                    .font(Theme.label)
+                    .foregroundStyle(Theme.stateHeld)
+            }
+
+            if let url = port.url {
+                Button {
+                    session.browserURL = url
+                    session.browserURLIsManual = true
+                    session.paneTab = .preview
+                } label: {
+                    Image(systemName: "arrow.up.right.square")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 18, height: 18)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(HoverCapsule())
+                .help("Open \(url.absoluteString) in Preview")
+            }
+
+            // Two presses, because this ends somebody's process and there is no
+            // undo. The second one is the same button saying what it will do,
+            // which is cheaper to understand than a dialog and impossible to
+            // dismiss by reflex.
+            Button {
+                if stopping == port {
+                    Listeners.stop(port)
+                    stopping = nil
+                    ports.removeAll { $0.id == port.id }
+                } else {
+                    stopping = port
+                }
+            } label: {
+                Image(systemName: stopping == port ? "exclamationmark.octagon.fill" : "stop.circle")
+                    .font(.system(size: 10))
+                    .foregroundStyle(stopping == port
+                                     ? AnyShapeStyle(Theme.stateBad)
+                                     : AnyShapeStyle(.secondary))
+                    .frame(width: 18, height: 18)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(HoverCapsule())
+            .help(stopping == port
+                  ? "Press again to stop \(port.process) (pid \(port.pid))"
+                  : "Stop \(port.process) (pid \(port.pid))")
+        }
+        .animation(Motion.reveal, value: stopping)
+        .help(port.exposure.isExposed
+              ? "\(port.address):\(port.port) — bound to every interface, so anything "
+                + "on your network can reach it"
+              : "\(port.address):\(port.port) — this Mac only")
+    }
+}
+
 // MARK: - Usage
 
 private struct UsageSection: View {
@@ -376,17 +518,12 @@ private struct UsageSection: View {
             let tally = SessionTally(session)
             VStack(alignment: .leading, spacing: Theme.s4) {
                 if let context = session.context, context.window > 0 {
-                    // The ring in the title bar is drawing this number too, and
+                    // The same view the ring's popover draws — see
+                    // `ContextBreakdown`. It was two copies of these lines, and
                     // a bar that stayed accent-blue at a hundred per cent while
                     // the ring above it went red was two readouts of one fact
                     // disagreeing about how bad it is.
-                    let tint = ContextRing.tint(context.percent)
-                    Meter(fraction: Double(context.used) / Double(context.window),
-                          tint: tint)
-                    Legend(swatch: tint, name: "In context",
-                           value: SessionTally.compact(context.used))
-                    Legend(swatch: Theme.rule, name: "Free space",
-                           value: SessionTally.compact(max(0, context.window - context.used)))
+                    ContextBreakdown(context: context)
                     Divider().overlay(Theme.rule).padding(.vertical, Theme.s1)
                 }
 

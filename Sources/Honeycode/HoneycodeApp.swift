@@ -182,12 +182,6 @@ struct HoneycodeApp: App {
                         .keyboardShortcut(option.shortcut, modifiers: [.command, .option])
                 }
                 Divider()
-                // In the menu that already holds what the window is showing,
-                // rather than in Settings: this is a switch you flip while
-                // looking at the thing it changes, not one you open a settings
-                // pane to find.
-                UsageRailToggle()
-                Divider()
             }
 
             // Nothing in this app is a document, so the stock New/Open/Save

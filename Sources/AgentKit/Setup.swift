@@ -36,8 +36,6 @@ enum Feature: String, CaseIterable, Identifiable, Sendable {
     case preview
     /// A banner when a turn finishes in a session you aren't looking at.
     case notifications
-    /// A floating panel showing what every subscription has left.
-    case usageRail
 
     var id: String { rawValue }
 
@@ -63,7 +61,7 @@ enum Feature: String, CaseIterable, Identifiable, Sendable {
     var group: Group {
         switch self {
         case .git, .gitHub, .azure: return .tools
-        case .crew, .agents, .preview, .notifications, .usageRail:
+        case .crew, .agents, .preview, .notifications:
             return .window
         }
     }
@@ -77,7 +75,6 @@ enum Feature: String, CaseIterable, Identifiable, Sendable {
         case .agents:        return "Agents"
         case .preview:       return "Preview"
         case .notifications: return "Notifications"
-        case .usageRail:     return "Usage rail"
         }
     }
 
@@ -106,10 +103,6 @@ enum Feature: String, CaseIterable, Identifiable, Sendable {
         case .notifications:
             return "A banner when a turn finishes in a session you aren't looking "
                  + "at. Never for the one in front of you."
-        case .usageRail:
-            return "A ring for each subscription, floating at the edge of the "
-                 + "screen over whatever you are doing, showing how much of "
-                 + "each allowance is left. Starts off."
         }
     }
 
@@ -145,21 +138,13 @@ enum Feature: String, CaseIterable, Identifiable, Sendable {
     /// with no `az` should not open with an Azure row saying `az` isn't
     /// installed, because nobody asked it about Azure.
     ///
-    /// Notifications are an exception and are off until asked for. Switching
+    /// Notifications are the exception and are off until asked for. Switching
     /// them on is what triggers the system's permission prompt, and a prompt
     /// that arrives in the first four seconds of an app's life — before there
     /// is anything to be notified about — is the one people deny out of hand.
-    ///
-    /// The usage rail is the other one, for a different reason — see below.
     var initialValue: Bool {
         switch self {
         case .notifications: return false
-        // Off, and not because it is expensive. It is a window that floats over
-        // every other application on every Space — the most intrusive surface
-        // this app has — and a thing that behaves like that has to be asked
-        // for. The same rings are in the Crew pane, where they cost nobody
-        // anything to ignore, which is where somebody meets them first.
-        case .usageRail:     return false
         default:             return isAvailable
         }
     }

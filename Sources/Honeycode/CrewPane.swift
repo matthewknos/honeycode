@@ -178,17 +178,16 @@ struct CrewPane: View {
         .help(state.remedy ?? "\(account.title) — ready")
     }
 
-    /// The same rings the floating rail draws, in the pane that is about
-    /// exactly this question.
+    /// Every subscription's allowance, in the pane that is about exactly this
+    /// question.
     ///
-    /// Here as well as in the rail rather than instead of it, and the split is
-    /// deliberate. The rail floats over every other application and has to be
-    /// asked for; this costs nothing to ignore and is where somebody meets the
-    /// rings first, standing in front of the one screen in the app whose stated
-    /// job is "what have I got". A feature only reachable by finding a switch
-    /// in a menu is a feature most people never learn exists — which is the
-    /// same note `CrewPane` already makes about the check setting that lived
-    /// only inside a popover inside a composer.
+    /// The only place these are drawn. There was a second: a panel of the same
+    /// rings floating over every other application on every Space, switched on
+    /// from the View menu. It went because of what it cost to be useful — the
+    /// most intrusive surface in the app, present all day, to answer a question
+    /// you ask a few times a week. Here it costs nothing to ignore, and you are
+    /// already standing in front of the one screen whose stated job is "what
+    /// have I got".
     private var allowances: some View {
         HStack(alignment: .top, spacing: Theme.s7) {
             ForEach(Account.enabled) { account in

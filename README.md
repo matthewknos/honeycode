@@ -214,7 +214,6 @@ greying them out:
 | **Agents** | the Agents half of the sidebar |
 | **Preview** | the workbench's browser |
 | **Notifications** | a banner when a turn finishes somewhere you aren't looking |
-| **Usage rail** | a ring per subscription, floating at the edge of the screen — starts off |
 
 Notifications start **off**, and switching them on is what raises the system's
 permission dialog — rather than raising it four seconds into a first launch,
@@ -597,13 +596,11 @@ than where trouble starts: green under 40%, amber to 70%, red past it. At ninety
 per cent of a five-hour window the decision it would have informed — give this
 piece to a different subscription — is already behind you.
 
-There are two places to read it. The **Crew** pane carries a row of rings above
-the seats, which costs nothing to ignore. **View ▸ Usage Rail** puts the same
-rings in a panel that floats over every other application, on every Space,
-where you can see them while you work in something else — hover one for the
-full breakdown, drag it anywhere, and it remembers where you put it. That one
-starts **off**: it is the most intrusive surface in the app and has to be asked
-for.
+The **Crew** pane carries a row of rings above the seats — one per
+subscription, the arc showing how much of the binding window is gone and the
+dot in the middle saying which account it is. It is the one screen whose stated
+job is "what have I got", so it is where the question gets asked. The session
+you are in reports its own share in the **inspector**, under Usage.
 
 ### What a crew actually does
 

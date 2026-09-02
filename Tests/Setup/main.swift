@@ -115,24 +115,25 @@ Features.set(.preview, false)
 
 // --- a default that is off rather than detected ---
 //
-// Every other default answers "is the tool here". The usage rail answers
-// "should a window that floats over every other application appear before
-// somebody asked for one", which nothing on disk can be asked about — so it is
-// written down, and it is the one default that would silently stop being
-// checked if somebody folded it back into `isAvailable`.
+// Every other default answers "is the tool here". Notifications answer "should
+// the system's permission dialog be raised before anybody asked for it", which
+// nothing on disk can be consulted about — so it is written down, and it is now
+// the only default that would silently stop being checked if somebody folded it
+// back into `isAvailable`.
 
-check("the rail is a window feature, not a tool", Feature.usageRail.group == .window)
-check("and it starts off", Feature.usageRail.initialValue == false)
+check("notifications are a window feature, not a tool",
+      Feature.notifications.group == .window)
+check("and they start off", Feature.notifications.initialValue == false)
 
 check("a fresh install writes that decision down", {
-    let fresh = "com.matthewquigley.honeycode.tests.usagerail"
+    let fresh = "com.matthewquigley.honeycode.tests.notifications"
     let store = UserDefaults(suiteName: fresh)!
     store.removePersistentDomain(forName: fresh)
     let previous = Setup.store
     Setup.store = store
     defer { Setup.store = previous; store.removePersistentDomain(forName: fresh) }
     Setup.seedDefaults()
-    return store.object(forKey: Setup.featureKey(.usageRail)) as? Bool == false
+    return store.object(forKey: Setup.featureKey(.notifications)) as? Bool == false
 }())
 
 print(failures == 0 ? "Setup: all ok" : "Setup: \(failures) failed")

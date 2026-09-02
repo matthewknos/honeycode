@@ -2,8 +2,8 @@
 //
 // The parser is the whole of this suite, and it is worth a suite because of
 // what it replaced: two hardcoded Claude sentences, matched by two bespoke
-// regexes, with every other vendor's answer read and thrown away. The rail
-// draws whatever comes out of here, so a shape it silently fails to match is
+// regexes, with every other vendor's answer read and thrown away. The rings
+// draw whatever comes out of here, so a shape they silently fail to match is
 // a subscription that reads as having no limits at all — which is the one
 // wrong answer that looks exactly like good news.
 //
@@ -178,8 +178,8 @@ check("an empty reading says so rather than showing 0%",
 
 // --- it survives the round trip to disk ---
 //
-// The rail reads the last known figure out of preferences at launch, so a type
-// that encodes but doesn't decode would show an empty panel on every cold
+// The rings read the last known figure out of preferences at launch, so a type
+// that encodes but doesn't decode would show an empty row on every cold
 // start and fill in a minute later — by which time you have looked once, seen
 // nothing, and stopped looking.
 

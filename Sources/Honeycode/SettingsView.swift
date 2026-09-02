@@ -614,8 +614,8 @@ private struct UsageAccountRow: View {
                     : .unparsed(Self.excerpt(output))
                 return
             }
-            // Read back, so what is confirmed is what the rail will draw rather
-            // than a second opinion formed here.
+            // Read back, so what is confirmed is what the Crew pane will draw
+            // rather than a second opinion formed here.
             UsageStore.shared.refresh(account, force: true)
             outcome = .found("Found " + reading.windows
                 .map { "\($0.title) \($0.percent)%" }

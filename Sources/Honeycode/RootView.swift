@@ -24,16 +24,6 @@ struct RootView: View {
     /// means popovers drawing dark text on light material.
     @Binding var appearance: HoneycodeApp.Appearance
 
-    /// Whether the floating usage rail is meant to be up.
-    ///
-    /// Read rather than owned: the value belongs to `Features`, and this is a
-    /// wrapper watching the same key so a change made in the View menu or in
-    /// the Features pane arrives here as a redraw. `UsageRailWindow` is
-    /// reconciled from it — see `onChange` below — which is the same shape
-    /// `poppedOut` uses for the other floating window.
-    @AppStorage(Setup.featureKey(.usageRail), store: Setup.store)
-    private var usageRailOn = Feature.usageRail.initialValue
-
     /// Which half of the app the sidebar is showing.
     ///
     /// The pill switches the *sidebar*, not the app: the window, the pane and
@@ -222,15 +212,8 @@ struct RootView: View {
         // menu bar, a restored arrangement at launch — goes through one path.
         .onAppear {
             PopOut.shared.sync(workspace: workspace, background: background)
-            UsageRailWindow.shared.sync()
             if Setup.needsRun { workspace.showingSetup = true }
         }
-        // The rail is reconciled from its own switch, the way the popped-out
-        // window is reconciled from `poppedOut`. Watched through `@AppStorage`
-        // rather than handed a callback, because the switch has two faces —
-        // the View menu and the Features pane — and neither should have to know
-        // a window exists.
-        .onChange(of: usageRailOn) { _, _ in UsageRailWindow.shared.sync() }
         // Asked for by the Features pane. Still a notification rather than a
         // direct write: `FeatureSettings` is a private view several levels down
         // and has no business holding the workspace to set one flag. What it no

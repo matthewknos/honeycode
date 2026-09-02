@@ -83,8 +83,8 @@ enum UsagePressure: String, Sendable, Codable, CaseIterable {
 /// gauge gets trusted for something it cannot do.
 struct AccountUsage: Equatable, Sendable, Codable {
     var windows: [UsageWindow] = []
-    /// When this reading was taken. A rail that is on screen all day has to be
-    /// able to say "as of 11:04" rather than implying it is live.
+    /// When this reading was taken. A readout has to be able to say "as of
+    /// 11:04" rather than implying it is live.
     var measuredAt = Date()
     var source: Source = .reported
 
@@ -412,9 +412,9 @@ final class UsageStore: ObservableObject {
     /// where the agent reports, measured where it doesn't, nil where there is
     /// nothing honest to draw.
     ///
-    /// One function so the rail, the crew pane and the header cannot disagree
-    /// about which of the three cases they are in. They previously each wrote
-    /// their own ladder of `if let`s, in three different orders.
+    /// One function so the crew pane, the inspector and the composer cannot
+    /// disagree about which of the three cases they are in. They previously
+    /// each wrote their own ladder of `if let`s, in three different orders.
     func reading(for account: Account) -> AccountUsage? {
         if let reported = usage[account], !reported.windows.isEmpty { return reported }
         guard let cap = capUsage(account), cap.spent > 0 else { return nil }
@@ -429,7 +429,7 @@ final class UsageStore: ObservableObject {
 
     // MARK: Remembering the last reading
 
-    /// So a rail that is on screen at launch has something in it.
+    /// So a readout that is on screen at launch has something in it.
     ///
     /// The readings were in memory only, which for a readout inside a session
     /// was survivable — you were about to run a turn, and a turn refreshes it.
@@ -476,7 +476,7 @@ final class UsageStore: ObservableObject {
     /// publishes its limits somewhere this app cannot guess — OpenAI's Codex
     /// being the one that prompted this — and guessing is worse than not
     /// guessing. A parser written against an invented format does not fail
-    /// loudly; it matches nothing, and the rail draws a dash forever, which
+    /// loudly; it matches nothing, and the ring draws a dash forever, which
     /// reads as "this plan has no limits" rather than as "nobody asked
     /// properly".
     ///
@@ -515,8 +515,8 @@ final class UsageStore: ObservableObject {
         //
         // No `objectWillChange` here, unlike `setCap`: nothing on screen draws
         // the command except the field that owns it, and this is written on
-        // every keystroke — publishing each one would redraw the rail and the
-        // crew pane while somebody types a shell command.
+        // every keystroke — publishing each one would redraw the crew pane
+        // and the inspector while somebody types a shell command.
         lastChecked[account] = nil
     }
 
@@ -617,9 +617,9 @@ final class UsageStore: ObservableObject {
 
     /// Every account that can answer, asked at once.
     ///
-    /// What the rail calls. The per-account floors still apply, so a panel that
-    /// is open all day costs one process per account per `minimumInterval` and
-    /// a panel nobody has opened costs nothing at all.
+    /// What the Crew pane calls on the way in. The per-account floors still
+    /// apply, so opening it repeatedly costs at most one process per account
+    /// per `minimumInterval`, and never opening it costs nothing at all.
     func refreshAll() {
         for account in Account.enabled { refresh(account) }
     }

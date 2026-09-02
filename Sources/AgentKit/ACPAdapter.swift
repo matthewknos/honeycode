@@ -685,7 +685,7 @@ final class ACPAdapter: AgentAdapter {
                 // Only here, and deliberately not under `.context`. Kimi
                 // answers `/usage` with its context window — a percentage, in
                 // the same shape, meaning something completely different — and
-                // ingesting that would put a ring on the rail claiming a
+                // ingesting that would put up a ring claiming a
                 // subscription was two-thirds spent when what was two-thirds
                 // full was one conversation's prompt.
                 let account = session.account

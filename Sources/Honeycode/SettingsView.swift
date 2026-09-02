@@ -39,29 +39,32 @@ struct SettingsPane: View {
     @State private var tab = SettingsTab.accounts
 
     var body: some View {
-        VStack(spacing: 0) {
-            strip
-            Divider().overlay(Theme.rule)
+        // The measure is worked out here, on the pane, and handed to the strip
+        // and the page alike. See `SettingsMetrics.inset`.
+        GeometryReader { geometry in
+            let inset = SettingsMetrics.inset(for: geometry.size.width)
+            VStack(spacing: 0) {
+                strip(inset: inset, available: geometry.size.width)
+                Divider().overlay(Theme.rule)
 
-            // Each pane is a `Form` and does its own scrolling, so this only
-            // has to give them the room and the measure.
-            Group {
-                switch tab {
-                case .accounts:  AccountSettings()
-                case .features:  FeatureSettings()
-                case .crew:      CrewSettings()
-                case .appearance: AppearanceSettings(store: background,
-                                                     appearance: $appearance)
-                case .skills:    SkillSettings()
-                case .shortcuts: ShortcutSettings()
+                // Each pane is a `SettingsPage` and does its own scrolling, so
+                // this only has to give them the room. It used to pin them to
+                // 640 — the width the Settings *window* used to be — which was
+                // a second measure the tab strip above knew nothing about.
+                Group {
+                    switch tab {
+                    case .accounts:  AccountSettings()
+                    case .features:  FeatureSettings()
+                    case .crew:      CrewSettings()
+                    case .appearance: AppearanceSettings(store: background,
+                                                         appearance: $appearance)
+                    case .skills:    SkillSettings()
+                    case .shortcuts: ShortcutSettings()
+                    }
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            // The width the Settings window used to be. A `Form` run out to the
-            // full width of a 1600pt pane puts its controls a foot away from
-            // their labels; the measure is what made the window readable and it
-            // is not a property of being in a window.
-            .frame(maxWidth: 640)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .environment(\.settingsInset, inset)
         }
         .background(Theme.canvas)
     }
@@ -80,35 +83,40 @@ struct SettingsPane: View {
     /// reads as a strip that failed to draw rather than as a strip that
     /// adapted.
     ///
-    /// In practice the labels always fit — six of them need about 640pt, the
-    /// window's minimum is 900, and the sidebar is 240 at its widest, so the
-    /// pane is never narrower than 660. The guard is here for the cases that
-    /// arithmetic doesn't cover: a longer translation, or accessibility text
-    /// sizes.
-    private var strip: some View {
-        GeometryReader { geometry in
-            let labelled = geometry.size.width >= 640
-            HStack(spacing: Theme.s2) {
-                ForEach(SettingsTab.allCases) { candidate in
-                    button(candidate, labelled: labelled)
-                }
-                Spacer(minLength: Theme.s3)
-                Button {
-                    withAnimation(Motion.panel) { workspace.showingSettings = false }
-                } label: {
-                    Text("Done")
-                        .font(Theme.label)
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, Theme.s4)
-                        .frame(height: 24)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(HoverCapsule())
-                .help("Back to what you were looking at")
+    /// In practice the labels always fit — six of them need about 550pt and
+    /// the measure is 680. The guard is here for the cases that arithmetic
+    /// doesn't cover: a longer translation, or accessibility text sizes.
+    ///
+    /// Set to the same measure and the same leading inset as the cards below
+    /// it, so the tabs start where the cards start and Done ends where they
+    /// end. It used to span the pane while the panes were pinned to a narrower
+    /// column of their own, which put the tabs a couple of centimetres left of
+    /// everything they switch between and left Done stranded a foot from the
+    /// last tab.
+    private func strip(inset: CGFloat, available: CGFloat) -> some View {
+        let labelled = min(SettingsMetrics.measure, available - Theme.s6 * 2) >= 620
+        return HStack(spacing: Theme.s2) {
+            ForEach(SettingsTab.allCases) { candidate in
+                button(candidate, labelled: labelled)
             }
-            .padding(.horizontal, Theme.s5)
-            .frame(maxHeight: .infinity)
+            Spacer(minLength: Theme.s3)
+            Button {
+                withAnimation(Motion.panel) { workspace.showingSettings = false }
+            } label: {
+                Text("Done")
+                    .font(Theme.label)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, Theme.s4)
+                    .frame(height: 24)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(HoverCapsule())
+            .help("Back to what you were looking at")
         }
+        .frame(maxWidth: SettingsMetrics.measure, alignment: .leading)
+        .padding(.leading, inset)
+        .padding(.trailing, Theme.s6)
+        .frame(maxWidth: .infinity, alignment: .leading)
         // The pane's own strip height, so this row sits on the same line as the
         // tab strip a session shows — Settings covers the pane and leaves the
         // rest of the window alone, and a header half a centimetre off the one
@@ -222,59 +230,49 @@ private struct FeatureSettings: View {
     @State private var on: [Feature: Bool] = [:]
 
     var body: some View {
-        Form {
+        SettingsPage {
             ForEach(Feature.Group.allCases) { group in
-                Section {
+                SettingsGroup(group.title) {
                     ForEach(Feature.allCases.filter { $0.group == group }) { feature in
                         row(feature)
                     }
-                } header: {
-                    Text(group.title)
                 }
             }
 
-
-            Section {
-                HStack {
+            SettingsGroup(footer:
+                "The first-run flow again, from the top: which subscriptions you "
+                + "have, what should be on screen, and what the agents are allowed "
+                + "to do. It sets the same switches as this pane — nothing is reset "
+                + "by opening it.") {
+                SettingsActions {
                     Button("Set Up Honeycode…") {
                         Setup.rerun()
                         NotificationCenter.default.post(name: Setup.requested, object: nil)
                     }
-                    Spacer()
                 }
-            } footer: {
-                Text("The first-run flow again, from the top: which subscriptions "
-                     + "you have, what should be on screen, and what the agents are "
-                     + "allowed to do. It sets the same switches as this pane — "
-                     + "nothing is reset by opening it.")
-                    .font(Theme.note)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .formStyle(.grouped)
-        .frame(maxHeight: .infinity)
         .onAppear {
             on = Dictionary(uniqueKeysWithValues: Feature.allCases.map { ($0, Features.isOn($0)) })
         }
     }
 
+    /// The blurb is the row's own note, and the missing-tool line joins it
+    /// rather than sitting under it in the state colour. Two lines of type in
+    /// two sizes and two colours under one switch was more emphasis than "you
+    /// haven't installed the thing" needs.
     private func row(_ feature: Feature) -> some View {
-        VStack(alignment: .leading, spacing: Theme.s2) {
-            Toggle(feature.title, isOn: binding(feature))
-            Text(feature.blurb)
-                .font(Theme.note)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            // Only when it is actually missing. A line saying which tool a
-            // feature needs, on a Mac that has it, is a fact nobody asked for.
-            if let requirement = feature.requirement, !feature.isAvailable {
-                Text("`\(requirement.tool)` isn't installed — \(requirement.install)")
-                    .font(Theme.monoSmall)
-                    .foregroundStyle(Theme.stateHeld)
-            }
+        SettingsToggle(feature.title, note: note(for: feature),
+                       isOn: binding(feature))
+    }
+
+    private func note(for feature: Feature) -> String {
+        // Only when it is actually missing. A line saying which tool a feature
+        // needs, on a Mac that has it, is a fact nobody asked for.
+        guard let requirement = feature.requirement, !feature.isAvailable else {
+            return feature.blurb
         }
-        .padding(.vertical, Theme.s1)
+        return feature.blurb + "\n\u{2022} \(requirement.tool) isn\u{2019}t installed — \(requirement.install)"
     }
 
     private func binding(_ feature: Feature) -> Binding<Bool> {
@@ -305,6 +303,7 @@ private struct AppearanceSettings: View {
     /// window, not a preference, and reopening Settings on whichever sub-pane
     /// you happened to leave last is a small surprise for no gain.
     @State private var half = Half.text
+    @Environment(\.settingsInset) private var inset
 
     private enum Half: String, CaseIterable, Identifiable {
         case text, background
@@ -326,6 +325,11 @@ private struct AppearanceSettings: View {
     /// anywhere because it is content rather than chrome.
     var body: some View {
         VStack(spacing: 0) {
+            // On the content column's own left edge rather than centred over
+            // it. Centred, it was the one control in Settings that lined up
+            // with nothing — a segmented pill floating above a left-aligned
+            // page, which reads as a control belonging to the window rather
+            // than to the pane under it.
             Picker("", selection: $half) {
                 ForEach(Half.allCases) { option in
                     Text(option.title).tag(option)
@@ -333,9 +337,11 @@ private struct AppearanceSettings: View {
             }
             .pickerStyle(.segmented)
             .labelsHidden()
-            .frame(width: 260)
-            .padding(.top, Theme.s5)
-            .padding(.bottom, Theme.s3)
+            .frame(width: 200)
+            .frame(maxWidth: SettingsMetrics.measure, alignment: .leading)
+            .padding(.leading, inset)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.top, Theme.s6)
 
             switch half {
             case .text:       ReadingSettings(appearance: $appearance)
@@ -357,32 +363,24 @@ private struct SkillSettings: View {
     @State private var editing: Skill?
 
     var body: some View {
-        Form {
-            Section {
+        SettingsPage {
+            // Says what a skill *is* here, because the word means several
+            // things and the one that matters is the scope: these reach every
+            // account, which is the whole point of them living in the app
+            // rather than in one agent's config.
+            SettingsGroup("Shared skills", footer:
+                "Available to every account — both Claude profiles, Kimi and "
+                + "Copilot. Each session is told the name, the description and where "
+                + "the file is, and reads it when the work calls for it. An enabled "
+                + "skill is also a slash command: /branding.") {
                 if store.skills.isEmpty {
-                    empty
+                    SettingsRow { empty }
                 } else {
                     ForEach(store.skills) { skill in
                         row(skill)
                     }
                 }
-            } header: {
-                Text("Shared skills")
-            } footer: {
-                // Says what a skill *is* here, because the word means several
-                // things and the one that matters is the scope: these reach
-                // every account, which is the whole point of them living in the
-                // app rather than in one agent's config.
-                Text("Available to every account — both Claude profiles, Kimi and "
-                     + "Copilot. Each session is told the name, the description and "
-                     + "where the file is, and reads it when the work calls for it. "
-                     + "An enabled skill is also a slash command: /branding.")
-                .font(Theme.note)
-                .foregroundStyle(.secondary)
-            }
-
-            Section {
-                HStack {
+                SettingsActions {
                     Button("New Skill…") { editing = store.add() }
                     Button("Add from File…") { importSkill() }
                     Spacer()
@@ -392,17 +390,23 @@ private struct SkillSettings: View {
                         NSWorkspace.shared.open(Skills.folder)
                     }
                 }
-            } footer: {
-                Text("Skills are folders holding a SKILL.md — the same shape Claude "
-                     + "Code uses, so one can be copied in or out without translation. "
-                     + "Edit them here or in any editor; they're re-read each time a "
-                     + "session starts.")
-                .font(Theme.note)
-                .foregroundStyle(.secondary)
+            }
+
+            SettingsGroup(footer:
+                "Skills are folders holding a SKILL.md — the same shape Claude Code "
+                + "uses, so one can be copied in or out without translation. Edit "
+                + "them here or in any editor; they\u{2019}re re-read each time a "
+                + "session starts.") {
+                SettingsRow("Where they live") {
+                    Text(Skills.folder.path
+                        .replacingOccurrences(of: NSHomeDirectory(), with: "~"))
+                        .font(Theme.monoSmall)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.head)
+                }
             }
         }
-        .formStyle(.grouped)
-        .frame(maxHeight: .infinity)
         .onAppear { store.reload() }
         .sheet(item: $editing) { skill in
             SkillEditor(skill: skill, store: store)
@@ -414,33 +418,40 @@ private struct SkillSettings: View {
             .font(Theme.row)
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.vertical, Theme.s3)
     }
 
     private func row(_ skill: Skill) -> some View {
-        HStack(spacing: Theme.s4) {
-            Toggle("", isOn: Binding(get: { store.isEnabled(skill) },
-                                     set: { store.setEnabled(skill, $0) }))
-                .labelsHidden()
+        SettingsRow {
+            HStack(spacing: Theme.s4) {
+                Toggle("", isOn: Binding(get: { store.isEnabled(skill) },
+                                         set: { store.setEnabled(skill, $0) }))
+                    .labelsHidden()
+                    .toggleStyle(.switch)
 
-            VStack(alignment: .leading, spacing: Theme.s1) {
-                Text(skill.name).font(Theme.row)
-                Text(skill.summary.isEmpty ? "/\(skill.slug)" : skill.summary)
-                    .font(Theme.note)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-            Spacer(minLength: Theme.s4)
+                VStack(alignment: .leading, spacing: Theme.s1) {
+                    Text(skill.name).font(Theme.sidebarRow)
+                    Text(skill.summary.isEmpty ? "/\(skill.slug)" : skill.summary)
+                        .font(Theme.note)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: Theme.s5)
 
-            Button("Edit") { editing = skill }
-            Button {
-                store.remove(skill)
-            } label: {
-                Image(systemName: "trash")
+                Button("Edit") { editing = skill }
+                // Was a bordered trash button beside a bordered Edit — two
+                // buttons of equal weight, one of which deletes. The glyph
+                // recedes to a plain control and keeps its tooltip.
+                Button {
+                    store.remove(skill)
+                } label: {
+                    Image(systemName: "trash")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Delete this skill")
             }
-            .help("Delete this skill")
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(.vertical, Theme.s1)
     }
 
     private func importSkill() {
@@ -533,28 +544,40 @@ private struct UsageAccountRow: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Theme.s3) {
-            HStack(spacing: Theme.s4) {
-                AccountDot(account)
-                Text(account.title)
-                Spacer(minLength: Theme.s5)
-                TextField("Cap", value: cap, format: .currency(code: "USD"))
-                    .frame(width: 96)
-            }
+        SettingsRow {
+            VStack(alignment: .leading, spacing: Theme.s3) {
+                HStack(spacing: Theme.s4) {
+                    AccountDot(account)
+                    Text(account.title).font(Theme.sidebarRow)
+                    Spacer(minLength: Theme.s5)
+                    Text("Cap")
+                        .font(Theme.note)
+                        .foregroundStyle(.secondary)
+                    TextField("", value: cap, format: .currency(code: "USD"))
+                        .textFieldStyle(.roundedBorder)
+                        .multilineTextAlignment(.trailing)
+                        .frame(width: 110)
+                }
 
-            HStack(spacing: Theme.s4) {
-                TextField("Command that prints its limits — optional",
-                          text: $command)
-                    .textFieldStyle(.roundedBorder)
-                    .font(Theme.monoSmall)
-                Button(testing ? "Testing…" : "Test") { probe() }
-                    .disabled(testing
-                              || command.trimmingCharacters(in: .whitespaces).isEmpty)
-            }
+                HStack(spacing: Theme.s4) {
+                    // A prompt, not a label. It was the field's first argument,
+                    // which `.formStyle(.grouped)` promotes to a leading label —
+                    // so this sentence rendered as two lines of monospace beside
+                    // an apparently empty field, and the field itself looked
+                    // like it had no border.
+                    TextField("", text: $command,
+                              prompt: Text("Command that prints its limits — optional"))
+                        .textFieldStyle(.roundedBorder)
+                        .font(Theme.monoSmall)
+                    Button(testing ? "Testing…" : "Test") { probe() }
+                        .disabled(testing
+                                  || command.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
 
-            if let outcome { report(outcome) }
+                if let outcome { report(outcome) }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(.vertical, Theme.s2)
         // Written as you type rather than on Return. A shell command is fiddly
         // enough to get right without also having to remember to commit it,
         // and `setUsageCommand` deliberately publishes nothing — see its own
@@ -669,155 +692,120 @@ private struct CrewSettings: View {
                 set: { governed[key] = $0; Policy.set(key, $0) })
     }
 
-    /// The line under a control an organisation is holding.
-    @ViewBuilder
-    private func managed(_ key: Policy.Key) -> some View {
-        if Policy.isManaged(key) {
-            Label(Policy.note, systemImage: "lock.fill")
-                .font(Theme.note)
-                .foregroundStyle(.secondary)
-        }
-    }
-
     var body: some View {
-        Form {
-            Section {
-                Toggle("Skip permission prompts", isOn: on(.skipPermissions, default: true))
-                    .disabled(Policy.isManaged(.skipPermissions))
-                managed(.skipPermissions)
-                Text(Policy.value(.skipPermissions, default: true)
-                     ? "Agents edit files and run commands without asking. Turn "
-                       + "this off and Claude can read but every write is refused — "
-                       + "there is no middle setting over its headless protocol."
-                     : "Claude can read and search, but every edit is refused. "
-                       + "Copilot still asks per action.")
-                    .font(Theme.note)
-                    .foregroundStyle(.tertiary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Toggle("Let scheduled agents write",
-                       isOn: on(.unattendedWrites, default: false))
-                    .disabled(Policy.isManaged(.unattendedWrites))
-                managed(.unattendedWrites)
-                Text(Policy.value(.unattendedWrites, default: false)
-                     ? "An agent set to Act edits files and runs commands when "
-                       + "its schedule fires, with nobody watching. It is still "
-                       + "confined to its own folder — that part isn't optional "
-                       + "for an unattended run."
-                     : "Scheduled runs are held to propose only, whatever the "
-                       + "agent is set to. Running one by hand uses its own "
-                       + "setting, because you are sitting there. Either way an "
-                       + "unattended run is confined to its folder: Propose is a "
-                       + "paragraph asking an agent not to write, and the folder "
-                       + "is the fence that actually holds.")
-                    .font(Theme.note)
-                    .foregroundStyle(.tertiary)
-                    .fixedSize(horizontal: false, vertical: true)
-            } header: {
-                Text("Permissions")
+        SettingsPage {
+            SettingsGroup("Permissions") {
+                SettingsToggle(
+                    "Skip permission prompts",
+                    note: Policy.value(.skipPermissions, default: true)
+                        ? "Agents edit files and run commands without asking. Turn "
+                          + "this off and Claude can read but every write is refused — "
+                          + "there is no middle setting over its headless protocol."
+                        : "Claude can read and search, but every edit is refused. "
+                          + "Copilot still asks per action.",
+                    locked: Policy.isManaged(.skipPermissions),
+                    isOn: on(.skipPermissions, default: true))
+
+                SettingsToggle(
+                    "Let scheduled agents write",
+                    note: Policy.value(.unattendedWrites, default: false)
+                        ? "An agent set to Act edits files and runs commands when "
+                          + "its schedule fires, with nobody watching. It is still "
+                          + "confined to its own folder — that part isn\u{2019}t optional "
+                          + "for an unattended run."
+                        : "Scheduled runs are held to propose only, whatever the "
+                          + "agent is set to. Running one by hand uses its own "
+                          + "setting, because you are sitting there. Either way an "
+                          + "unattended run is confined to its folder: Propose is a "
+                          + "paragraph asking an agent not to write, and the folder "
+                          + "is the fence that actually holds.",
+                    locked: Policy.isManaged(.unattendedWrites),
+                    isOn: on(.unattendedWrites, default: false))
             }
 
-            Section {
-                Toggle("Keep Enterprise work inside Enterprise",
-                       isOn: on(.tenancyGate, default: true))
-                    .disabled(Policy.isManaged(.tenancyGate))
-                managed(.tenancyGate)
-                Text(Policy.value(.tenancyGate, default: true)
-                     ? "When an Enterprise session hands a piece of work to "
-                       + "Kimi, Copilot or your personal Claude, the task is "
-                       + "checked on this account before it is sent, and those "
-                       + "agents work in an empty folder with no sight of the "
-                       + "project. Anything that would carry customer names, "
-                       + "credentials or internal specifics comes back for "
-                       + "Enterprise to do itself."
-                     : "Off. An Enterprise session hands work to the other "
-                       + "agents unchecked, and they work in this project's "
-                       + "directory with the same access everyone else has.")
-                    .font(Theme.note)
-                    .foregroundStyle(.tertiary)
-                    .fixedSize(horizontal: false, vertical: true)
-            } header: {
-                Text("Tenancy")
+            SettingsGroup("Tenancy") {
+                SettingsToggle(
+                    "Keep Enterprise work inside Enterprise",
+                    note: Policy.value(.tenancyGate, default: true)
+                        ? "When an Enterprise session hands a piece of work to "
+                          + "Kimi, Copilot or your personal Claude, the task is "
+                          + "checked on this account before it is sent, and those "
+                          + "agents work in an empty folder with no sight of the "
+                          + "project. Anything that would carry customer names, "
+                          + "credentials or internal specifics comes back for "
+                          + "Enterprise to do itself."
+                        : "Off. An Enterprise session hands work to the other "
+                          + "agents unchecked, and they work in this project\u{2019}s "
+                          + "directory with the same access everyone else has.",
+                    locked: Policy.isManaged(.tenancyGate),
+                    isOn: on(.tenancyGate, default: true))
             }
 
-            Section {
-                TextField("Default monthly cap", value: $monthlyCap,
-                          format: .currency(code: "USD"))
+            SettingsGroup("Usage", footer:
+                "Two ways to fill a ring, and the first one wins. Ask the agent: a "
+                + "command that prints this plan\u{2019}s limits, run every half-minute "
+                + "or so while something is watching — anything in its output shaped "
+                + "like \u{201C}name: 21% used\u{201D} or \u{201C}name: 123 of 300\u{201D} "
+                + "becomes a window. Or measure it here: what Honeycode has spent this "
+                + "month against the cap, which is per account because $500 is a "
+                + "plausible ceiling for a usage-based seat and nonsense for a $20 "
+                + "subscription. Leave a cap at zero to use the default above.") {
+                SettingsRow("Default monthly cap") {
+                    TextField("", value: $monthlyCap, format: .currency(code: "USD"))
+                        .textFieldStyle(.roundedBorder)
+                        .multilineTextAlignment(.trailing)
+                        .frame(width: 110)
+                }
                 ForEach(Account.enabled) { account in
                     UsageAccountRow(account: account)
                 }
-                Text("Two ways to fill a ring, and the first one wins. Ask "
-                     + "the agent: a command that prints this plan's limits, "
-                     + "run every half-minute or so while something is "
-                     + "watching — anything in its output shaped like "
-                     + "\u{201C}name: 21% used\u{201D} or "
-                     + "\u{201C}name: 123 of 300\u{201D} becomes a window. "
-                     + "Or measure it here: what Honeycode has spent this "
-                     + "month against the cap, which is per account because "
-                     + "$500 is a plausible ceiling for a usage-based seat and "
-                     + "nonsense for a $20 subscription. Leave a cap at zero "
-                     + "to use the default above.")
-                    .font(Theme.note)
-                    .foregroundStyle(.tertiary)
-                    .fixedSize(horizontal: false, vertical: true)
-            } header: {
-                Text("Usage")
             }
 
-            Section {
-                Toggle("Keep a record of policy decisions",
-                       isOn: on(.auditing, default: true))
-                    .disabled(Policy.isManaged(.auditing))
-                managed(.auditing)
-                LabeledContent("Entries") {
+            SettingsGroup("Record", footer:
+                "One line of JSON per decision: a piece of work refused at the "
+                + "tenancy fence or cleared through it, a delegate given a confined "
+                + "folder, a scheduled run held to propose only. Kept for 90 days and "
+                + "trimmed at launch.\n\nWhat it does not contain is the work itself — "
+                + "a task is recorded as a hash, which can tell you two entries are "
+                + "about the same piece and nothing else. Writing the material this "
+                + "app is protecting into a log beside it would defeat the thing "
+                + "doing the protecting.") {
+                SettingsToggle("Keep a record of policy decisions",
+                               locked: Policy.isManaged(.auditing),
+                               isOn: on(.auditing, default: true))
+                SettingsRow("Entries") {
                     HStack(spacing: Theme.s4) {
-                        Text("\(auditLines)").monospacedDigit()
+                        Text(String(auditLines))
+                            .font(Theme.row)
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
                         Button("Show in Finder") {
                             NSWorkspace.shared.activateFileViewerSelecting([Audit.url])
                         }
                         .disabled(auditLines == 0)
                     }
                 }
-                Text("One line of JSON per decision: a piece of work refused at "
-                     + "the tenancy fence or cleared through it, a delegate given "
-                     + "a confined folder, a scheduled run held to propose only. "
-                     + "Kept for 90 days and trimmed at launch.\n\nWhat it does "
-                     + "not contain is the work itself — a task is recorded as a "
-                     + "hash, which can tell you two entries are about the same "
-                     + "piece and nothing else. Writing the material this app is "
-                     + "protecting into a log beside it would defeat the thing "
-                     + "doing the protecting.")
-                    .font(Theme.note)
-                    .foregroundStyle(.tertiary)
-                    .fixedSize(horizontal: false, vertical: true)
-            } header: {
-                Text("Record")
             }
 
-            Section {
-                LabeledContent("Recorded spend") {
+            SettingsGroup("Spend · Claude Work", footer:
+                "Honeycode can only count its own turns, so on a seat you also use "
+                + "from the terminal its figure reads low. Type the real number from "
+                + "your admin console and it accrues from there — setting it again "
+                + "just replaces it, so it can\u{2019}t double-count.") {
+                SettingsRow("Recorded spend") {
                     HStack(spacing: Theme.s4) {
                         TextField("", value: $recordedSpend,
                                   format: .currency(code: "USD"))
-                            .frame(width: 96)
+                            .textFieldStyle(.roundedBorder)
+                            .multilineTextAlignment(.trailing)
+                            .frame(width: 110)
                         Button("Set") {
                             UsageStore.shared.setBaseline(recordedSpend, for: .work)
                         }
                     }
                 }
-                Text("Honeycode can only count its own turns, so on a seat you "
-                     + "also use from the terminal its figure reads low. Type "
-                     + "the real number from your admin console and it accrues "
-                     + "from there — setting it again just replaces it, so it "
-                     + "can't double-count.")
-                    .font(Theme.note)
-                    .foregroundStyle(.tertiary)
-                    .fixedSize(horizontal: false, vertical: true)
-            } header: {
-                Text("Spend · Claude Work")
             }
         }
-        .formStyle(.grouped)
-        .frame(maxHeight: .infinity)
         // Fixed at process launch, so live sessions restart. Watched through
         // the mirror rather than through `@AppStorage`, which this no longer
         // has — and the mirror only moves when the write actually landed, so a
@@ -827,7 +815,6 @@ private struct CrewSettings: View {
         }
         .onAppear { auditLines = Audit.all().count }
     }
-
 }
 
 // MARK: - Reading
@@ -854,19 +841,25 @@ private struct ReadingSettings: View {
     }
 
     var body: some View {
-        Form {
-            Section {
-                Picker("Appearance", selection: $appearance) {
-                    ForEach(HoneycodeApp.Appearance.allCases) { option in
-                        Text(option.title).tag(option)
+        SettingsPage {
+            SettingsGroup {
+                SettingsRow("Appearance") {
+                    Picker("", selection: $appearance) {
+                        ForEach(HoneycodeApp.Appearance.allCases) { option in
+                            Text(option.title).tag(option)
+                        }
                     }
+                    .labelsHidden()
+                    .frame(width: 140)
                 }
             }
 
-            Section {
-                LabeledContent("Text size") {
+            SettingsGroup("Transcript", footer: "About \(measure) characters per line. "
+                          + "Between 45 and 75 is the long-standing comfortable range.") {
+                SettingsRow("Text size") {
                     HStack(spacing: Theme.s5) {
                         Slider(value: $textScale, in: 0.85...1.45, step: 0.05)
+                            .frame(width: 220)
                         Text("\(Int(textScale * 100))%")
                             .font(Theme.monoSmall)
                             .foregroundStyle(.secondary)
@@ -874,9 +867,10 @@ private struct ReadingSettings: View {
                             .frame(width: 42, alignment: .trailing)
                     }
                 }
-                LabeledContent("Column width") {
+                SettingsRow("Column width") {
                     HStack(spacing: Theme.s5) {
                         Slider(value: $width, in: 520...1000, step: 20)
+                            .frame(width: 220)
                         // Not interpolated: a measurement in points is not a
                         // quantity to group, and this one reaches exactly 1000.
                         Text(String(Int(width)))
@@ -886,36 +880,34 @@ private struct ReadingSettings: View {
                             .frame(width: 42, alignment: .trailing)
                     }
                 }
-                HStack {
-                    Text("About \(measure) characters per line")
-                        .font(Theme.note)
-                        .foregroundStyle(measure > 85 || measure < 40
-                                         ? AnyShapeStyle(Color.diffDelText)
-                                         : AnyShapeStyle(.tertiary))
-                    Spacer()
-                    Button("Reset") { textScale = 1; width = Double(Theme.readingWidth) }
-                        .buttonStyle(.link)
+                SettingsRow {
+                    HStack {
+                        // Only when it is outside the range — the figure itself
+                        // is in the footnote, where it doesn't need a colour to
+                        // be read. This line is the warning, so it only exists
+                        // when there is one.
+                        if measure > 85 || measure < 40 {
+                            Text(measure > 85 ? "Long lines are hard to track back from"
+                                              : "Short lines break the reading rhythm")
+                                .font(Theme.note)
+                                .foregroundStyle(Theme.stateHeld)
+                        }
+                        Spacer()
+                        Button("Reset") { textScale = 1; width = Double(Theme.readingWidth) }
+                            .buttonStyle(.link)
+                    }
                 }
-            } header: {
-                Text("Transcript")
             }
 
-            Section {
-                sample
-                    .environment(\.proseScale, CGFloat(textScale))
-                    .frame(width: min(CGFloat(width), 560))
-                    .frame(maxWidth: .infinity, alignment: .center)
-            } header: {
-                Text("Preview")
+            SettingsGroup("Preview") {
+                SettingsRow {
+                    sample
+                        .environment(\.proseScale, CGFloat(textScale))
+                        .frame(maxWidth: min(CGFloat(width), Theme.readingWidth - Theme.s7))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
             }
         }
-        .formStyle(.grouped)
-        // Was pinned to 560 to match `BackgroundSettings`, the other half of
-        // this pane: two heights behind one segmented control read as the
-        // *window* flinching every time you touched it. In the pane there is
-        // no window to flinch — the pane is the size it is, and both halves
-        // fill it — so the pin is gone and each half keeps its own measure.
-        .frame(maxHeight: .infinity)
     }
 
     private var sample: some View {
@@ -949,17 +941,11 @@ private struct ShortcutSettings: View {
     private static let keyCap = Theme.rowStrong
 
     var body: some View {
-        Form {
-            Section {
+        SettingsPage {
+            SettingsGroup("Sessions") {
                 ForEach(Shortcuts.sessions) { shortcut in
-                    LabeledContent(shortcut.title) {
-                        Text(shortcut.display)
-                            .font(Self.keyCap)
-                            .foregroundStyle(.secondary)
-                    }
+                    key(shortcut.title, shortcut.display)
                 }
-            } header: {
-                Text("Sessions")
             }
 
             // Built from `Account.enabled` rather than written out, for the
@@ -968,83 +954,53 @@ private struct ShortcutSettings: View {
             // that goes quietly out of date, which is the failure this whole
             // file exists to prevent. Switching an account off in Accounts
             // takes its row with it, because the key stops doing anything.
-            Section {
+            SettingsGroup("Focus an account", footer:
+                "Selects the session you last had open on that account, and does "
+                + "nothing if you have none. An account you added yourself gets no "
+                + "key: the number would depend on the order things were added, so "
+                + "it would mean different accounts on two Macs.") {
                 ForEach(Account.enabled.filter { $0.shortcut != nil }) { account in
-                    LabeledContent(account.title) {
-                        Text("⌘\(account.shortcut?.character.description ?? "")")
-                            .font(Self.keyCap)
-                            .foregroundStyle(.secondary)
-                    }
+                    key(account.title, "⌘\(account.shortcut?.character.description ?? "")")
                 }
-            } header: {
-                Text("Focus an account")
-            } footer: {
-                Text("Selects the session you last had open on that account, "
-                     + "and does nothing if you have none. An account you added "
-                     + "yourself gets no key: the number would depend on the "
-                     + "order things were added, so it would mean different "
-                     + "accounts on two Macs.")
             }
 
-            Section {
+            SettingsGroup("This conversation", footer:
+                "The pop-out is a small window that stays above other apps, so a "
+                + "long run stays watchable while you work in something else.") {
                 ForEach(Shortcuts.conversation) { shortcut in
-                    LabeledContent(shortcut.title) {
-                        Text(shortcut.display)
-                            .font(Self.keyCap)
-                            .foregroundStyle(.secondary)
-                    }
+                    key(shortcut.title, shortcut.display)
                 }
-            } header: {
-                Text("This conversation")
-            } footer: {
-                Text("The pop-out is a small window that stays above other "
-                     + "apps, so a long run stays watchable while you work in "
-                     + "something else.")
             }
 
-            Section {
+            SettingsGroup("Presentation", footer:
+                "Coding mode draws the transcript as a terminal — one monospaced "
+                + "scrollback instead of cards. It appends rather than redrawing, so "
+                + "a long session streams at the same speed as a new one.") {
                 ForEach(Shortcuts.view) { shortcut in
-                    LabeledContent(shortcut.title) {
-                        Text(shortcut.display)
-                            .font(Self.keyCap)
-                            .foregroundStyle(.secondary)
-                    }
+                    key(shortcut.title, shortcut.display)
                 }
-            } header: {
-                Text("Presentation")
-            } footer: {
-                Text("Coding mode draws the transcript as a terminal — one "
-                     + "monospaced scrollback instead of cards. It appends "
-                     + "rather than redrawing, so a long session streams at the "
-                     + "same speed as a new one.")
             }
 
-            Section {
+            SettingsGroup("Transcript detail") {
                 ForEach(TranscriptMode.allCases) { mode in
-                    LabeledContent(mode.title) {
-                        Text("⌥⌘\(mode.shortcut.character.description)")
-                            .font(Self.keyCap)
-                            .foregroundStyle(.secondary)
-                    }
+                    key(mode.title, "⌥⌘\(mode.shortcut.character.description)")
                 }
-            } header: {
-                Text("Transcript detail")
             }
 
-            Section {
+            SettingsGroup("Composer") {
                 ForEach(Shortcuts.composer, id: \.0) { title, keys in
-                    LabeledContent(title) {
-                        Text(keys)
-                            .font(Self.keyCap)
-                            .foregroundStyle(.secondary)
-                    }
+                    key(title, keys)
                 }
-            } header: {
-                Text("Composer")
             }
         }
-        .formStyle(.grouped)
-        .frame(maxHeight: .infinity)
+    }
+
+    private func key(_ title: String, _ keys: String) -> some View {
+        SettingsRow(title) {
+            Text(keys)
+                .font(Self.keyCap)
+                .foregroundStyle(.secondary)
+        }
     }
 }
 
@@ -1060,16 +1016,14 @@ private struct BackgroundSettings: View {
     private let columns = [GridItem(.adaptive(minimum: 132), spacing: 12)]
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: Theme.s6) {
-                preview
-                veilControl
-                Divider().overlay(Theme.rule)
-                library
-            }
-            .padding(Theme.s7)
+        // The same page as the other half of this tab. It was a `ScrollView`
+        // of its own with a `Theme.s7` inset and no measure at all, so
+        // switching from Text to Background moved every left edge in the pane.
+        SettingsPage {
+            preview
+            veilControl
+            library
         }
-        .frame(maxHeight: .infinity)
     }
 
     // MARK: Preview
@@ -1106,7 +1060,7 @@ private struct BackgroundSettings: View {
 
             HStack {
                 Text(store.selected?.name ?? "No background")
-                    .font(Theme.body)
+                    .font(Theme.sidebarRow)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -1120,23 +1074,20 @@ private struct BackgroundSettings: View {
     }
 
     private var veilControl: some View {
-        VStack(alignment: .leading, spacing: Theme.s3) {
-            HStack {
-                Text("Glass")
-                    .font(Theme.body)
-                Spacer()
-                Text("\(Int(store.veil * 100))%")
-                    .font(Theme.monoSmall)
-                    .foregroundStyle(.tertiary)
-                    .monospacedDigit()
+        SettingsGroup(footer: "How much the background is frosted. At zero the "
+                      + "image is sharp; turn it up and it diffuses to colour, "
+                      + "which is what keeps text over it readable.") {
+            SettingsRow("Glass") {
+                HStack(spacing: Theme.s5) {
+                    Slider(value: $store.veil, in: 0...1)
+                        .frame(width: 220)
+                    Text("\(Int(store.veil * 100))%")
+                        .font(Theme.monoSmall)
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                        .frame(width: 42, alignment: .trailing)
+                }
             }
-            Slider(value: $store.veil, in: 0...1)
-            Text("How much the background is frosted. At zero the image is "
-                 + "sharp; turn it up and it diffuses to colour, which is "
-                 + "what keeps text over it readable.")
-                .font(Theme.note)
-                .foregroundStyle(.tertiary)
-                .fixedSize(horizontal: false, vertical: true)
         }
         .disabled(store.selected == nil)
         .opacity(store.selected == nil ? 0.45 : 1)
@@ -1150,6 +1101,7 @@ private struct BackgroundSettings: View {
                 VStack(alignment: .leading, spacing: Theme.s1) {
                     Text("Library")
                         .font(Theme.title)
+                        .foregroundStyle(.secondary)
                     Text(store.items.isEmpty
                          ? "Copied into Honeycode, so the originals can move or go"
                          : "\(store.items.count) image\(store.items.count == 1 ? "" : "s")")
@@ -1169,7 +1121,7 @@ private struct BackgroundSettings: View {
                 ForEach(store.categories, id: \.self) { category in
                     VStack(alignment: .leading, spacing: Theme.s4) {
                         Text(category)
-                            .font(.system(size: Theme.t2, weight: .semibold))
+                            .font(Theme.label)
                             .foregroundStyle(.secondary)
                         LazyVGrid(columns: columns, spacing: Theme.gapBlock) {
                             ForEach(store.items(in: category)) { item in
@@ -1193,7 +1145,7 @@ private struct BackgroundSettings: View {
     private var emptyLibrary: some View {
         VStack(spacing: Theme.s3) {
             Text("No backgrounds yet")
-                .font(Theme.body)
+                .font(Theme.sidebarRow)
                 .foregroundStyle(.secondary)
             Text("Add images and Honeycode keeps its own copy, so you can tidy "
                  + "your Downloads folder afterwards.")

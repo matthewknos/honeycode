@@ -59,6 +59,53 @@ struct AccountSettings: View {
     /// see what you would be switching on, and loses its button — installing
     /// something you have just said you don't pay for is not a step anybody is
     /// on.
+    /// One built-in account: who it is, whether it can run, and the switch.
+    ///
+    /// The config directory is on its own line rather than in a 190pt column
+    /// beside the name. It is a path — `~/.claude-personal` is already 38
+    /// characters — so in a fixed column it truncated mid-word and butted
+    /// straight into the ready badge. On its own line it has the row's whole
+    /// width and the badge has room to breathe.
+    @ViewBuilder
+    private func builtIn(_ account: Account, directory: Binding<String>?) -> some View {
+        SettingsRow {
+            VStack(alignment: .leading, spacing: Theme.s4) {
+                HStack(spacing: Theme.s4) {
+                    AccountDot(account)
+                    VStack(alignment: .leading, spacing: Theme.s1) {
+                        Text(account.title).font(Theme.sidebarRow)
+                        Text(account.agentName)
+                            .font(Theme.note)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: Theme.s5)
+                    // Was a checkmark meaning "that directory exists", which is
+                    // a weaker claim than it looked: `claude` makes the
+                    // directory the first time it runs for any reason, so the
+                    // tick appeared for a sign-in somebody had cancelled. This
+                    // says whether there is a login in there, and offers the one
+                    // click that puts one there.
+                    step(account)
+                    Toggle("", isOn: inUse(account))
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                }
+                if let directory {
+                    HStack(spacing: Theme.s4) {
+                        Text("Config")
+                            .font(Theme.note)
+                            .foregroundStyle(.secondary)
+                            .frame(width: 44, alignment: .leading)
+                        TextField("", text: directory, prompt: Text("~/.claude"))
+                            .textFieldStyle(.roundedBorder)
+                            .font(Theme.monoSmall)
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
     @ViewBuilder
     private func step(_ account: Account) -> some View {
         if let state = ready.state(of: account) {
@@ -71,132 +118,88 @@ struct AccountSettings: View {
     }
 
     var body: some View {
-        Form {
-            Section {
-                // The two Claude accounts are switched entirely by
-                // `CLAUDE_CONFIG_DIR`, so where that points *is* the account.
-                // Editable because the defaults encode one particular machine's
-                // arrangement: the CLI puts a single account in `~/.claude`, and
-                // `~/.claude-personal` exists only where somebody has two and
-                // moved one. Pointed at a directory that has never existed, the
-                // failure reads as a login problem rather than a settings one.
+        SettingsPage {
+            // The two Claude accounts are switched entirely by
+            // `CLAUDE_CONFIG_DIR`, so where that points *is* the account.
+            // Editable because the defaults encode one particular machine's
+            // arrangement: the CLI puts a single account in `~/.claude`, and
+            // `~/.claude-personal` exists only where somebody has two and
+            // moved one. Pointed at a directory that has never existed, the
+            // failure reads as a login problem rather than a settings one.
+            SettingsGroup("Built in", footer:
+                "The switch is whether you have the subscription at all — an account "
+                + "switched off stops being offered anywhere, and its existing "
+                + "conversations stay where they are. Claude accounts are then "
+                + "switched by CLAUDE_CONFIG_DIR: the directory is the account. With "
+                + "one Claude login, point both at ~/.claude or just use the one. "
+                + "Kimi and Copilot keep their own credentials, so all this can see "
+                + "is that they\u{2019}re installed — the button beside them opens a "
+                + "terminal to sign in with if they turn out not to be.") {
                 ForEach([Account.personal, Account.work], id: \.self) { account in
-                    HStack(spacing: Theme.s4) {
-                        Toggle("", isOn: inUse(account))
-                            .labelsHidden()
-                            .controlSize(.mini)
-                        AccountDot(account)
-                        VStack(alignment: .leading, spacing: Theme.s1) {
-                            Text(account.title)
-                            Text(account.agentName)
-                                .font(Theme.label)
-                                .foregroundStyle(.tertiary)
-                        }
-                        Spacer()
-                        TextField("", text: claudeDirectory(account),
-                                  prompt: Text("~/.claude"))
-                            .font(Theme.monoSmall)
-                            .frame(width: 190)
-                        // Was a checkmark meaning "that directory exists",
-                        // which is a weaker claim than it looked: `claude`
-                        // makes the directory the first time it runs for any
-                        // reason, so the tick appeared for a sign-in somebody
-                        // had cancelled. This says whether there is a login in
-                        // there, and offers the one click that puts one there.
-                        step(account)
-                    }
+                    builtIn(account, directory: claudeDirectory(account))
                 }
+                // These two said nothing about themselves at all — the
+                // right-hand side was the CLI's name, which is on the row
+                // above it now. A page for deciding which subscriptions you
+                // have was the one place that wouldn't say whether they worked.
                 ForEach([Account.kimi, Account.copilot], id: \.self) { account in
-                    HStack(spacing: Theme.s4) {
-                        Toggle("", isOn: inUse(account))
-                            .labelsHidden()
-                            .controlSize(.mini)
-                        AccountDot(account)
-                        VStack(alignment: .leading, spacing: Theme.s1) {
-                            Text(account.title)
-                            Text(account.agentName)
-                                .font(Theme.label)
-                                .foregroundStyle(.tertiary)
-                        }
-                        Spacer()
-                        // These two said nothing about themselves at all — the
-                        // right-hand side was the CLI's name, which is on the
-                        // row above it now. A page for deciding which
-                        // subscriptions you have was the one place that
-                        // wouldn't say whether they worked.
-                        step(account)
-                    }
+                    builtIn(account, directory: nil)
                 }
-            } header: {
-                Text("Built in")
-            } footer: {
-                Text("The switch is whether you have the subscription at all — an "
-                     + "account switched off stops being offered anywhere, and its "
-                     + "existing conversations stay where they are. Claude accounts "
-                     + "are then switched by CLAUDE_CONFIG_DIR: the directory is the "
-                     + "account. With one Claude login, point both at ~/.claude or "
-                     + "just use the one. Kimi and Copilot keep their own credentials, "
-                     + "so all this can see is that they're installed — the button "
-                     + "beside them opens a terminal to sign in with if they turn "
-                     + "out not to be.")
-                    .font(Theme.label)
-                    .foregroundStyle(.tertiary)
-                    .fixedSize(horizontal: false, vertical: true)
             }
 
-            Section {
+            // Said here because it is the question this page raises and the
+            // answer is not obvious. An API key is how a CLI authenticates;
+            // it is not itself an agent.
+            SettingsGroup("Added", footer:
+                "Any command that speaks the Agent Client Protocol can be an "
+                + "account. An API key is stored in your Keychain and handed to that "
+                + "command as an environment variable — the CLI is what reads your "
+                + "files and runs your commands, and a key on its own can\u{2019}t do "
+                + "either.") {
                 if accounts.isEmpty {
-                    Text("Nothing added yet.")
-                        .foregroundStyle(.tertiary)
-                }
-                ForEach(accounts) { account in
-                    HStack(spacing: Theme.s4) {
-                        Toggle("", isOn: inUse(.custom(account.id)))
-                            .labelsHidden()
-                            .controlSize(.mini)
-                        AccountDot(colour: account.tint.colour)
-                        VStack(alignment: .leading, spacing: Theme.s1) {
-                            Text(account.title)
-                            Text("@\(account.handle) · \(account.command)")
-                                .font(Theme.label)
-                                .foregroundStyle(.tertiary)
-                        }
-                        Spacer()
-                        Button("Edit") { editing = account }
-                            .buttonStyle(.link)
-                        Button("Remove") { confirming = account }
-                            .buttonStyle(.link)
+                    SettingsRow {
+                        Text("Nothing added yet.")
+                            .font(Theme.row)
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
-            } header: {
-                HStack {
-                    Text("Added")
-                    Spacer()
+                ForEach(accounts) { account in
+                    SettingsRow {
+                        HStack(spacing: Theme.s4) {
+                            AccountDot(colour: account.tint.colour)
+                            VStack(alignment: .leading, spacing: Theme.s1) {
+                                Text(account.title).font(Theme.sidebarRow)
+                                Text("@\(account.handle) · \(account.command)")
+                                    .font(Theme.note)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                            }
+                            Spacer(minLength: Theme.s5)
+                            Button("Edit") { editing = account }
+                                .buttonStyle(.link)
+                            Button("Remove") { confirming = account }
+                                .buttonStyle(.link)
+                            Toggle("", isOn: inUse(.custom(account.id)))
+                                .labelsHidden()
+                                .toggleStyle(.switch)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+                SettingsActions {
                     Button {
                         picking = true
                     } label: {
-                        Label("Add", systemImage: "plus")
+                        Label("Add an agent…", systemImage: "plus")
                     }
-                    .buttonStyle(.link)
                     .help("\(AgentCatalogue.all.count) agents that speak the "
                           + "Agent Client Protocol, or a form for one that isn't "
                           + "in the list.")
                 }
-            } footer: {
-                // Said here because it is the question this page raises and the
-                // answer is not obvious. An API key is how a CLI authenticates;
-                // it is not itself an agent.
-                Text("Any command that speaks the Agent Client Protocol can be an "
-                     + "account. An API key is stored in your Keychain and handed to "
-                     + "that command as an environment variable — the CLI is what "
-                     + "reads your files and runs your commands, and a key on its "
-                     + "own can't do either.")
-                    .font(Theme.label)
-                    .foregroundStyle(.tertiary)
-                    .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .formStyle(.grouped)
         .onAppear {
             enabled = Dictionary(uniqueKeysWithValues:
                 Account.allCases.map { ($0.id, $0.isEnabled) })
@@ -317,8 +320,14 @@ struct AccountEditor: View {
                          + "report” unless you know the command exists — a slash "
                          + "command an agent doesn't know reaches the model as text "
                          + "and costs a request.")
-                        .font(Theme.label)
-                        .foregroundStyle(.tertiary)
+                        // `note` and `.secondary`, the one treatment every
+                        // footnote in Settings now uses. `label` is 11 in
+                        // *medium* — a weight for naming a control, not for a
+                        // paragraph — and `.tertiary` is under the contrast
+                        // floor `Theme` states for text that appears nowhere
+                        // else.
+                        .font(Theme.note)
+                        .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
@@ -357,8 +366,8 @@ struct AccountEditor: View {
                     Text("Stored in your Keychain, not in preferences, and handed to the "
                          + "command as environment variables. Name them exactly as the "
                          + "CLI expects.")
-                        .font(Theme.label)
-                        .foregroundStyle(.tertiary)
+                        .font(Theme.note)
+                        .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }

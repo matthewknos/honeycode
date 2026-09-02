@@ -281,10 +281,24 @@ struct RootView: View {
         // Collapsed, there is no panel — just the floating pill.
         if !expanded {
             Color.clear
-        } else if background.isGlassy {
-            Theme.canvas
         } else {
-            SidebarMaterial().ignoresSafeArea()
+            // The same ground as the pane, and the rule beside it is the whole
+            // of the boundary.
+            //
+            // This was `NSVisualEffectView` on `.sidebar`, which is the Mac's
+            // standard treatment and was wrong here for a reason particular to
+            // this window. That material is a *vibrancy* layer: it samples the
+            // desktop behind the window and lightens, so the panel came out a
+            // paler, bluer grey than the canvas two points to its right and
+            // drifted as you moved the window over a different wallpaper. In an
+            // app whose ground is a deliberate warm neutral — and which can put
+            // a photograph behind the pane — a strip down the left that is
+            // quietly a different colour from everything else reads as an
+            // unfinished seam rather than as depth.
+            //
+            // The glassy case already did exactly this, and had to: the same
+            // reasoning applies whether or not there is a photo behind it.
+            Theme.canvas
         }
     }
 
@@ -1118,6 +1132,7 @@ struct SessionView: View {
         VStack(spacing: 0) {
             if session.items.isEmpty {
                 StartPane(session: session, workspace: workspace,
+                          width: CGFloat(readingWidth),
                           suggest: { draft = $0 }) { prominent in
                     composer(prominent: prominent)
                 }

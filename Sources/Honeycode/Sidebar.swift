@@ -202,8 +202,14 @@ private struct SessionRow: View {
 
     var body: some View {
         HStack(spacing: Theme.s4) {
-            SessionAvatar(account: session.account, provisional: session.isEphemeral)
-
+            // No badge. It was a letter in a chip saying which account this is,
+            // directly under a heading that says which account this is, above a
+            // line that names the agent. Three statements of one fact, and the
+            // only one of them a name-shaped thing — a coloured square with a
+            // capital in it — pulled the eye down the left margin and away from
+            // the names, which are what the list is for. The row starts at the
+            // text now, and the account still has its dot on the right when the
+            // session has something to say.
             VStack(alignment: .leading, spacing: Theme.s1) {
                 HStack(spacing: Theme.s2) {
                     if renaming {
@@ -258,9 +264,11 @@ private struct SessionRow: View {
                         .scaleEffect(0.55)
                         .opacity(hovering && !renaming ? 0 : 1)
                 } else if session.needsAttention && workspace.selection != session.id {
-                    // Never on the selected row: it already carries an accent
-                    // dot on the left as identity, and two dots on one row
-                    // reads as a rendering fault rather than as unread.
+                    // Never on the selected row, where "you have not looked at
+                    // this yet" is false by construction — you are looking at
+                    // it. Now the only account colour on the row, the badge on
+                    // the left having gone; a changing fact is what a saturated
+                    // colour is worth spending on.
                     AccountDot(session.account,
                                dimmed: hovering && !renaming ? 0 : 1,
                                size: Theme.dotAttention)
@@ -399,41 +407,3 @@ private struct SessionRow: View {
 
 // MARK: - The row's mark
 
-/// A session's account, as a small rounded square with a letter in it.
-///
-/// Honeycode's rule has been "identity is the dot, and only ever the dot" —
-/// every other spot of colour in the window carries a *state*, so the two can
-/// never be confused. This keeps that rule and gives the shape more to do: the
-/// fill and the letter are both the account's own colour, so nothing here says
-/// anything a dot didn't, and a 20pt square at the head of a two-line row does
-/// the work a 6pt dot cannot, which is anchoring the row visually.
-///
-/// The letter is the account's short title, which is what makes the four
-/// distinguishable: Personal, Enterprise, Kimi, Copilot — P, E, K, C.
-struct SessionAvatar: View {
-    let account: Account
-    /// A throwaway session. Outlined rather than filled, which is the same one
-    /// bit of difference `AccountDot(hollow:)` uses for the same fact.
-    var provisional = false
-
-    private var letter: String {
-        String(account.shortTitle.prefix(1)).uppercased()
-    }
-
-    var body: some View {
-        let shape = RoundedRectangle(cornerRadius: Theme.cornerChip - 1)
-        Text(letter)
-            .font(.system(size: Theme.t1, weight: .semibold))
-            .foregroundStyle(account.accent)
-            .frame(width: 20, height: 20)
-            .background(provisional ? Color.clear : account.accent.opacity(0.16), in: shape)
-            .overlay {
-                if provisional {
-                    shape.strokeBorder(account.accent.opacity(0.5),
-                                       style: StrokeStyle(lineWidth: 1, dash: [2.5, 2]))
-                }
-            }
-            .help(provisional ? "\(account.title) — temporary, gone when you quit"
-                              : account.title)
-    }
-}

@@ -22,6 +22,16 @@ import SwiftUI
 struct StartPane<Composer: View>: View {
     @ObservedObject var session: Session
     @ObservedObject var workspace: Workspace
+    /// The composer's measure, handed down rather than assumed.
+    ///
+    /// Every block here used to pin itself to `Theme.readingWidth`, the
+    /// constant — while the composer directly underneath took the *setting*,
+    /// `transcript.width`, which Settings ▸ Appearance lets you drag from 520
+    /// to 1000. They agree only at the default. Moved off it and the greeting,
+    /// the chips and the roster all stayed at 680 while the field they sit
+    /// around grew past them, so the pane read as two columns that had failed
+    /// to line up — because it was.
+    var width: CGFloat = Theme.readingWidth
     /// Puts a suggestion in the field rather than sending it.
     ///
     /// Deliberately not send-on-click. A suggestion is a starting point you are
@@ -54,7 +64,7 @@ struct StartPane<Composer: View>: View {
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                .frame(maxWidth: CGFloat(Theme.readingWidth), alignment: .leading)
+                .frame(maxWidth: width, alignment: .leading)
                 .frame(maxWidth: .infinity)
                 .padding(.horizontal, Theme.pane)
                 .padding(.bottom, Theme.s6)
@@ -122,7 +132,7 @@ struct StartPane<Composer: View>: View {
                 .help("Put this in the composer — you can edit it before sending")
             }
         }
-        .frame(maxWidth: CGFloat(Theme.readingWidth), alignment: .leading)
+        .frame(maxWidth: width, alignment: .leading)
         .frame(maxWidth: .infinity)
         .padding(.horizontal, Theme.pane)
     }
@@ -140,7 +150,7 @@ struct StartPane<Composer: View>: View {
                 .foregroundStyle(.tertiary)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .frame(maxWidth: CGFloat(Theme.readingWidth), alignment: .leading)
+        .frame(maxWidth: width, alignment: .leading)
         .frame(maxWidth: .infinity)
         .padding(.horizontal, Theme.pane)
     }
